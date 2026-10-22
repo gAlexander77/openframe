@@ -1,3 +1,4 @@
+import { memoryOwners } from "./memory";
 // Parsed .cube tables by source location, shared by preview and export
 // (ADR-021). The project only names a LUT's file; resolveSources awaits
 // loadPlanLuts for every LUT a frame uses, so by the time the synchronous
@@ -10,16 +11,19 @@ import { platform } from "../platform";
 const pending = new Map<string, Promise<Lut>>();
 const ready = new Map<string, Lut>();
 const warned = new Set<string>();
+let generation = 0;
+memoryOwners.register("lut_tables", () => ({ bytes: [...ready.values()].reduce((n, lut) => n + lut.data.byteLength, 0), count: ready.size }), () => { generation++; pending.clear(); ready.clear(); warned.clear(); });
 
 export function loadLut(src: string): Promise<Lut> {
   let p = pending.get(src);
   if (!p) {
+    const session = generation;
     p = platform
       .blobFor(src)
       .then((b) => b.text())
       .then((text) => {
         const lut = parseCube(text);
-        ready.set(src, lut);
+        if (session === generation) ready.set(src, lut);
         return lut;
       });
     // A failed read (file moved, OPFS cleared) is retried on the next frame.

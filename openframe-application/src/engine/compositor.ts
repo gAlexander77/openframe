@@ -1,3 +1,6 @@
+import { ByteLru } from "../lib/memory";
+import { memoryOwners, MiB } from "./memory";
+import { rasterMaskPath } from "./maskPath";
 // WebGL2 compositor: draws a frame plan (src/lib/render/plan.ts) into a
 // canvas. One GL context, a small pool of canvas-sized framebuffers, and a
 // fixed pass order:
@@ -24,13 +27,13 @@
 //
 // Preview and export share this class; only the canvas and size differ.
 
-import { blurPlan, blurSigma, usesPyramid } from "../lib/blur";
+import { blurPlan, blurSigma, glowSigma, usesGlowPyramid, usesPyramid } from "../lib/blur";
 import { bakeCurves } from "../lib/curves";
 import type { GradeParams } from "../lib/grade";
 import { fit1d, type Lut } from "../lib/lut";
 import { lutFor } from "./luts";
 import type { Placement } from "../lib/motionBlur";
-import type { BlendMode, Border, DropShadow, MatteMode } from "../lib/project/types";
+import type { BlendMode, Border, DropShadow, MatteMode, Mask } from "../lib/project/types";
 import { floodSteps } from "../lib/border";
 import type { Layer, PlanItem, ResolvedEffect, Tone } from "../lib/render/plan";
 import { featherReach, parseColor, shapeExtent, strokePx } from "../lib/shapes";
@@ -47,6 +50,8 @@ import {
   FLOOD_STEP_FS,
   FULLSCREEN_VS,
   GAUSS_FS,
+  GLOW_EXTRACT_FS,
+  GLOW_UP_FS,
   LAYER_FS,
   LAYER_SHAPE_FS,
   LAYER_VS,
@@ -100,7 +105,7 @@ interface RenderedSource {
 type DrawSource = SourceImage | RenderedSource;
 const isRendered = (s: DrawSource | null): s is RenderedSource => !!s && "rendered" in s;
 
-const MASK_SHAPES = { linear: 1, mirror: 2, circle: 3, rectangle: 4, heart: 5, star: 6 } as const;
+const MASK_SHAPES = { linear: 1, mirror: 2, circle: 3, rectangle: 4, heart: 5, star: 6, path: 7 } as const;
 const SHAPE_IDS = { rectangle: 1, ellipse: 2, line: 3 } as const;
 
 /** A CSS color as straight RGBA for a uniform, parsed once. */
@@ -167,8 +172,12 @@ function hexToRgb(hex: string): [number, number, number] {
   return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
 }
 
+const liveCompositors = new Set<Compositor>();
+memoryOwners.register("compositor_textures", () => ({ bytes: [...liveCompositors].reduce((n, c) => n + c.memoryBytes, 0), count: liveCompositors.size, estimated: true, detail: "RGBA targets, source textures, curve/LUT tables; driver overhead excluded" }), () => { for (const compositor of liveCompositors) compositor.releaseProject(); });
 export class Compositor {
   private disposed = false;
+  private usedPathMasks = new Set<string>();
+  private pathMasks = new Map<string, { key: string; tex: WebGLTexture; bounds: { left: number; top: number; right: number; bottom: number } }>();
   readonly gl: WebGL2RenderingContext;
   private quad: WebGLBuffer;
   private vao: WebGLVertexArrayObject;
@@ -193,7 +202,8 @@ export class Compositor {
   private width = 0;
   private height = 0;
   /** Textures for sources, by key (stable sources) or by slot. */
-  private sourceTextures = new Map<string, WebGLTexture>();
+  private sourceTextures = new ByteLru<string, WebGLTexture>(64 * MiB, tex => this.gl.deleteTexture(tex));
+  private slotBytes: number[] = [];
   private slotTextures: WebGLTexture[] = [];
   private matteTextures: WebGLTexture[] = [];
   /** Baked curve tables by their points (JSON), and a neutral 1x1 bound
@@ -203,6 +213,8 @@ export class Compositor {
   private blank3d: WebGLTexture | null = null;
   /** LUT tables on the GPU by source, with the parsed table they came from. */
   private lutTextures = new Map<string, { lut: Lut; tex: WebGLTexture; width: number }>();
+  private compareTexture: WebGLTexture | null = null;
+  private compareBitmap: ImageBitmap | null = null;
   /** Small target for scaled readbacks (scopes). */
   private small: { fb: WebGLFramebuffer; rb: WebGLRenderbuffer; w: number; h: number } | null = null;
 
@@ -216,6 +228,7 @@ export class Compositor {
     }) as WebGL2RenderingContext | null;
     if (!gl) throw new Error("WebGL2 is not available, so video cannot be drawn");
     this.gl = gl;
+    liveCompositors.add(this);
     this.quad = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
@@ -225,6 +238,15 @@ export class Compositor {
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  }
+
+  get memoryBytes() {
+    const fullTargets = [...this.levels, ...this.baked, ...this.matteTargets].reduce((n, level) => n + level.length, 0) + (this.flood ? 2 : 0);
+    const targets = (fullTargets * 4 + (this.accum ? 8 : 0)) * this.width * this.height;
+    const pyramid = this.pyramid.reduce((n, lv) => n + lv.w * lv.h * 8, 0);
+    const luts = [...this.lutTextures.values()].reduce((n, l) => n + (l.lut.size ** 3) * 6, 0);
+    return targets + pyramid + luts + this.sourceTextures.bytes + this.slotBytes.reduce((n, b) => n + b, 0) + this.curveTextures.size * 1024
+      + (this.small ? this.small.w * this.small.h * 4 : 0) + (this.compareBitmap ? this.compareBitmap.width * this.compareBitmap.height * 4 : 0);
   }
 
   // ---- GL plumbing ---------------------------------------------------------------
@@ -449,6 +471,24 @@ export class Compositor {
     this.draw();
   }
 
+  private wideGlow(src: Target, params: Record<string, number>, out: Target) {
+    const gl = this.gl, base = this.pyramidLevel(0);
+    this.bindSized(base.a, base.w, base.h);
+    let u = this.use(this.program("glow:extract", FULLSCREEN_VS, GLOW_EXTRACT_FS));
+    this.bindTex(0, src.tex, u("u_tex"));
+    gl.uniform1f(u("u_threshold"), params.threshold);
+    this.draw();
+    const r = this.gaussian(base.a.tex, glowSigma(params.radius) * this.height / 1080);
+    this.bindTarget(out);
+    u = this.use(this.program("glow:up", FULLSCREEN_VS, GLOW_UP_FS));
+    this.bindTex(0, src.tex, u("u_tex"));
+    this.bindTex(1, r.tex, u("u_blur"));
+    gl.uniform2f(u("u_size"), r.w, r.h);
+    gl.uniform1i(u("u_spline"), r.spline ? 1 : 0);
+    gl.uniform1f(u("u_amount"), params.amount);
+    this.draw();
+  }
+
   /** A drop shadow (ADR-070) under the finished layer `src`, into `out`. */
   private castShadow(src: Target, sh: DropShadow, out: Target) {
     const gl = this.gl;
@@ -564,6 +604,50 @@ export class Compositor {
   }
 
   // ---- color uniforms ------------------------------------------------------------
+
+  private setMaskUniforms(u: (n: string) => WebGLUniformLocation | null, mask: Mask | undefined, id: string, lw: number, lh: number) {
+    const gl = this.gl;
+    const old = this.pathMasks.get(id);
+    if (old && mask?.shape !== "path") { gl.deleteTexture(old.tex); this.pathMasks.delete(id); }
+    gl.uniform1i(u("u_maskShape"), mask ? (MASK_SHAPES[mask.shape] ?? 0) : 0);
+    gl.activeTexture(gl.TEXTURE5);
+    // A sampler must always be complete, even when its branch is disabled.
+    let tex = this.blank();
+    if (mask) {
+      gl.uniform2f(u("u_maskCenter"), mask.x, mask.y);
+      gl.uniform2f(u("u_maskSize"), mask.width, mask.height);
+      gl.uniform1f(u("u_maskRotation"), mask.rotation * Math.PI / 180);
+      gl.uniform1f(u("u_maskFeather"), mask.feather);
+      gl.uniform1f(u("u_maskRadius"), mask.shape === "rectangle" ? Math.max(0, Math.min(1, mask.radius ?? 0)) : 0);
+      gl.uniform1i(u("u_maskInvert"), mask.invert ? 1 : 0);
+      if (mask.shape === "path") {
+        this.usedPathMasks.add(id);
+        const key = JSON.stringify([mask.points, mask.closed, mask.width, mask.height, mask.feather, lw, lh]);
+        let hit = this.pathMasks.get(id);
+        if (hit?.key !== key) {
+          if (hit) gl.deleteTexture(hit.tex);
+          this.pathMasks.delete(id);
+          const { canvas, bounds } = rasterMaskPath(mask, lw, lh);
+          tex = this.makeTexture();
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+          hit = { key, tex, bounds };
+        }
+        // Bounded LRU: eight masks, at most 4 MiB apiece, across compounds.
+        this.pathMasks.delete(id);
+        this.pathMasks.set(id, hit);
+        while (this.pathMasks.size > 8) {
+          const first = this.pathMasks.keys().next().value!;
+          gl.deleteTexture(this.pathMasks.get(first)!.tex);
+          this.pathMasks.delete(first);
+        }
+        tex = hit.tex;
+        const b = hit.bounds;
+        gl.uniform4f(u("u_pathBounds"), b.left, b.top, b.right, b.bottom);
+      }
+    }
+    this.bindTex(5, tex, u("u_maskPath"));
+  }
 
   private setColorUniforms(u: (n: string) => WebGLUniformLocation | null, adjust: Layer["adjust"], tone: Tone | undefined, time: number, grade: GradeParams | undefined) {
     const gl = this.gl;
@@ -713,13 +797,13 @@ export class Compositor {
     // Full texImage2D re-spec (not texSubImage2D) keeps Chrome's zero-copy
     // VideoFrame upload path (docs/research/Web media engine.md §3.1).
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src.image);
-    if (src.key) {
-      this.sourceTextures.set(src.key, tex);
-      if (this.sourceTextures.size > 256) {
-        const [oldKey, oldTex] = this.sourceTextures.entries().next().value!;
-        gl.deleteTexture(oldTex);
-        this.sourceTextures.delete(oldKey);
-      }
+    const bytes = src.width * src.height * 4;
+    if (src.key && bytes <= this.sourceTextures.budget) this.sourceTextures.set(src.key, tex, bytes);
+    else {
+      // Oversized sources use a live slot; caching must not delete the
+      // texture before this draw uses it.
+      if (src.key) { const old = this.slotTextures[slot]; if (old) gl.deleteTexture(old); this.slotTextures[slot] = tex; }
+      this.slotBytes[slot] = bytes;
     }
     return tex;
   }
@@ -817,6 +901,8 @@ export class Compositor {
       gl.uniform1f(u("u_maskAspect"), Math.abs(g.visH) > 1e-6 ? Math.abs(g.visW / g.visH) : 1);
     };
     gl.uniform4f(u("u_crop"), left, top, 1 - right, 1 - bottom);
+    gl.uniform1f(u("u_cropFeather"), (layer.crop.feather ?? 0) * H / 1080);
+    gl.uniform2f(u("u_cropSize"), sw * fit * (1 - left - right), sh * fit * (1 - top - bottom));
     gl.uniformMatrix3fv(u("u_uv"), false, uvMatrix(src && !isRendered(src) ? src.rotation : 0, isRendered(src)));
     gl.uniform1i(u("u_fbo"), isRendered(src) ? 1 : 0);
     gl.uniform1i(u("u_solid"), solid || shape || !src ? 1 : 0);
@@ -862,16 +948,7 @@ export class Compositor {
       gl.uniform1f(u("u_keySmoothness"), key.smoothness);
       gl.uniform1f(u("u_keySpill"), key.spill);
     }
-    const mask = layer.mask;
-    gl.uniform1i(u("u_maskShape"), mask ? (MASK_SHAPES[mask.shape] ?? 0) : 0);
-    if (mask) {
-      gl.uniform2f(u("u_maskCenter"), mask.x, mask.y);
-      gl.uniform2f(u("u_maskSize"), mask.width, mask.height);
-      gl.uniform1f(u("u_maskRotation"), (mask.rotation * Math.PI) / 180);
-      gl.uniform1f(u("u_maskFeather"), mask.feather);
-      gl.uniform1f(u("u_maskRadius"), mask.shape === "rectangle" ? Math.max(0, Math.min(1, mask.radius ?? 0)) : 0);
-      gl.uniform1i(u("u_maskInvert"), mask.invert ? 1 : 0);
-    }
+    this.setMaskUniforms(u, layer.mask, layer.clipId, sw * fit * (1 - left - right), sh * fit * (1 - top - bottom));
     this.setColorUniforms(u, layer.adjust, layer.tone, layer.time, layer.grade);
 
     if (!samples || !acc) {
@@ -988,7 +1065,11 @@ export class Compositor {
       cur = dest;
     };
     for (const e of effects) {
-      if (e.type === "blur" && usesPyramid(e.params.amount)) {
+      if (e.type === "glow" && usesGlowPyramid(e.params.radius)) {
+        const dest = temps[i++ % 2];
+        this.wideGlow(cur, e.params, dest);
+        cur = dest;
+      } else if (e.type === "blur" && usesPyramid(e.params.amount)) {
         // Past the old maximum: the pyramid (ADR-069). Up to it, the two
         // passes below draw exactly what they always have.
         const dest = temps[i++ % 2];
@@ -1019,12 +1100,52 @@ export class Compositor {
    */
   render(plan: PlanItem[], sources: (l: Layer) => SourceImage | null, background: string) {
     const gl = this.gl;
+    this.usedPathMasks.clear();
     const accum = this.composite(plan, sources, 0, { n: 0 });
+    for (const [id, cached] of this.pathMasks) if (!this.usedPathMasks.has(id)) {
+      gl.deleteTexture(cached.tex); this.pathMasks.delete(id);
+    }
     this.bindTarget(null);
     const u = this.use(this.program("present", FULLSCREEN_VS, PRESENT_FS));
     this.bindTex(0, accum.tex, u("u_tex"));
     gl.uniform3fv(u("u_background"), hexToRgb(background));
     this.draw();
+  }
+
+  /** Present only the left/top of a second picture. Intermediate passes
+   * remain full-frame; scissoring is restricted to the final presentation. */
+  compare(plan: PlanItem[] | null, bitmap: ImageBitmap | null, sources: (l: Layer) => SourceImage | null, background: string, split: number, horizontal: boolean) {
+    const gl = this.gl;
+    let tex: WebGLTexture;
+    if (plan) tex = this.composite(plan, sources, 0, { n: 0 }).tex;
+    else if (bitmap) {
+      if (this.compareBitmap !== bitmap) {
+        this.clearCompare();
+        this.compareTexture = this.makeTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.compareTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+        this.compareBitmap = bitmap;
+      }
+      tex = this.compareTexture!;
+    } else return;
+    this.bindTarget(null);
+    const fs = plan ? PRESENT_FS : PRESENT_FS.replace("texture(u_tex, v_uv)", "texture(u_tex, vec2(v_uv.x, 1.0 - v_uv.y))");
+    const u = this.use(this.program(plan ? "present" : "compare-reference", FULLSCREEN_VS, fs));
+    this.bindTex(0, tex, u("u_tex"));
+    gl.uniform3fv(u("u_background"), hexToRgb(background));
+    gl.enable(gl.SCISSOR_TEST);
+    const t = Math.max(0, Math.min(1, split));
+    if (horizontal) {
+      const h = Math.round(this.height * t);
+      gl.scissor(0, this.height - h, this.width, h);
+    } else gl.scissor(0, 0, Math.round(this.width * t), this.height);
+    try { this.draw(); } finally { gl.disable(gl.SCISSOR_TEST); }
+  }
+
+  clearCompare() {
+    if (this.compareTexture) this.gl.deleteTexture(this.compareTexture);
+    this.compareTexture = null;
+    this.compareBitmap = null;
   }
 
   /** Composite a plan with nesting level `depth`'s framebuffers. Returns
@@ -1174,6 +1295,8 @@ export class Compositor {
         this.bindTex(0, accum.tex, m("u_a"));
         this.bindTex(1, graded.tex, m("u_b"));
         gl.uniform1f(m("u_t"), item.opacity);
+        gl.uniform1f(m("u_maskAspect"), this.width / this.height);
+        this.setMaskUniforms(m, item.mask, item.clipId, this.width, this.height);
         this.draw();
         [accum, spare] = [spare, accum];
       }
@@ -1222,10 +1345,21 @@ export class Compositor {
     return { width: w, height: h, data: flipRows(out, w, h) };
   }
 
+  /** Drop a document's textures while keeping the canvas and compiled
+   * programs usable for the next project. */
+  releaseProject() {
+    this.freeTargets(); this.clearCompare(); this.sourceTextures.clear();
+    for (const tex of [...this.slotTextures, ...this.matteTextures, ...this.curveTextures.values()]) this.gl.deleteTexture(tex);
+    for (const { tex } of this.lutTextures.values()) this.gl.deleteTexture(tex);
+    for (const { tex } of this.pathMasks.values()) this.gl.deleteTexture(tex);
+    this.pathMasks.clear(); this.curveTextures.clear(); this.lutTextures.clear();
+    this.slotTextures = []; this.slotBytes = []; this.matteTextures = [];
+    if (this.small) { this.gl.deleteFramebuffer(this.small.fb); this.gl.deleteRenderbuffer(this.small.rb); this.small = null; }
+    this.width = this.height = 0;
+  }
+
   /** Forget a cached source texture (text changed, image removed). */
   forget(key: string) {
-    const tex = this.sourceTextures.get(key);
-    if (tex) this.gl.deleteTexture(tex);
     this.sourceTextures.delete(key);
   }
 
@@ -1233,11 +1367,16 @@ export class Compositor {
    * same context back on the next getContext, so losing it here would leave
    * a re-mounted viewer (React StrictMode mounts twice) with a dead one. */
   dispose() {
+    if (this.disposed) return;
     this.disposed = true;
+    liveCompositors.delete(this);
     const gl = this.gl;
     this.freeTargets();
-    for (const tex of [...this.sourceTextures.values(), ...this.slotTextures, ...this.matteTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
+    this.clearCompare();
+    for (const tex of [...this.slotTextures, ...this.matteTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
     for (const { tex } of this.lutTextures.values()) gl.deleteTexture(tex);
+    for (const { tex } of this.pathMasks.values()) gl.deleteTexture(tex);
+    this.pathMasks.clear();
     if (this.blank2d) gl.deleteTexture(this.blank2d);
     if (this.blank3d) gl.deleteTexture(this.blank3d);
     this.blank2d = this.blank3d = null;
@@ -1251,8 +1390,10 @@ export class Compositor {
     for (const p of this.programs.values()) gl.deleteProgram(p.prog);
     this.sourceTextures.clear();
     this.slotTextures = [];
+    this.slotBytes = [];
     this.matteTextures = [];
     this.programs.clear();
+    gl.deleteBuffer(this.quad); gl.deleteVertexArray(this.vao);
     this.width = this.height = 0;
   }
 }

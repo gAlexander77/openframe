@@ -7,6 +7,8 @@
 // and the Animation tab's Duration drag from 1.2 to 2.0 s, the case found
 // while recording the launch film, one "In animation" step. A held arrow
 // key is one step, and a value set with no press at all is one too.
+// Match strength stages the next Match job (ADR-129): dragging it must
+// leave the document and undo history untouched; Match commits the look.
 async (page) => {
   page.setDefaultTimeout(6000);
   await page.setViewportSize({ width: 1600, height: 950 });
@@ -43,6 +45,8 @@ async (page) => {
     const b = await input.boundingBox();
     if (!b || b.width < 20) return;
     const name = (await input.getAttribute("aria-label")) ?? "slider";
+    const staged = name === "Match strength";
+    const docBefore = staged ? await page.evaluate(() => JSON.stringify(window.videoEditor.project())) : null;
     const before = await count();
     const v0 = await input.inputValue();
     const y = b.y + b.height / 2;
@@ -53,7 +57,8 @@ async (page) => {
     await page.waitForTimeout(50); // the gesture closes just after the release
     const steps = (await count()) - before;
     const changed = v0 !== (await input.inputValue().catch(() => v0));
-    results.push({ where, name, steps, changed, pass: changed ? steps === 1 : steps <= 1 });
+    const untouched = staged ? docBefore === await page.evaluate(() => JSON.stringify(window.videoEditor.project())) : undefined;
+    results.push({ where, name, steps, changed, ...(staged ? { staged, untouched } : {}), pass: staged ? steps === 0 && untouched : changed ? steps === 1 : steps <= 1 });
   };
   const openAll = async () => {
     for (let i = 0; i < 12; i++) {

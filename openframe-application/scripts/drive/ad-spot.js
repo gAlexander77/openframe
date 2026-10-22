@@ -96,7 +96,7 @@ async (page) => {
   await call("set_animation", { clip_id: big, slot: "out", type: "fade", duration: 0.3 });
   const behind = await rpc("text_behind_subject", { clip_id: shotB, text_clip_ids: [big] });
   if (behind.result.isError) details.textBehind = { ok: /download|internet|network|fetch/i.test(behind.result.content[0].text), skipped: behind.result.content[0].text };
-  else details.textBehind = { ok: !!JSON.parse(behind.result.content[0].text).subjectClipId };
+  else details.textBehind = { ok: !!JSON.parse(behind.result.content[0].text).subject_clip_id };
   await call("add_ad_element", { element: "lower_third", start: 7.2, duration: 2.2, headline: "Mia Chen", subline: "Head roaster" });
 
   // ---- the offer -------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+import { AudioInserts } from "./AudioInserts";
 import { useEffect, useState } from "react";
 import { masterBus, readMeter, trackMeter } from "../engine/audio";
 import { fromDb, toDb } from "../lib/audio";
@@ -5,21 +6,23 @@ import { updateTrack } from "../lib/project/ops";
 import { store, useEditor } from "../state/store";
 import { X } from "../icons";
 import { rangeGesture } from "./inspector/controls";
+import { MonitorMute } from "./MonitorMute";
 import { shortTermLufs } from "./Meter";
 import "./mixer.css";
 const level = (v: number) => Number.isFinite(v) ? v.toFixed(1) : "−∞";
 function Levels({ id }: { id?: string }) {
   const playing = useEditor(s => s.playing);
+  const muted = useEditor(s => s.monitorMuted);
   const [v, setV] = useState(() => [readMeter()]);
   const [lufs, setLufs] = useState(-Infinity);
   useEffect(() => {
     const update = () => {
       setV(id ? [readMeter(playing ? trackMeter(id) : undefined)] : [readMeter(playing ? masterBus().left : undefined), readMeter(playing ? masterBus().right : undefined)]);
-      setLufs(shortTermLufs());
+      setLufs(muted ? -Infinity : shortTermLufs());
     };
     update(); const timer = setInterval(update, 100);
     return () => clearInterval(timer);
-  }, [playing, id]);
+  }, [playing, id, muted]);
   return <div className="mix-levels">{v.map((m, i) => <div key={i}><meter aria-label={`${id ?? "Master"} ${i ? "right" : "left"} peak`} min={-60} max={0} value={Math.max(-60, m.peak)} /><span>Peak {level(m.peak)}</span><span>RMS {level(m.rms)}</span></div>)}{!id && <span>Short {level(lufs)} LUFS</span>}</div>;
 }
 export function Mixer() {
@@ -40,6 +43,6 @@ export function Mixer() {
     // The pan slider says what it is and where it stands, as the track
     // volume popover does: unlabeled, it read as a second volume.
     const pan = t?.pan ?? 0;
-    return <div className={`mix-strip${t ? "" : " master"}`} key={t?.id ?? "master"}><strong title={name}>{name}</strong><div className="mix-fader"><input aria-label={`${name} volume`} type="range" min={-60} max={12} step={0.5} value={Math.max(-60, toDb(volume))} {...rangeGesture(`${name} volume`)} onChange={e => change(+e.target.value <= -60 ? 0 : fromDb(+e.target.value))} onDoubleClick={() => change(1)} /><Levels id={t?.id} /></div><span className="mix-value num">{level(toDb(volume))} dB</span>{t && <><span className="mix-value num">Pan {pan === 0 ? "center" : `${Math.round(Math.abs(pan) * 100)} ${pan < 0 ? "L" : "R"}`}</span><input aria-label={`${name} pan`} type="range" min={-1} max={1} step={0.01} value={pan} {...rangeGesture("Track pan")} onChange={e => store.previewGesture(q => updateTrack(q, t.id, { pan: +e.target.value }), "Track pan")} onDoubleClick={() => store.edit("Reset pan", q => updateTrack(q, t.id, { pan: 0 }))} /><div className="mix-switches">{(["muted", "solo"] as const).map(k => <button className="btn" key={k} aria-pressed={!!t[k]} onClick={() => store.edit(k === "muted" ? "Mute track" : "Solo track", q => updateTrack(q, t.id, { [k]: !t[k] }))}>{k === "muted" ? "Mute" : "Solo"}</button>)}</div></>}</div>;
+    return <div className={`mix-strip${t ? "" : " master"}`} key={t?.id ?? "master"} data-track-id={t?.id}><strong title={name}>{name}</strong><div className="mix-fader"><input aria-label={`${name} volume`} type="range" min={-60} max={12} step={0.5} value={Math.max(-60, toDb(volume))} {...rangeGesture(`${name} volume`)} onChange={e => change(+e.target.value <= -60 ? 0 : fromDb(+e.target.value))} onDoubleClick={() => change(1)} /><Levels id={t?.id} /></div><span className="mix-value num">{level(toDb(volume))} dB</span>{!t && <MonitorMute />}{t && <>{t.kind === "audio" && <AudioInserts target={{ track_id: t.id }} inserts={t.inserts} />}<span className="mix-value num">Pan {pan === 0 ? "center" : `${Math.round(Math.abs(pan) * 100)} ${pan < 0 ? "L" : "R"}`}</span><input aria-label={`${name} pan`} type="range" min={-1} max={1} step={0.01} value={pan} {...rangeGesture("Track pan")} onChange={e => store.previewGesture(q => updateTrack(q, t.id, { pan: +e.target.value }), "Track pan")} onDoubleClick={() => store.edit("Reset pan", q => updateTrack(q, t.id, { pan: 0 }))} /><div className="mix-switches">{(["muted", "solo"] as const).map(k => <button className="btn" key={k} aria-pressed={!!t[k]} onClick={() => store.edit(k === "muted" ? "Mute track" : "Solo track", q => updateTrack(q, t.id, { [k]: !t[k] }))}>{k === "muted" ? "Mute" : "Solo"}</button>)}</div></>}</div>;
   })}</div></section>;
 }

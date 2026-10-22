@@ -105,3 +105,14 @@ describe("the Check tab's words for a join", () => {
     expect(f.action).toMatch(/^Trim the start of “Night drive.wav” a little later so its sound can rise before the cut, then add a crossfade from the clip menu/);
   });
 });
+
+
+it("keeps complete generated riser/impact moments out of continuous-audio join checks", () => {
+  let { p, a, b } = cutSong();
+  p = { ...p, assets: [{ ...song, id: "rise", duration: 2, sound: { id: "rise" } }, { ...song, id: "impact", duration: 2, sound: { id: "impact" } }] };
+  p = updateClip(p, a, (c) => ({ ...c, assetId: "rise", start: 14 * 30, duration: 60, in: 0 }) as AudioClip);
+  p = updateClip(p, b, (c) => ({ ...c, assetId: "impact", start: 16 * 30, duration: 60, in: 0 }) as AudioClip);
+  expect(joinTargets(p)).toEqual([]);
+  p = updateClip(p, a, (c) => ({ ...c, in: 0.5 }) as AudioClip);
+  expect(joinTargets(p)).toHaveLength(1);
+});

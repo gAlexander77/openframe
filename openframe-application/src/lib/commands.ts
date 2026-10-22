@@ -1,3 +1,12 @@
+import { applyStreamLayout, type StreamOptions } from "./streamLayout";
+import { moveEdits, type EditLanding, type EditPoint } from "./editPoints";
+import { highlightMarkers } from "./highlightMarkers";
+import { placeSourceEdit } from "./drop";
+import { cleanInsertParams, DYNAMICS_PRESETS, editInsert, editInsertOwner, EQ_TYPES, INSERT_NAMES, INSERT_RANGES, newInsert, presetInserts, type DynamicsPreset } from "./audioInserts";
+import type { Insert, InsertType } from "./project/types";
+import { FADE_CURVES, type FadeCurve } from "./project/types";
+import { cleanMaskPoints } from "./maskPath";
+import { proxyState } from "./proxyPolicy";
 import { moveMotionPoint } from "./motionPoint";
 import { transformGroup } from "./groupTransform";
 import { applyLayout, LAYOUTS, type Layout, type LayoutOptions } from "./layouts";
@@ -27,7 +36,7 @@ import {
 import * as ops from "./project/ops";
 import { assetRole, assetsOf, roleTrack, trackRole } from "./audioRoles";
 import { TRACK_ROLES } from "./project/defaults";
-import type { Adjust, Anchor, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextRun, TextStyle, Track, TrackMatte, Transform, VisualClip, WheelName, Wiggle, WiggleTarget } from "./project/types";
+import type { Adjust, Anchor, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextRun, TextStyle, Track, TrackMatte, Transform, WheelName, Wiggle, WiggleTarget } from "./project/types";
 import { anchorOf, anchorProblem, anchorSummary, followAnchors } from "./anchors";
 import { placeSounds } from "./sfx";
 import { addCallout, CALLOUT_SHAPES, CALLOUT_STROKE, CalloutError, type CalloutShape } from "./callouts";
@@ -55,7 +64,7 @@ import { editFolder, organizeMedia, removeMedia, unusedMedia } from "./project/m
 import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
 import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorPreset } from "./compressor";
-import { cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary, TAPE_STOP_DEFAULT, type FilterKind, type FxKey, type ReverbPreset } from "./soundFx";
+import { applyVoicePreset, VOICE_PRESETS, cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary, TAPE_STOP_DEFAULT, type FilterKind, FX_RANGES, type FxKey, type ReverbPreset } from "./soundFx";
 import { alignClips, ALIGNS, distributeClips, frameClips, frameMoves, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, maskReach, newMask, sizeForAspect, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
@@ -74,17 +83,20 @@ import { cleanColorize, COLORIZE_DEFAULT } from "./colorize";
 import { COLOR_PATHS, colorKey, keyColor } from "./textAnim";
 import { TILT_MAX, TILT_PARAMS } from "./tilt";
 import { MATTE_MODES, trackAbove } from "./trackMatte";
+import { applyDefaultTransitions, type CutsReport, type DefaultTransitionOptions } from "./defaultTransitions";
 import { didYouMean } from "./didYouMean";
 
 export type JsonSchema = {
+  anyOf?: JsonSchema[];
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
   description?: string;
   properties?: Record<string, JsonSchema>;
   required?: string[];
-  enum?: (string | number)[];
+  enum?: (string | number | boolean)[];
   items?: JsonSchema;
   minimum?: number;
   maximum?: number;
+  maxItems?: number;
   additionalProperties?: boolean;
 };
 
@@ -96,6 +108,10 @@ export interface Command {
 }
 
 export interface CommandReport {
+  edits?: (EditLanding & { seconds: number })[];
+  sourceEdit?: { clip_id: Id; speed: number };
+  cuts?: CutsReport;
+  added_by_step?: Record<string, Id[]>;
   overwritten?: { id: Id; kind: Clip["type"]; what: "removed" | "trimmed" }[];
   notes?: string[];
 }
@@ -142,10 +158,26 @@ const S = {
   }),
 };
 
+const insertBandSchema = S.obj({
+  type: S.str("Biquad shape", { enum: EQ_TYPES }), freq: S.num("Center or cutoff, Hz, 20..20000"), gain: S.num("Boost or cut, dB, -24..24 (peaking and shelves)"), q: S.num("Q ratio, 0.1..30 (shelves use slope 1)"), on: S.bool("Enable this band; default true"),
+}, [], "One parametric equalizer band");
+const insertParamsSchema = S.obj({
+  ...Object.fromEntries(Object.values(INSERT_RANGES).flatMap(r => Object.entries(r)).map(([key, [, , , unit]]) => [key, S.num(`${key}, ${unit}; processor-specific range (use its controls or defaults)`)])),
+  bands: { type: "array", description: "Parametric EQ bands in order, up to eight", items: insertBandSchema },
+}, [], "Processor settings; omitted numbers retain their values, or use defaults on add. attack, hold, release, time and decay are seconds; frequencies Hz; threshold dBFS; range, amount, gain, makeup and ceiling dB; ratio/Q dimensionless; mix/feedback/size 0..1");
+const dynamicsSchema = (type: "gate" | "deesser" | "limiter" | "eq") => S.obj({
+  ...(type === "eq" ? { bands: insertParamsSchema.properties!.bands } : Object.fromEntries(Object.entries(INSERT_RANGES[type]!).map(([key, [lo, hi, , unit]]) => [key, S.num(`${key}, ${unit}, ${lo}..${hi}`)]))),
+  on: S.bool("Enable this processor; false bypasses it"),
+}, [], `${INSERT_NAMES[type]} settings; omitted values retain their setting`);
+
 /** Validate arguments against the subset of JSON Schema the registry uses.
  * Returns the problems, empty when valid. This is the trust boundary for
  * anything an agent sends. */
 export function validate(value: unknown, schema: JsonSchema, path = "args"): string[] {
+  if (schema.anyOf) {
+    const choices = schema.anyOf.map(s => validate(value, s, path));
+    return choices.some(e => !e.length) ? [] : [`${path} must match one of: ${choices.map(e => e.join("; ")).join(" or ")}`];
+  }
   const errs: string[] = [];
   const t = schema.type;
   if (t === "object") {
@@ -168,6 +200,7 @@ export function validate(value: unknown, schema: JsonSchema, path = "args"): str
   }
   if (t === "array") {
     if (!Array.isArray(value)) return [`${path} must be an array`];
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) errs.push(`${path} accepts at most ${schema.maxItems} items`);
     value.forEach((v, i) => schema.items && errs.push(...validate(v, schema.items, `${path}[${i}]`)));
     return errs;
   }
@@ -178,7 +211,7 @@ export function validate(value: unknown, schema: JsonSchema, path = "args"): str
     if (schema.maximum !== undefined && value > schema.maximum) errs.push(`${path} must be <= ${schema.maximum}`);
   } else if (t === "string" && typeof value !== "string") errs.push(`${path} must be a string`);
   else if (t === "boolean" && typeof value !== "boolean") errs.push(`${path} must be true or false`);
-  if (schema.enum && !schema.enum.includes(value as string | number)) {
+  if (schema.enum && !schema.enum.includes(value as string | number | boolean)) {
     errs.push(`${path} must be one of ${schema.enum.join(", ")}`);
   }
   return errs;
@@ -194,6 +227,13 @@ const NUMERIC = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
  * Anything else is left as sent, for validate to refuse.
  */
 export function coerceNumbers(value: unknown, schema: JsonSchema): unknown {
+  if (schema.anyOf) {
+    for (const choice of schema.anyOf) {
+      const v = coerceNumbers(value, choice);
+      if (!validate(v, choice).length) return v;
+    }
+    return value;
+  }
   if ((schema.type === "number" || schema.type === "integer") && typeof value === "string" && NUMERIC.test(value.trim())) return Number(value.trim());
   if (schema.type === "array" && Array.isArray(value) && schema.items) return value.map((v) => coerceNumbers(v, schema.items!));
   if (schema.type === "object" && schema.properties && typeof value === "object" && value !== null && !Array.isArray(value)) {
@@ -237,9 +277,9 @@ function trimStopReason(p: Project, c: Clip, edge: ops.Edge, why: ops.TrimStop):
  * stays inside, is inverted, or is a line or a band (Claude film test 2: a
  * porthole's circle ran past the picture's bottom edge in silence). */
 function maskEdgeNote(p: Project, id: Id, rel: number, at: number): string | undefined {
-  const c = ops.findClip(p, id)?.clip as VisualClip | undefined;
+  const c = ops.findClip(p, id)?.clip;
   const m = c && "mask" in c ? c.mask : undefined;
-  if (!c || !m || m.invert) return undefined;
+  if (!c || c.type === "audio" || !m || m.invert) return undefined;
   const v = (k: string) => paramAt(c, `mask.${k}`, rel);
   const now = { ...m, x: v("x"), y: v("y"), width: v("width"), height: v("height"), rotation: v("rotation") };
   const r = maskReach(now, pictureAspect(p, c, at));
@@ -474,6 +514,25 @@ function easeArg(name: unknown, bezier: unknown): Ease | undefined {
 
 // ---- the registry ------------------------------------------------------------------
 
+function editSchema(): JsonSchema {
+  return { type: "array", description: "Edit points; select both sides of a touching cut for a roll", items: S.obj({ clip_id: S.str("Clip id"), edge: S.str("Selected edge", { enum: ["start", "end"] }) }, ["clip_id", "edge"]) };
+}
+function runEdits(p: Project, a: Record<string, unknown>, target: { to: number } | { by: number }, report?: CommandReport): Project {
+  const edges = (a.edits as { clip_id: Id; edge: EditPoint["edge"] }[]).map((e) => ({ clipId: e.clip_id, edge: e.edge }));
+  if (!edges.length) throw new CommandError("Select at least one edit point");
+  for (const e of edges) clipOrThrow(p, e.clipId);
+  const r = moveEdits(p, edges, target, a.ripple === true);
+  if (report) report.edits = r.edges.map((e) => ({ ...e, seconds: framesToSeconds(e.frame, p.fps) }));
+  return r.project;
+}
+
+export const STREAM_REGION_SCHEMA: JsonSchema = { type: "object", description: "Source region in fractions; x/y its top-left corner, positive w/h inside the picture", properties: {
+  x: { type: "number", minimum: 0, maximum: 1, description: "Left edge as a fraction of source width" },
+  y: { type: "number", minimum: 0, maximum: 1, description: "Top edge as a fraction of source height" },
+  w: { type: "number", minimum: 0.0001, maximum: 1, description: "Fraction of source width" },
+  h: { type: "number", minimum: 0.0001, maximum: 1, description: "Fraction of source height" },
+}, required: ["x", "y", "w", "h"], additionalProperties: false };
+
 export const COMMANDS: Command[] = [
   {
     name: "paste_attributes",
@@ -594,12 +653,13 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_media_clip",
-    description: "Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.",
+    description: "Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Default fit shows the whole source with transparent bands; use fit fill for cutaways that cover an interview, or blur for a covering blurred background.",
     input: S.obj(
       {
         asset_id: S.str("Asset id, from import_media or describe_project"),
         start: S.num("Timeline position in seconds", { minimum: 0 }),
         duration: S.num("Length in seconds; defaults to the whole source (one loop for animated images, 5 s for stills)", { minimum: 0.001 }),
+        fit: S.str("Picture fitting: fit (default) shows the whole image, fill covers the canvas by cropping edges, blur fits over a covering blurred copy", { enum: ["fit", "fill", "blur"] }),
         in: S.num("Seconds into the source where the clip begins", { minimum: 0 }),
         track_id: S.str("Track id"),
         mode: S.str("overwrite replaces what is under the clip; insert pushes later clips right", { enum: ["overwrite", "insert"] }),
@@ -609,12 +669,19 @@ export const COMMANDS: Command[] = [
     run: (p, a, report) => {
       const asset = ops.getAsset(p, String(a.asset_id));
       if (!asset) throw new CommandError(`no asset with id ${a.asset_id}`);
+      if (a.fit !== undefined && asset.kind === "audio") throw new CommandError("fit applies to video and images, not audio");
       let clip = clipForAsset(asset, f(p, a.start), p.fps);
       if (a.in !== undefined && clip.type === "image" && asset.animated) clip = { ...clip, imageIn: Number(a.in) };
       if (a.in !== undefined && "in" in clip) clip = { ...clip, in: Number(a.in) } as Clip;
       const room = ops.roomRight(p, { ...clip, duration: 0 } as Clip);
       const wanted = a.duration !== undefined ? span(p, a.start, a.duration) : clip.duration;
       clip = { ...clip, duration: Math.max(1, Math.min(wanted, room === Infinity ? wanted : room)) } as Clip;
+      if ((clip.type === "video" || clip.type === "image") && asset.width && asset.height) {
+        const cover = Math.max(p.width / asset.width, p.height / asset.height) / Math.min(p.width / asset.width, p.height / asset.height);
+        if (a.fit === "fill") clip = { ...clip, transform: { ...clip.transform, scale: cover } };
+        else if (a.fit === "blur") clip = { ...clip, canvas: { type: "blur", amount: 40 } };
+        else if (cover > 1.005 && report) (report.notes ??= []).push("Default fit shows the whole source; its transparent bands can expose lower tracks. Use add_media_clip fit fill for a covering cutaway, fit blur for a covering background, or frame_region mode fill on this clip.");
+      }
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return closeFrameGap(ops.addClip(q, trackId, clip, a.mode === "insert" ? "insert" : "overwrite"), trackId, clip.id, a, report);
     },
@@ -720,7 +787,7 @@ export const COMMANDS: Command[] = [
   {
     name: "add_ad_element",
     description:
-      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions) and clear of the captions showing then, animated in, its clips grouped on rows of their own above everything at that time and under the captions (no other clip shares them, so moving another track never reorders its parts). Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
+      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions) and clear of the captions showing then, animated in, its clips grouped on rows of their own above everything at that time and under the captions (no other clip shares them, so moving another track never reorders its parts). Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo (or the brand name as a wordmark without a logo, unless logo none is asked), headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
     input: S.obj(
       {
         element: S.str("Which element", { enum: AD_ELEMENTS }),
@@ -806,6 +873,33 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "extend_edit",
+    description: "Move selected start/end edges to timeline seconds. Both touching sides roll; single sides trim, leaving gaps unless ripple is true. Answers every landed frame and any source, neighbor, length or locked-track limit.",
+    input: S.obj({ edits: editSchema(), to: S.num("Timeline seconds to extend to", { minimum: 0 }), ripple: S.bool("Shift later clips for single-edge trims; default false") }, ["edits", "to"]),
+    run: (p, a, report) => runEdits(p, a, { to: f(p, a.to) }, report),
+  },
+  {
+    name: "trim_edits",
+    description: "Nudge selected edit edges together; touching opposite sides roll. by is integer frames by default; unit seconds converts by to timeline frames. Answers each landed edge and stop reason.",
+    input: S.obj({ edits: editSchema(), by: S.num("Signed movement in frames (default) or seconds with unit seconds"), unit: S.str("Unit of by; default frames", { enum: ["frames", "seconds"] }), ripple: S.bool("Shift later clips for single-edge trims; default false") }, ["edits", "by"]),
+    run: (p, a, report) => {
+      if (a.unit !== "seconds" && !Number.isSafeInteger(a.by)) throw new CommandError("by must be integer frames, or use unit seconds");
+      return runEdits(p, a, { by: a.unit === "seconds" ? f(p, a.by) : Number(a.by) }, report);
+    },
+  },
+  {
+    name: "edit_from_source",
+    description: "Insert or overwrite source media using three/four-point marks (exclusive Outs). Source In/Out plus timeline In places that source range. A timeline range plus source In reads forward, or plus source Out backtimes. Four different-length marks require fit fill (constant speed) or trim (speed 1). Insufficient media rejects the whole edit. Returns sourceEdit with the made clip id and speed.",
+    input: S.obj({ asset_id: S.str("Source asset id"), source_in: S.num("Source In seconds", { minimum: 0 }), source_out: S.num("Exclusive source Out seconds", { minimum: 0 }), timeline_in: S.num("Timeline In seconds; defaults to the playhead when neither timeline mark is given", { minimum: 0 }), timeline_out: S.num("Exclusive timeline Out seconds", { minimum: 0 }), mode: S.str("Placement operation", { enum: ["insert", "overwrite"] }), fit: S.str("Resolve four-point duration mismatch", { enum: ["fill", "trim"] }), track_id: S.str("Destination track id; default main video or first unlocked audio track") }, ["asset_id", "mode"]),
+    run: (p, a, report) => commandError(() => {
+      const asset = p.assets.find((x) => x.id === a.asset_id);
+      if (!asset) throw new CommandError(`no asset with id ${a.asset_id}`);
+      const r = placeSourceEdit(p, asset, 0, { sourceIn: a.source_in as number | undefined, sourceOut: a.source_out as number | undefined, timelineIn: a.timeline_in as number | undefined, timelineOut: a.timeline_out as number | undefined, fit: a.fit as "fill" | "trim" | undefined }, a.mode as ops.PlaceMode, a.track_id as Id | undefined);
+      if (report) report.sourceEdit = { clip_id: r.clipId, speed: r.speed };
+      return r.project;
+    }),
+  },
+  {
     name: "trim_clip",
     description: "Move a clip's start or end edge to a time. Limited by the source media and neighbors (the answer says where it stopped and why); ripple=true shifts later clips instead of stopping at them.",
     input: S.obj({ clip_id: S.str("Clip id"), edge: S.str("Which edge", { enum: ["start", "end"] }), to: S.num("Seconds", { minimum: 0 }), ripple: S.bool("Shift later clips") }, ["clip_id", "edge", "to"]),
@@ -844,6 +938,54 @@ export const COMMANDS: Command[] = [
     description: "Constant speed for a video or audio clip (2 = twice as fast, 0.5 = slow motion). The clip's length changes; later clips on its track move with it.",
     input: S.obj({ clip_id: S.str("Clip id"), speed: S.num("Multiplier", { minimum: 0.05, maximum: 100 }) }, ["clip_id", "speed"]),
     run: (p, a) => ops.setSpeed(p, clipOrThrow(p, a.clip_id).clip.id, Number(a.speed)),
+  },
+  {
+    name: "add_audio_insert",
+    description: "Add an ordered audio insert to an audio track or a sounding clip. Track clips sum before inserts, then volume and pan; detectors keep state across cuts. Give exactly one track_id or clip_id. type eq is up to eight parametric bands, after the legacy three-band EQ. With preset, adds that complete chain (dialog_cleanup, podcast_voice, music_bed, broadcast_limiter); type is then omitted. Example: {track_id: 't_dialog', preset: 'dialog_cleanup'}. index is zero-based; omitted appends. A limiter holds sample peaks before subsequent inserts/faders, with 5 ms lookahead; the export master limiter is separate.",
+    input: S.obj({ track_id: S.str("Audio track id"), clip_id: S.str("Audio, video or compound clip id"), type: S.str("Processor type; required without preset", { enum: Object.keys(INSERT_NAMES) }), params: insertParamsSchema, index: S.num("Zero-based insertion position; omitted appends", { minimum: 0 }), preset: S.str("Add a complete cleanup chain", { enum: Object.keys(DYNAMICS_PRESETS) }) }),
+    run: (p, a) => commandError(() => editInsertOwner(p, a, list => {
+      if (!a.preset && !a.type) throw new CommandError("Give type or preset");
+      if (a.preset && (a.type || a.params)) throw new CommandError("A preset supplies its own types and parameters");
+      const added = a.preset ? presetInserts(a.preset as DynamicsPreset) : [newInsert(a.type as InsertType, a.params)];
+      if (list.length + added.length > 32) throw new CommandError("At most 32 inserts per track or clip");
+      const at = Math.min(list.length, Math.round(a.index as number ?? list.length));
+      return [...list.slice(0, at), ...added, ...list.slice(at)];
+    })),
+  },
+  {
+    name: "update_audio_insert",
+    description: "Change settings or bypass an audio insert by its id from describe_project. Omitted numbers retain their setting; bands replaces the EQ band list. Settings are clamped to each processor's safe ranges.",
+    input: S.obj({ insert_id: S.str("Insert id"), params: insertParamsSchema, on: S.bool("Enable the insert; false bypasses it without losing settings") }, ["insert_id"]),
+    run: (p, a) => commandError(() => editInsert(p, String(a.insert_id), (list, at) => list.map((i, n) => n === at ? { ...i, on: a.on as boolean ?? i.on, params: cleanInsertParams(i.type, { ...i.params, ...a.params as object }) } as Insert : i))),
+  },
+  {
+    name: "move_audio_insert",
+    description: "Move an insert within its track or clip's ordered chain. One move is one undo step; order changes the sound.",
+    input: S.obj({ insert_id: S.str("Insert id"), index: S.num("New zero-based position in this chain", { minimum: 0 }) }, ["insert_id", "index"]),
+    run: (p, a) => commandError(() => editInsert(p, String(a.insert_id), (list, at) => { const out = list.filter((_, n) => n !== at); out.splice(Math.min(out.length, Math.round(Number(a.index))), 0, list[at]); return out; })),
+  },
+  {
+    name: "remove_audio_insert",
+    description: "Remove an audio insert and its settings from its track or clip. Undo restores it.",
+    input: S.obj({ insert_id: S.str("Insert id") }, ["insert_id"]),
+    run: (p, a) => commandError(() => editInsert(p, String(a.insert_id), (list, at) => list.filter((_, n) => n !== at))),
+  },
+  {
+    name: "set_dynamics",
+    description: "Set a clip's gate, split-band de-esser, lookahead limiter and parametric EQ in one undo step. Each object updates the first matching insert or adds one; on false bypasses it. preset replaces the clip's insert chain with editable settings, then supplied objects override it. eq bands replaces up to eight bands. Existing legacy EQ/compressor remain. Tracks use add_audio_insert preset dialog_cleanup so one cleanup chain runs across every dialog cut.",
+    input: S.obj({ clip_id: S.str("Audio, video or compound clip id"), preset: S.str("Starting chain", { enum: Object.keys(DYNAMICS_PRESETS) }), gate: dynamicsSchema("gate"), deesser: dynamicsSchema("deesser"), limiter: dynamicsSchema("limiter"), eq: dynamicsSchema("eq") }, ["clip_id"]),
+    run: (p, a) => commandError(() => editInsertOwner(p, { clip_id: a.clip_id }, list => {
+      const out = a.preset ? presetInserts(a.preset as DynamicsPreset) : [...list];
+      for (const type of ["gate", "deesser", "limiter", "eq"] as const) {
+        if (!a[type]) continue;
+        const { on, ...params } = a[type] as Record<string, unknown>;
+        const at = out.findIndex(i => i.type === type), old = out[at];
+        const next = { ...(old ?? newInsert(type)), on: on as boolean ?? old?.on ?? true, params: cleanInsertParams(type, { ...old?.params, ...params }) } as Insert;
+        if (at < 0) out.push(next); else out[at] = next;
+      }
+      if (out.length > 32) throw new CommandError("At most 32 inserts per clip");
+      return out;
+    })),
   },
   {
     name: "set_compressor",
@@ -1039,6 +1181,23 @@ export const COMMANDS: Command[] = [
       return ids.reduce((q, id) => {
         const { clip } = clipOrThrow(q, id);
         const path = paramPath(clip, String(a.path));
+        if (path === "pitch") {
+          if (a.at !== undefined || hold) throw new CommandError("pitch is not keyframeable; omit at and hold");
+          if (Number(a.value) < -12 || Number(a.value) > 12) throw new CommandError("pitch is -12..12 semitones");
+          return fxEdit(q, { clip_ids: [id] }, "pitch shift", (c) => ({ ...c, pitch: Number(a.value) }) as Clip);
+        }
+        if (path === "inserts" || path.startsWith("inserts.")) throw new CommandError("Use update_audio_insert to edit insert settings");
+        const processor = /^(saturation|ringMod)\.(\w+)$/.exec(path);
+        if (processor) {
+          const key = processor[1] as "saturation" | "ringMod";
+          if (a.at !== undefined || hold) throw new CommandError(`${path} is not keyframeable; omit at and hold`);
+          const range = (FX_RANGES[key] as Record<string, [number, number]>)[processor[2]];
+          if (!range) throw new CommandError(`Unknown ${key} parameter ${processor[2]}`);
+          if (clip.type !== "audio" && clip.type !== "video") throw new CommandError(`${key} needs an audio or video clip`);
+          if (!clip[key]) throw new CommandError(`Apply a voice preset with ${key} first`);
+          const value = Number(a.value);
+          if (value < range[0] || value > range[1]) throw new CommandError(`${path} is ${range[0]}..${range[1]}`);
+        }
         // Without at, a keyed value went under its keys, where nothing reads
         // it, and the answer told it as set (ADR-110, as ADR-108's commands).
         keyedNeedsAt(clip, path, a.at);
@@ -1104,6 +1263,23 @@ export const COMMANDS: Command[] = [
     description: "Rename an imported media file in the project's library; the file on disk keeps its name. Clips without a name of their own show the new name.",
     input: S.obj({ asset_id: S.str("Media id from assets in describe_project"), name: S.str(`The new name, 1 to ${NAME_MAX} characters`) }, ["asset_id", "name"]),
     run: (p, a) => commandError(() => renameMedia(p, String(a.asset_id), String(a.name))),
+  },
+  {
+    name: "apply_stream_layout",
+    description: "Frame one VOD as ordinary grouped facecam and gameplay bands, with sound on gameplay alone. Omit facecam for a full-height gameplay crop. Changes a non-tall canvas to 1080x1920 and reports it. Regions are fractions of the source picture. The Stream layout group moves, trims and splits together; ungroup to edit timing separately.",
+    input: S.obj({ clip_id: S.str("Video clip of the VOD"),
+      facecam: STREAM_REGION_SCHEMA, gameplay: { ...STREAM_REGION_SCHEMA, description: "Gameplay source region; default the full source picture" },
+      split: S.num("Facecam share of the height excluding the gap; default 0.35", { minimum: 0.1, maximum: 0.9 }),
+      facecam_fit: S.str("Facecam fill (default) crops to its band; fit shows the whole region", { enum: ["fill", "fit"] }),
+      gap: S.num("Pixels between the bands; default 0", { minimum: 0, maximum: 1000 }),
+      border: { description: "Facecam band border, or none (default)", anyOf: [S.str("No border", { enum: ["none"] }), S.obj({ color: S.str("CSS border color"), width: S.num("Border width in canvas pixels", { minimum: 0, maximum: 100 }) }, ["color", "width"])] },
+      order: S.str("Band order; default facecam_top", { enum: ["facecam_top", "gameplay_top"] }),
+    }, ["clip_id"]),
+    run: (p, a, report) => commandError(() => {
+      const q = applyStreamLayout(p, String(a.clip_id), a as StreamOptions);
+      if (report && (q.width !== p.width || q.height !== p.height)) (report.notes ??= []).push("Canvas changed to 1080x1920 for the stream layout.");
+      return q;
+    }),
   },
   {
     name: "apply_layout",
@@ -1270,17 +1446,29 @@ export const COMMANDS: Command[] = [
       }, p),
   },
   {
+    name: "set_pitch",
+    description: "Shift sound by -12..12 semitones without changing speed, duration or timing. Works with reverse and speed curves. 0 resets it. Pitch is not keyframeable; use set_pitch or set_param pitch without at.",
+    input: S.obj({ clip_ids: S.ids("Audio or video clips"), semitones: S.num("Semitones relative to the original pitch; 12 is an octave up", { minimum: -12, maximum: 12 }) }, ["clip_ids", "semitones"]),
+    run: (p, a) => fxEdit(p, a, "pitch shift", (c) => ({ ...c, pitch: Number(a.semitones) }) as Clip),
+  },
+  {
+    name: "apply_voice_preset",
+    description: "Apply a voice changer as ordinary editable settings (pitch, EQ, compressor, filters, saturation, ring modulation, mono, echo and reverb). Replaces those settings and their keyframes; none clears them to defaults. Keeps volume, fades, timing and tape stop. The voice label is descriptive only. Fine-tune pitch with set_pitch and processor numbers with set_param (not keyframeable).",
+    input: S.obj({ clip_ids: S.ids("Audio or video clips"), preset: S.str("Voice character, or none to restore the preset's settings to defaults", { enum: ["none", ...Object.keys(VOICE_PRESETS)] }) }, ["clip_ids", "preset"]),
+    run: (p, a) => fxEdit(p, a, "voice changer", (c) => applyVoicePreset(c, String(a.preset))),
+  },
+  {
     name: "set_fades",
-    description: "Fade a clip's sound in and out, in SECONDS (a music bed: fade_in 1, fade_out 2). Works on audio clips and on video clips' own sound; a value left out keeps its fade, 0 removes it. Each fade is at most half the clip. Pictures fade with set_animation (slot in or out, type fade).",
-    input: S.obj({ clip_ids: S.ids("Audio or video clips"), fade_in: S.num("Seconds", { minimum: 0 }), fade_out: S.num("Seconds", { minimum: 0 }) }, ["clip_ids"]),
+    description: "Fade a clip's sound in and out, in SECONDS (a music bed: fade_in 1, fade_out 2). Works on audio clips and on video clips' own sound; a value left out keeps its fade, 0 removes it. curve sets both shapes, curve_in and curve_out override each side. Each fade is at most half the clip. Pictures fade with set_animation (slot in or out, type fade).",
+    input: S.obj({ clip_ids: S.ids("Audio or video clips"), fade_in: S.num("Seconds", { minimum: 0 }), fade_out: S.num("Seconds", { minimum: 0 }), curve: fadeCurveSchema(), curve_in: fadeCurveSchema(), curve_out: fadeCurveSchema() }, ["clip_ids"]),
     run: (p, a) => {
-      if (a.fade_in === undefined && a.fade_out === undefined) throw new CommandError("give fade_in, fade_out or both, in seconds");
+      if ([a.fade_in, a.fade_out, a.curve, a.curve_in, a.curve_out].every((x) => x === undefined)) throw new CommandError("give fade_in, fade_out (seconds), or a curve");
       return (a.clip_ids as Id[]).reduce((q, id) => {
         const { clip, track } = clipOrThrow(q, id);
         if (!("fadeIn" in clip)) throw new CommandError(`${clip.type} clips have no sound to fade; use set_animation with type fade for pictures`);
         if (track.locked) throw new CommandError(`track ${track.name} is locked`);
         const cap = (v: unknown) => Math.min(Math.floor(clip.duration / 2), Math.max(0, f(q, Number(v))));
-        return ops.updateClip(q, id, (c) => ({ ...c, ...(a.fade_in !== undefined ? { fadeIn: cap(a.fade_in) } : {}), ...(a.fade_out !== undefined ? { fadeOut: cap(a.fade_out) } : {}) }) as Clip);
+        return ops.updateClip(q, id, (c) => ({ ...c, ...(a.fade_in !== undefined ? { fadeIn: cap(a.fade_in) } : {}), ...(a.fade_out !== undefined ? { fadeOut: cap(a.fade_out) } : {}), ...((a.curve_in ?? a.curve) !== undefined ? { fadeInCurve: a.curve_in ?? a.curve } : {}), ...((a.curve_out ?? a.curve) !== undefined ? { fadeOutCurve: a.curve_out ?? a.curve } : {}) }) as Clip);
       }, p);
     },
   },
@@ -1339,7 +1527,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_crop",
-    description: `Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions of the source trimmed from each edge (0 keeps the edge; each pair must leave at least ${MIN_CROP * 100}% of the picture); edges left out keep their value. Or give ratio instead for the largest centered crop of that shape on each clip's source (original: uncropped). The crop is cut from the source before flips, scale and rotation, and the part kept stays where it was.`,
+    description: `Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions of the source trimmed from each edge (0 keeps the edge; each pair must leave at least ${MIN_CROP * 100}% of the picture); edges left out keep their value. Or give ratio instead for the largest centered crop of that shape on each clip's source (original: uncropped). feather softens inward in pixels at a 1080-tall render (0 is hard). The crop is cut from the source before flips, scale and rotation, and the part kept stays where it was.`,
     input: S.obj(
       {
         clip_ids: S.ids("Visual clips"),
@@ -1347,31 +1535,32 @@ export const COMMANDS: Command[] = [
         top: S.num("Fraction trimmed from the top", { minimum: 0, maximum: 1 - MIN_CROP }),
         right: S.num("Fraction trimmed from the right", { minimum: 0, maximum: 1 - MIN_CROP }),
         bottom: S.num("Fraction trimmed from the bottom", { minimum: 0, maximum: 1 - MIN_CROP }),
+        feather: S.num("Inward edge softness, pixels at a 1080-tall render", { minimum: 0, maximum: 1080 }),
         ratio: S.str("Crop to this shape, centered", { enum: CROP_RATIOS.filter((r) => r !== "free") }),
       },
       ["clip_ids"],
     ),
     run: (p, a) => {
       const ids = a.clip_ids as Id[];
-      const edges = Object.fromEntries((["left", "top", "right", "bottom"] as const).filter((k) => a[k] !== undefined).map((k) => [k, Number(a[k])])) as Partial<Crop>;
+      const edges = Object.fromEntries((["left", "top", "right", "bottom", "feather"] as const).filter((k) => a[k] !== undefined).map((k) => [k, Number(a[k])])) as Partial<Crop>;
       for (const id of ids) {
         const { clip } = clipOrThrow(p, id);
         if (!("crop" in clip)) throw new CommandError(`${clip.type} clips have no picture to crop`);
         if (a.ratio === undefined && !validCrop({ ...clip.crop, ...edges })) throw new CommandError(`the crop on ${id} must leave at least ${MIN_CROP * 100}% of the picture each way`);
       }
       if (a.ratio !== undefined) {
-        if (Object.keys(edges).length) throw new CommandError("give either edges or a ratio, not both");
-        return cropToRatio(p, ids, a.ratio as CropRatio);
+        if (Object.keys(edges).some((k) => k !== "feather")) throw new CommandError("give either edges or a ratio, not both");
+        return cropClips(cropToRatio(p, ids, a.ratio as CropRatio), ids, a.feather !== undefined ? { feather: Number(a.feather) } : {});
       }
       return cropClips(p, ids, edges);
     },
   },
   {
     name: "set_mask",
-    description: "CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs. With at (timeline seconds), the values given are keyed there: one with no keys yet first gets a key at the clip's start holding what it was, so two calls (the same values at the moment it leaves, the new ones where it lands) move the mask; on a mask this call makes, at is not used (the answer says so). A spotlight that follows a screen recording's zooms is add_callout.",
+    description: "Masks on pictures and adjustment layers (canvas fractions on an adjustment): shape linear (keeps above a line), mirror (a band), circle, rectangle, heart, star or path; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square); a path starts at unit width and height. A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs. With at (timeline seconds), the values given are keyed there: one with no keys yet first gets a key at the clip's start holding what it was, so two calls (the same values at the moment it leaves, the new ones where it lands) move the mask; on a mask this call makes, at is not used (the answer says so). For path, points are anchors in the mask's own frame as layer fractions; width/height multiply them before rotation and position. in/out are two-number bezier handle offsets; closed defaults true (false leaves an unfilled draft). Points do not animate; at keys only the mask transform. A spotlight that follows a screen recording's zooms is add_callout.",
     input: S.obj(
       {
-        clip_ids: S.ids("Visual clips"),
+        clip_ids: S.ids("Visual or adjustment clips"),
         shape: S.str("Mask shape", { enum: ["none", ...MASK_SHAPES] }),
         x: S.num("Center offset, fraction of the picture's width", { minimum: -1, maximum: 1 }),
         y: S.num("Center offset, fraction of the picture's height", { minimum: -1, maximum: 1 }),
@@ -1380,6 +1569,13 @@ export const COMMANDS: Command[] = [
         rotation: S.num("Degrees, clockwise", { minimum: -360, maximum: 360 }),
         feather: S.num("Edge softness", { minimum: 0, maximum: 1 }),
         radius: S.num("Rectangle corner roundness", { minimum: 0, maximum: 1 }),
+        points: { type: "array", description: "Path anchors (maximum 256), local layer fractions; absent handles are straight corners", items: S.obj({
+          x: S.num("Anchor X, fraction of the layer width", { minimum: -4, maximum: 4 }),
+          y: S.num("Anchor Y, fraction of the layer height", { minimum: -4, maximum: 4 }),
+          in: { type: "array", description: "Incoming bezier handle offset [x,y]", items: S.num("Handle offset in layer fractions", { minimum: -4, maximum: 4 }) },
+          out: { type: "array", description: "Outgoing bezier handle offset [x,y]", items: S.num("Handle offset in layer fractions", { minimum: -4, maximum: 4 }) },
+        }, ["x", "y"]) },
+        closed: S.bool("Close the path (default true); false keeps an unfilled draft"),
         invert: S.bool("Keep the outside instead"),
         aspect: S.num("The mask's width over its height in pixels (1: a round circle, a square); its height follows from width, or its width from a height given alone", { minimum: 0.05, maximum: 20 }),
         at: S.num("Timeline seconds, for animated values"),
@@ -1390,7 +1586,7 @@ export const COMMANDS: Command[] = [
       if (a.aspect !== undefined && a.width !== undefined && a.height !== undefined) throw new CommandError("give width or height with aspect, not both: aspect sets the other");
       for (const id of a.clip_ids as Id[]) {
         const { clip } = clipOrThrow(p, id);
-        if (clip.type === "audio" || clip.type === "adjustment") throw new CommandError(`${clip.type} clips have no picture to mask`);
+        if (clip.type === "audio") throw new CommandError(`${clip.type} clips have no picture to mask`);
         // The mask and its keys: kept, they animated the next mask (ADR-108).
         if (a.shape === "none") {
           p = ops.updateClip(p, clip.id, (c) => withoutKeys(omit(c as Clip & { mask?: unknown }, "mask") as Clip, MASK_PARAMS.map((k) => `mask.${k}`)));
@@ -1401,6 +1597,15 @@ export const COMMANDS: Command[] = [
         if (!now && a.shape === undefined) throw new CommandError(`clip ${id} has no mask yet: give a shape`);
         const shape = (a.shape as MaskShape | undefined) ?? now!.shape;
         let mask: Mask = now ? { ...now, shape } : newMask(shape, pictureAspect(p, clip, clip.start));
+        if (a.points !== undefined) {
+          const points = cleanMaskPoints(a.points);
+          if (!points) throw new CommandError("path points need finite anchors and two-number handles, at most 256 points");
+          if (shape !== "path") throw new CommandError("points require a path mask");
+          // ponytail: individual anchors are static; animate the mask transform
+          // with at today, add topology-aware point keys for morphing later.
+          mask = { ...mask, points, closed: a.closed !== false };
+        }
+        if (a.closed !== undefined) mask = { ...mask, closed: a.closed === true };
         if (a.invert !== undefined) mask = { ...mask, invert: a.invert === true };
         p = ops.updateClip(p, clip.id, (c) => ({ ...c, mask }) as Clip);
         const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
@@ -1409,7 +1614,7 @@ export const COMMANDS: Command[] = [
         // pixels wide for each tall on this picture (ADR-116).
         const sizes: Record<string, unknown> = { ...a };
         if (a.aspect !== undefined) {
-          const now = ops.findClip(p, clip.id)!.clip as VisualClip;
+          const now = ops.findClip(p, clip.id)!.clip as Exclude<Clip, { type: "audio" }>;
           const width = a.width !== undefined ? Number(a.width) : a.height !== undefined ? undefined : paramAt(now, "mask.width", rel ?? 0);
           const s = sizeForAspect({ width, height: a.height !== undefined ? Number(a.height) : undefined }, Number(a.aspect), pictureAspect(p, now, at));
           sizes.width = +s.width.toFixed(5);
@@ -2017,6 +2222,26 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "apply_default_transitions",
+    description: "Apply default transitions to touching cuts after clip_ids (omit for every cut on main). Video defaults to the preferred type and duration (initially dissolve, 0.5 s); audio to the preferred crossfade length (initially 0.5 s). kind both handles each clip by its kind. Existing transitions stay unless replace is true; locked tracks and gaps are skipped. Durations shorten to each join's limits. One edit, with applied and skipped cuts and reasons.",
+    input: S.obj({
+      clip_ids: S.ids("Clips before the cuts; omitted means every cut on the main track"),
+      kind: S.str("Which cuts (default video)", { enum: ["video", "audio", "both"] }),
+      type: S.str("Override the preferred video transition", { enum: Object.keys(TRANSITIONS) }),
+      duration: S.num("Override the video/audio length in seconds; shortened to fit each join", { minimum: 0.05 }),
+      replace: S.bool("Replace existing transitions or crossfades (default false)"),
+    }),
+    run: (p, a, report) => {
+      const result = applyDefaultTransitions(p, a as DefaultTransitionOptions);
+      if (report) {
+        report.cuts ??= { applied: [], skipped: [] };
+        report.cuts.applied.push(...result.cuts.applied);
+        report.cuts.skipped.push(...result.cuts.skipped);
+      }
+      return result.project;
+    },
+  },
+  {
     name: "set_transition",
     description: "Put a transition on the cut after a clip (the next clip must touch it). type 'none' removes it.",
     input: S.obj({ clip_id: S.str("The clip before the cut"), type: S.str("Transition", { enum: [...Object.keys(TRANSITIONS), "none"] }), duration: S.num("Seconds", { minimum: 0.05 }) }, ["clip_id", "type"]),
@@ -2181,17 +2406,19 @@ export const COMMANDS: Command[] = [
   {
     name: "add_marker",
     description: "Drop a marker at a time (chapters, beats, notes).",
-    input: S.obj({ at: S.num("Seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color") }, ["at"]),
-    run: (p, a) => ops.addMarker(p, createMarker(f(p, a.at), String(a.label ?? ""), a.color ? String(a.color) : undefined)),
+    input: S.obj({ at: S.num("Seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color"), duration: S.num("Range duration in seconds; zero is a point", { minimum: 0 }), chapter: S.bool("Include this marker in chapter-enabled MP4 exports") }, ["at"]),
+    run: (p, a) => ops.addMarker(p, { ...createMarker(f(p, a.at), String(a.label ?? ""), a.color ? String(a.color) : undefined), ...(a.duration !== undefined ? { duration: f(p, a.duration) } : {}), ...(a.chapter !== undefined ? { chapter: a.chapter === true } : {}) }),
   },
   {
     name: "update_marker",
     description: "Edit a timeline marker's position, label or color without moving clips. Times are seconds. A marker that follows a clip (describe_project names its clip) stops following it when moved; detach: true stops it where it stands.",
-    input: S.obj({ marker_id: S.str("Marker id"), at: S.num("Timeline seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color"), detach: S.bool("Stop following its clip, staying where it is") }, ["marker_id"]),
+    input: S.obj({ marker_id: S.str("Marker id"), at: S.num("Timeline seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color"), duration: S.num("Range duration in seconds; zero restores a point", { minimum: 0 }), chapter: S.bool("Include this marker in chapter-enabled MP4 exports"), detach: S.bool("Stop following its clip, staying where it is") }, ["marker_id"]),
     run: (p, a) => updateMarker(p, String(a.marker_id), {
       ...(a.at !== undefined ? { frame: f(p, a.at) } : {}),
       ...(a.label !== undefined ? { label: String(a.label) } : {}),
       ...(a.color !== undefined ? { color: String(a.color) } : {}),
+      ...(a.duration !== undefined ? { duration: f(p, a.duration) } : {}),
+      ...(a.chapter !== undefined ? { chapter: a.chapter === true } : {}),
       ...(a.detach === true ? { detach: true } : {}),
     }),
   },
@@ -2305,6 +2532,12 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "add_highlight_markers",
+    description: "Add reviewed highlight ranges in SOURCE seconds as Highlight N range markers following a timeline clip. Replaces that clip's previous Highlight N markers, in one undo step. Ranges must be entirely inside the clip.",
+    input: S.obj({ clip_id: S.str("Source video or audio clip on the timeline"), ranges: { type: "array", description: "Ranked highlight windows in source seconds", items: S.obj({ start: S.num("Source start in seconds", { minimum: 0 }), end: S.num("Source end in seconds", { minimum: 0 }) }, ["start", "end"]) } }, ["clip_id", "ranges"]),
+    run: (p, a) => highlightMarkers(p, String(a.clip_id), a.ranges as { start: number; end: number }[]),
+  },
+  {
     name: "add_markers",
     description: "Drop several markers at once at TIMELINE seconds (beats, scene cuts, chapters). A time that already has a marker with the same label is skipped, so running a detector twice does not double its markers.",
     input: S.obj(
@@ -2328,7 +2561,7 @@ export const COMMANDS: Command[] = [
   {
     name: "cut_to_beats",
     description:
-      "Cut a montage to the music in one call: lay shots end to end on the main track so every cut lands on the beat grid. The grid is the Beat markers (mark_beats or analyze_music), Bar or Phrase markers (grid bars or phrases, from analyze_music with markers [\"bars\"] or [\"phrases\"]), or beats: your own timeline seconds. Each shot lasts `every` grid steps (default 2 beats, or 1 bar or phrase), or the steps in `pattern` in turn ([4, 4, 2, 2, 1, 1] speeds up), or its own `beats`. The first shot starts at `start`; when no grid point is there, the first one after it counts as beat one, so an intro stays inside the first shot. A shot reads its media from `in` (default: where the last shot of the same file ended, so one long clip gives many different shots), slid back inside the file if it would run past the end; media too short for its slot ends on an earlier grid point. Stops when the shots or the grid run out, or at `end`; clips already there are overwritten. Video shots are muted (mute false keeps their sound). Example: {\"media\": [{\"asset_id\": \"a_1\"}, {\"asset_id\": \"a_2\", \"in\": 3}, {\"asset_id\": \"a_1\", \"beats\": 4}], \"pattern\": [2, 2, 1, 1]}.",
+      "Cut a montage to the music in one call: lay shots end to end on the main track so every cut lands on the beat grid. The grid is the Beat markers (mark_beats or analyze_music), Bar or Phrase markers (grid bars or phrases, from analyze_music with markers [\"bars\"] or [\"phrases\"]), or beats: your own timeline seconds. Each shot lasts `every` grid steps (default 2 beats, or 1 bar or phrase), or the steps in `pattern` in turn ([4, 4, 2, 2, 1, 1] speeds up), or its own `beats`. The first shot starts at `start`; when no grid point is there, the first one after it counts as beat one, so an intro stays inside the first shot. A shot reads its media from `in` (default: where the last shot of the same file ended, so one long clip gives many different shots), slid back inside the file if it would run past the end; media too short for its slot ends on an earlier grid point. Stops when the shots or the grid run out, or at `end` (an explicit end is also the final boundary, so the last shot can cover the score's ring-out); clips already there are overwritten. Video shots are muted (mute false keeps their sound). Example: {\"media\": [{\"asset_id\": \"a_1\"}, {\"asset_id\": \"a_2\", \"in\": 3}, {\"asset_id\": \"a_1\", \"beats\": 4}], \"pattern\": [2, 2, 1, 1]}.",
     input: S.obj(
       {
         media: {
@@ -2349,7 +2582,7 @@ export const COMMANDS: Command[] = [
         every: { type: "integer", minimum: 1, maximum: 64, description: "Grid steps per shot (default 2 for beats, 1 for bars or phrases)" },
         pattern: { type: "array", items: { type: "integer", minimum: 1, maximum: 64 }, description: "Grid steps per shot, cycling: [4, 4, 2, 2, 1, 1]" },
         start: S.num("Timeline seconds the first shot starts (default 0)", { minimum: 0 }),
-        end: S.num("Timeline seconds to stop by: no cut after it", { minimum: 0 }),
+        end: S.num("Timeline seconds to stop by; also the final boundary when the beat grid ends before the score's ring-out", { minimum: 0 }),
         track_id: S.str("A video track instead of the main track"),
         mute: S.bool("Mute the shots' own sound (default true: the music carries a montage)"),
       },
@@ -2469,11 +2702,12 @@ export const COMMANDS: Command[] = [
   {
     name: "set_crossfade",
     description:
-      "Crossfade an audio clip into the next clip on its track, which starts where it ends (two pieces of a song, two songs, two takes of a bed): at equal power over seconds, ending at the cut, the next clip's sound rising over the seconds before its start from its file before its in-point (it needs that much), this one falling over its last. 0 makes it a butt cut again. A butt cut ramps each side over 4 ms to stop a click, which leaves a few milliseconds of near-silence at the join; preview_audio's edges measure it. Both clips play at their own speed. Example: {\"clip_id\": \"c_3\", \"seconds\": 0.03}.",
-    input: S.obj({ clip_id: S.str("The audio clip before the join"), seconds: S.num(`Seconds of crossfade (0 removes it; at most ${MAX_CROSSFADE})`, { minimum: 0, maximum: MAX_CROSSFADE }) }, ["clip_id", "seconds"]),
+      "Crossfade an audio clip into the next clip on its track, which starts where it ends (two pieces of a song, two songs, two takes of a bed): with the chosen curve (default equalPower) over seconds, ending at the cut, the next clip's sound rising over the seconds before its start from its file before its in-point (it needs that much), this one falling over its last. 0 makes it a butt cut again. A butt cut ramps each side over 4 ms to stop a click, which leaves a few milliseconds of near-silence at the join; preview_audio's edges measure it. Both clips play at their own speed. Example: {\"clip_id\": \"c_3\", \"seconds\": 0.03}.",
+    input: S.obj({ clip_id: S.str("The audio clip before the join"), seconds: S.num(`Seconds of crossfade (0 removes it; at most ${MAX_CROSSFADE})`, { minimum: 0, maximum: MAX_CROSSFADE }), curve: fadeCurveSchema() }, ["clip_id", "seconds"]),
     run: (p, a) => {
       try {
-        return setCrossfade(p, String(a.clip_id), Number(a.seconds));
+        const q = setCrossfade(p, String(a.clip_id), Number(a.seconds));
+        return a.curve !== undefined && Number(a.seconds) > 0 ? ops.updateClip(q, String(a.clip_id), (c) => ({ ...c, crossfadeCurve: a.curve as FadeCurve }) as Clip) : q;
       } catch (e) {
         throw e instanceof MusicCutError ? new CommandError(e.message) : e;
       }
@@ -2978,7 +3212,7 @@ export const COMMANDS: Command[] = [
           description: "The steps, in order",
           items: S.obj({ command: S.str("Command name, e.g. set_animation"), args: { type: "object", description: "That command's arguments" } }, ["command"]),
         },
-        quiet: S.bool("Answer only the ids of the clips added, changed and removed, with any notes (every command a batch takes accepts it on its own too)"),
+        quiet: S.bool("Answer only the ids of the clips added, changed and removed, with any notes; additions follow step order and added_by_step maps adding step numbers to their ids (every command a batch takes accepts it on its own too)"),
       },
       ["commands"],
     ),
@@ -3004,6 +3238,7 @@ export const COMMANDS: Command[] = [
           const before = new Set(ids(q)), tracksBefore = new Set(q.tracks.map((t) => t.id));
           const next = runNested(q, step.command, ref(step.args ?? {}), report);
           added.push(ids(next).filter((id) => !before.has(id)));
+          if (report && added[i].length) (report.added_by_step ??= {})[String(i + 1)] = added[i];
           addedTracks.push(next.tracks.map((t) => t.id).filter((id) => !tracksBefore.has(id)));
           return next;
         } catch (e) {
@@ -3221,10 +3456,10 @@ export function describeProject(p: Project) {
     fps: +(p.fps.num / p.fps.den).toFixed(3),
     duration: s(ops.projectDuration(p)),
     ...(p.masterVolume !== undefined ? { master_volume: p.masterVolume } : {}),
-    assets: p.assets.map((a) => ({ id: a.id, kind: a.kind, name: a.name, duration: a.duration, width: a.width, height: a.height, hasAudio: a.hasAudio, ...(a.animated ? { animated: true, looping: true } : {}), ...(a.musicGrid ? { music_grid: { bpm: a.musicGrid.bpm, first_downbeat: a.musicGrid.firstDownbeat, ...(a.musicGrid.sections ? { sections: a.musicGrid.sections } : {}) } } : {}) })),
+    assets: p.assets.map((a) => ({ ...(a.playbackProxy ? { proxy: proxyState(a), proxy_size: a.playbackProxy.size } : {}), id: a.id, kind: a.kind, name: a.name, duration: a.duration, width: a.width, height: a.height, hasAudio: a.hasAudio, ...(a.animated ? { animated: true, looping: true } : {}), ...(a.musicGrid ? { music_grid: { bpm: a.musicGrid.bpm, first_downbeat: a.musicGrid.firstDownbeat, ...(a.musicGrid.sections ? { sections: a.musicGrid.sections } : {}) } } : {}) })),
     tracks: p.tracks.map(track),
     // A marker that follows a clip (a song's beat) names it.
-    markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color, ...(m.follows ? { clip: m.follows.clip } : {}) })),
+    markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color, ...(m.duration !== undefined ? { duration: s(m.duration), duration_frames: m.duration } : {}), ...(m.chapter !== undefined ? { chapter: m.chapter } : {}), ...(m.follows ? { clip: m.follows.clip } : {}) })),
     ...(p.luts?.length ? { luts: p.luts.map((l) => ({ id: l.id, name: l.name, kind: l.kind, size: l.size })) } : {}),
     ...(p.brand ? { brand: p.brand } : {}),
     // Nested timelines, described like the project's (times their own).
@@ -3246,6 +3481,7 @@ export function describeProject(p: Project) {
       ...(t.solo ? { solo: true } : {}),
       ...(t.volume !== 1 ? { volume: +t.volume.toFixed(4) } : {}),
       ...(t.pan ? { pan: t.pan } : {}),
+      ...(t.inserts?.length ? { inserts: t.inserts } : {}),
       ...(t.color ? { color: t.color } : {}),
       ...(t.height ? { height: t.height } : {}),
       clips: t.clips.map((c) => ({
@@ -3270,16 +3506,23 @@ export function describeProject(p: Project) {
         // What else departs from the defaults, so an agent can check its work.
         ...(c.disabled ? { disabled: true } : {}),
         ...(c.name ? { name: c.name } : {}),
-        ...(c.group ? { group: c.group } : {}),
+        ...(c.group ? { group: c.group, ...(c.streamLayout ? { group_name: "Stream layout", stream_layout: c.streamLayout } : {}) } : {}),
         ...(c.labelColor ? { label: c.labelColor } : {}),
         ...("pan" in c && c.pan ? { pan: c.pan } : {}),
         ...("fill" in c && c.fill ? { fill: c.fill } : {}),
         ...("eq" in c && c.eq ? { eq: c.eq } : {}),
+        ...("inserts" in c && c.inserts?.length ? { inserts: c.inserts, dynamics: c.inserts.filter(i => ["gate", "deesser", "limiter", "eq"].includes(i.type)) } : {}),
         ...("compressor" in c && c.compressor ? { compressor: compressorPreset(c.compressor) } : {}),
         // How duck_under_speech dipped it: a voice line that changes dips it again so.
         ...("duck" in c && c.duck ? { ducked: { ...(c.duck.voiceAboveMusicLu !== undefined ? { voice_above_music_lu: c.duck.voiceAboveMusicLu } : {}), ...(c.duck.minLineLu !== undefined ? { min_line_lu: c.duck.minLineLu } : {}), ...(c.duck.maxLineLu !== undefined ? { max_line_lu: c.duck.maxLineLu } : {}), ...(c.duck.depth !== undefined ? { depth: c.duck.depth } : {}), ...(c.duck.openAt?.length ? { open_at: c.duck.openAt } : {}), ...(c.duck.minGap !== undefined ? { min_gap: c.duck.minGap } : {}), ...(c.duck.release !== undefined ? { release: c.duck.release } : {}), ...(c.duck.track ? { track: true } : {}) } } : {}),
         ...(c.type === "audio" && c.crossfade ? { crossfade: c.crossfade } : {}),
         ...soundFxSummary(c),
+        ...("pitch" in c && c.pitch ? { pitch: c.pitch } : {}),
+        ...("voice" in c && c.voice ? { voice: c.voice } : {}),
+        ...("mono" in c && c.mono ? { mono: true } : {}),
+        ...("fadeInCurve" in c && c.fadeInCurve ? { fade_in_curve: c.fadeInCurve } : {}),
+        ...("fadeOutCurve" in c && c.fadeOutCurve ? { fade_out_curve: c.fadeOutCurve } : {}),
+        ...("crossfadeCurve" in c && c.crossfadeCurve ? { crossfade_curve: c.crossfadeCurve } : {}),
         ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),
         ...("blend" in c && c.blend !== "normal" ? { blend: c.blend } : {}),
         ...((c.type === "video" || c.type === "image") && c.chromaKey?.enabled ? { chroma_key: c.chromaKey.color } : {}),
@@ -3388,10 +3631,22 @@ function placement(t: Transform) {
   return Object.keys(out).length ? { transform: out } : {};
 }
 
+/** Masks on pictures and adjustments share the command's inspectable shape. */
+function maskSummary(m: Mask | undefined) {
+  if (!m) return {};
+  const r = (v: number) => +v.toFixed(4);
+  return { mask: { shape: m.shape, x: r(m.x), y: r(m.y), width: r(m.width), height: r(m.height),
+    ...(m.rotation ? { rotation: r(m.rotation) } : {}), ...(m.feather ? { feather: r(m.feather) } : {}),
+    ...(m.radius ? { radius: r(m.radius) } : {}), ...(m.invert ? { invert: true } : {}),
+    ...(m.shape === "path" ? { points: m.points ?? [], closed: m.closed !== false } : {}),
+  } };
+}
+
 /** Shapes, mattes, motion blur, edges and wiggles, for describeProject
  * (ADR-056 to ADR-059, ADR-062): what an agent needs to check its graphics. */
 function graphicsSummary(c: Clip) {
-  if (!("transform" in c)) return {};
+  if (c.type === "audio") return {};
+  if (c.type === "adjustment") return maskSummary(c.mask);
   const r = (v: number) => +v.toFixed(4);
   const s = c.type === "color" ? c.shape : undefined;
   return {
@@ -3411,16 +3666,12 @@ function graphicsSummary(c: Clip) {
           },
         }
       : {}),
-    // A mask and a crop, as set_mask and set_crop take them, so a framed
-    // picture (a round picture-in-picture, a split screen's half) can be checked.
-    ...("mask" in c && c.mask ? { mask: { shape: c.mask.shape, x: r(c.mask.x), y: r(c.mask.y), width: r(c.mask.width), height: r(c.mask.height), ...(c.mask.rotation ? { rotation: r(c.mask.rotation) } : {}), ...(c.mask.feather ? { feather: r(c.mask.feather) } : {}), ...(c.mask.radius ? { radius: r(c.mask.radius) } : {}), ...(c.mask.invert ? { invert: true } : {}) } } : {}),
-    ...("crop" in c && c.crop && c.crop.left + c.crop.right + c.crop.top + c.crop.bottom > 0 ? { crop: { left: r(c.crop.left), top: r(c.crop.top), right: r(c.crop.right), bottom: r(c.crop.bottom) } } : {}),
+    // The same fields set_mask/set_crop accept, so agents can inspect them.
+    ...maskSummary(c.mask),
+    ...("crop" in c && c.crop && c.crop.left + c.crop.right + c.crop.top + c.crop.bottom + (c.crop.feather ?? 0) > 0 ? { crop: { left: r(c.crop.left), top: r(c.crop.top), right: r(c.crop.right), bottom: r(c.crop.bottom), ...(c.crop.feather ? { feather: r(c.crop.feather) } : {}) } } : {}),
     ...(c.trackMatte ? { track_matte: { mode: c.trackMatte.mode, matte: c.trackMatte.clipId ?? "above" } } : {}),
     ...(c.motionBlur ? { motion_blur: { shutter_angle: c.motionBlur.shutter } } : {}),
     ...(c.edge ? { edge: c.edge } : {}),
-    // The mask as set_mask takes it: describe_project left it out, so a
-    // model could not see the masks it had set (ADR-099).
-    ...(c.mask ? { mask: { shape: c.mask.shape, x: r(c.mask.x), y: r(c.mask.y), width: r(c.mask.width), height: r(c.mask.height), ...(c.mask.rotation ? { rotation: r(c.mask.rotation) } : {}), ...(c.mask.feather ? { feather: r(c.mask.feather) } : {}), ...(c.mask.radius ? { radius: r(c.mask.radius) } : {}), ...(c.mask.invert ? { invert: true } : {}) } } : {}),
     ...(c.shadow ? { shadow: c.shadow } : {}),
     ...(c.border ? { border: c.border } : {}),
     ...(c.wiggle ? { wiggle: Object.fromEntries(Object.entries(c.wiggle).map(([k, w]) => [k, { frequency: w.frequency, amplitude: r(w.amplitude), ...(w.strength !== undefined ? { strength: w.strength } : {}), seed: w.seed }])) } : {}),
@@ -3483,7 +3734,10 @@ export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyl
  * without sound of their own (compound clips mix many; edit inside). */
 function fxEdit(p: Project, a: Record<string, unknown>, what: string, fn: (c: Clip) => Clip): Project {
   const ids = a.clip_ids as Id[];
-  ids.forEach((id) => clipOrThrow(p, id));
+  ids.forEach((id) => {
+    const { track } = clipOrThrow(p, id);
+    if (track.locked) throw new CommandError(`track ${track.name} is locked`);
+  });
   return ids.reduce(
     (q, id) =>
       ops.updateClip(q, id, (c) => {
@@ -3517,6 +3771,12 @@ function withoutFx(c: Clip, key: FxKey, paths: string[] = []): Clip {
 
 /** Lifecycle operations use the app host; their schemas live beside edits. */
 export const PROJECT_FILE_COMMANDS = [
+  { name: "import_timeline", description: "Import an OpenTimelineIO (.otio) or FCPXML (.fcpxml/.xml) timeline as a new project, preserving the open project. Desktop resolves media paths beside the timeline; missing media stays as relinkable placeholders. Answers what was imported and warnings for unsupported items. The web picker accepts a file and resolves HTTP(S) media URLs only.", input: S.obj({ file: S.str("Absolute desktop path to the timeline file; omit to choose a file in the desktop or web picker") }) },
+  { name: "export_timeline", description: "Save the timeline as OpenTimelineIO, FCPXML 1.10 or CMX 3600 EDL through the platform save path. Desktop writes into folder (or its usual exports folder), with numbered names when taken. Web uses a save dialog or download. EDL writes the main video track plus one file per audio track. Answers file paths and format limitations; does not copy media.", input: S.obj({ format: S.str("Timeline interchange format", { enum: ["otio", "fcpxml", "edl"] }), folder: S.str("Absolute destination folder, created if missing (desktop only); omit for the usual exports folder") }, ["format"]) },
   { name: "collect_project", description: "Copy the project JSON and its local media (proxies, LUTs and cutouts too) into a new folder named after the project (numbered when the name is taken), so it opens on another computer; nothing existing is overwritten. folder (an absolute path, created if missing) is where that new folder goes; without it the native dialog asks. Desktop only (the web downloads the JSON from File > Collect files). Answers the collected project.json's path.", input: S.obj({ folder: S.str("Absolute folder the collected project's new folder goes in, created if missing (desktop only); default: ask in the native dialog") }) },
   { name: "open_project_file", description: "Open a project JSON as a new project identity. Desktop resolves relative media beside the file; missing media can be relinked. Omit path to use the picker. Answers a summary (name, canvas, fps, duration, counts); describe_project has the timeline.", input: S.obj({ path: S.str("Absolute desktop path to a project JSON file; omit for the native or browser picker") }) },
 ];
+
+function fadeCurveSchema() {
+  return S.str("Fade shape: linear (steady amplitude), equalPower (sine, steady combined power), logarithmic (fast rise), exponential (slow rise), sCurve (smooth at both ends). Omitted keeps today's shape: linear fades, equalPower crossfades.", { enum: Object.keys(FADE_CURVES) });
+}

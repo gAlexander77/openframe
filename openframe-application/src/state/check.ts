@@ -1,3 +1,5 @@
+import { memoryOwners } from "../engine/memory";
+import { retainedBytes } from "../lib/memory";
 // The project check (lib/designCheck.ts) run for a person: the library's
 // Check tab, File > Check project and the export dialog's Check row
 // (ADR-111). The same measuring an agent's check_project runs (it calls
@@ -43,12 +45,12 @@ export const MAX_JOINS = 24;
  * says why; it never fails the check. `progress` hears each step; `signal`
  * stops it between steps (an AbortError).
  */
-export async function measureForCheck(p: Project, opts: { progress?: (p: MeasureProgress) => void; signal?: AbortSignal } = {}): Promise<Measured> {
+export async function measureForCheck(p: Project, opts: { progress?: (p: MeasureProgress) => void; signal?: AbortSignal; sound?: boolean } = {}): Promise<Measured> {
   const out: Measured = {};
   const { targets, skipped } = contrastTargets(p);
   const frames = [...new Set(targets.flatMap((t) => [...t.samples, ...(t.fades ?? [])].map((s) => s.frame)))].sort((a, b) => a - b);
-  const tails = tailTargets(p);
-  const allJoins = joinTargets(p), joins = allJoins.slice(0, MAX_JOINS);
+  const tails = opts.sound === false ? [] : tailTargets(p);
+  const allJoins = opts.sound === false ? [] : joinTargets(p), joins = allJoins.slice(0, MAX_JOINS);
   // Rendering a frame, decoding a sound's end and hearing a join take about as long.
   const steps = Math.max(1, frames.length + 1 + tails.length + joins.length);
   let done = 0;
@@ -172,6 +174,8 @@ const set = (patch: Partial<CheckState>) => {
   state = { ...state, ...patch };
   listeners.forEach((l) => l());
 };
+
+memoryOwners.register("project_check", () => ({ bytes: retainedBytes(state.last), count: state.last ? 1 : 0, estimated: true }), () => { state.job?.abort.abort(); set({ last: null, error: null }); });
 
 export const checkStore = {
   get: () => state,

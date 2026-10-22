@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { varispeed, wsola, type PositionMap, type Retimer } from "./stretch";
+import { pitchShift, varispeed, wsola, type PositionMap, type Retimer } from "./stretch";
 
 const SR = 48000;
 
@@ -112,7 +112,7 @@ describe("wsola", () => {
     // Speed ramps from 0.5x to 2x over 2 s of output; the tone stays put.
     const pos: PositionMap = (n) => {
       const t = n / SR;
-      return (0.5 * t + (1.5 * t * t) / 4) * SR; // ∫ (0.5 + 0.75 t) dt
+      return (0.5 * t + (1.5 * t * t) / 4) * SR; // âˆ« (0.5 + 0.75 t) dt
     };
     const x = sine(660, 4);
     const y = run(wsola(pos, SR), [x], 0, 2 * SR)[0];
@@ -136,4 +136,55 @@ describe("wsola", () => {
     // Typically ~40x on a desktop; the bound only catches a pathological slowdown.
     expect(8 / seconds).toBeGreaterThan(5);
   });
+});
+
+/** First strong autocorrelation peak, interpolated to fractional lag. */
+function correlatedPitch(x: Float32Array): number {
+  const start = 5000, length = 4000;
+  const score = (lag: number) => {
+    let xy = 0, xx = 0, yy = 0;
+    for (let i = start; i < start + length; i++) { const a = x[i], b = x[i + lag]; xy += a * b; xx += a * a; yy += b * b; }
+    return xy / Math.sqrt(xx * yy);
+  };
+  let best = 0;
+  let before = score(24), now = score(25);
+  for (let lag = 25; lag < 600; lag++) {
+    const after = score(lag + 1);
+    if (now > 0.85 && now > before && now >= after) { best = lag; break; }
+    before = now; now = after;
+  }
+  if (!best) return NaN;
+  const a = score(best - 1), b = score(best), c = score(best + 1);
+  return SR / (best + 0.5 * (a - c) / (a - 2 * b + c));
+}
+
+describe("independent pitch shift", () => {
+  for (const [speed, semitones] of [[1, 12], [1, -12], [2, 5], [0.5, -5]]) {
+    it(`${semitones} semitones at ${speed}x keeps the time map and joins blocks`, () => {
+      const input = sine(440, 2.2);
+      const y = run(pitchShift(constant(speed), SR, semitones), [input], 0, 2 * SR / speed, 24000)[0];
+      expect(y.length / SR).toBeCloseTo(2 / speed, 8);
+      const expected = 440 * 2 ** (semitones / 12);
+      expect(Math.abs(correlatedPitch(y) - expected)).toBeLessThan(3);
+      let own = 0, join = 0;
+      for (let i = 4000; i < y.length - 4000; i++) if (i % 24000 > 8 && i % 24000 < 23992) own = Math.max(own, Math.abs(y[i] - y[i - 1]));
+      for (let i = 24000; i < y.length - 4000; i += 24000) join = Math.max(join, Math.abs(y[i] - y[i - 1]));
+      expect(join).toBeLessThanOrEqual(own * 1.01);
+      const alternate = run(pitchShift(constant(speed), SR, semitones), [input], 0, y.length, 3001)[0];
+      for (let i = 4000; i < y.length - 4000; i += 997) expect(alternate[i]).toBeCloseTo(y[i], 6);
+    });
+  }
+  it("composes pitch with a speed ramp and with tape pitch", () => {
+    const pos = (n: number) => n * 0.5 + n * n / (4 * SR);
+    const y = run(pitchShift(pos, SR, 7), [sine(440, 4)], 0, 2 * SR)[0];
+    expect(correlatedPitch(y)).toBeCloseTo(440 * 2 ** (7 / 12), 0);
+    const tape = run(pitchShift(constant(2), SR, 5, true), [sine(440, 3)], 0, SR)[0];
+    expect(correlatedPitch(tape)).toBeCloseTo(880 * 2 ** (5 / 12), 0);
+  });
+});
+
+it("autocorrelation detects the fundamental rather than accepting a subharmonic", () => {
+  expect(correlatedPitch(sine(440, 1))).toBeCloseTo(440, 0);
+  expect(correlatedPitch(sine(220, 1))).toBeCloseTo(220, 0);
+  expect(correlatedPitch(sine(880, 1))).toBeCloseTo(880, 0);
 });

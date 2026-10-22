@@ -1,22 +1,15 @@
+import { modelWorker } from "./modelWorker";
 // The ambience worker (ambience.worker.ts), from the main thread: one bed
 // at a time, canceled with its signal.
 
 import { workerRequest } from "../lib/workerRequest";
 
-let worker: Worker | null = null;
+const managed = modelWorker("worker_ambience", () => new Worker(new URL("./ambience.worker.ts", import.meta.url), { type: "module" }));
 let nextId = 1;
 
 async function call<T>(message: Record<string, unknown>, onProgress?: (p: number) => void, signal?: AbortSignal): Promise<T> {
-  worker ??= new Worker(new URL("./ambience.worker.ts", import.meta.url), { type: "module" });
-  const w = worker;
-  try {
-    return await workerRequest<T>(w, { id: nextId++, ...message }, { onDownload: onProgress, signal });
-  } catch (e) {
-    // A canceled bed cannot be stopped mid-loop: start a fresh worker.
-    w.terminate();
-    if (worker === w) worker = null;
-    throw e;
-  }
+  return managed.run("synthesis", 0, (worker, active) =>
+    workerRequest<T>(worker, { id: nextId++, ...message }, { onDownload: onProgress, signal: active }), signal);
 }
 
 /** Bed `bed` as a stereo WAV file at `rate`. */

@@ -4,6 +4,7 @@
 // a GPU; the compositor only draws what this returns. Preview and export use
 // the same plan, which is what makes export look like the preview.
 
+import { DEFAULT_ADJUST } from "../project/defaults";
 import { ANIMATIONS, effectDefaults, FILTERS, IDENTITY_ANIM, type AnimState } from "../catalog";
 import { resolveGrade, type GradeParams } from "../grade";
 import { ease, paramAt } from "../keyframes";
@@ -144,6 +145,7 @@ export type PlanItem =
     }
   | {
       kind: "adjust";
+      mask?: Mask;
       clipId: Id;
       opacity: number;
       adjust: Adjust;
@@ -190,7 +192,7 @@ const MASK_PARAMS = ["x", "y", "width", "height", "rotation", "feather", "radius
 
 /** The clip's mask at frame r, keyframes applied; the stored object when
  * nothing on it is animated. */
-function resolveMask(clip: VisualClip, r: number): Mask | undefined {
+export function resolveMask(clip: VisualClip | AdjustmentClip, r: number): Mask | undefined {
   const m = clip.mask;
   if (!m || !MASK_PARAMS.some((k) => clip.keyframes?.[`mask.${k}`]?.length)) return m;
   const out = { ...m };
@@ -448,7 +450,7 @@ export function canvasLayer(p: Project, clip: VisualClip, layer: Layer): Layer |
   const fill = clip.canvas;
   if (!fill) return null;
   const base: Layer = { ...layer, clipId: `${layer.clipId}#canvas`, x: 0, y: 0, rotation: 0, flipX: false, flipY: false, opacity: 1, blend: "normal", mask: undefined, chromaKey: undefined, matte: undefined, effects: [], blur: 0, shadow: undefined, border: undefined, tilt: undefined };
-  if (fill.type === "color") return { ...base, source: { kind: "color", color: fill.color } };
+  if (fill.type === "color") return { ...base, scale: 1, scaleY: undefined, crop: { left: 0, top: 0, right: 0, bottom: 0 }, motion: undefined, edge: undefined, trackMatte: undefined, adjust: { ...DEFAULT_ADJUST }, grade: undefined, tone: undefined, source: { kind: "color", color: fill.color } };
   if (clip.type !== "video" && clip.type !== "image") return null;
   const a = getAsset(p, clip.assetId);
   if (!a?.width || !a.height) return null;
@@ -460,6 +462,8 @@ export function canvasLayer(p: Project, clip: VisualClip, layer: Layer): Layer |
     // Keep the clip's own source (and so its decode cursor's frame).
     clipId: layer.clipId,
     scale: (cover / fit) * 1.04,
+    scaleY: undefined,
+    motion: undefined,
     crop: { left: 0, top: 0, right: 0, bottom: 0 },
     effects: [{ type: "blur", params: { amount: fill.amount } }],
   };
@@ -540,6 +544,7 @@ function planTracks(p: Project, tracks: Track[], f: number, prefix: string, dept
       const { adjust, tone } = resolveAdjust(a, r);
       items.push({
         kind: "adjust",
+        mask: resolveMask(a, r),
         clipId: prefix + a.id,
         opacity: paramAt(a, "opacity", r),
         adjust,

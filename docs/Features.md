@@ -55,6 +55,21 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   lines up with other material sample for sample, as ffmpeg plays it; an
   AAC file's priming was already left out by its edit list
   ([[ADR-112 An MP3 plays without its encoder delay, as ffmpeg plays it]]).
+- **Playback proxies on demand** (desktop): right-click video cards for
+  **Create proxy > Half, Quarter or 720p**, or select several cards with
+  their checkboxes and create a batch. Smaller H.264 copies with short GOPs
+  make heavy footage easier to scrub and reverse. Each batch has progress,
+  Cancel and one undo step. Manage media shows proxy state and makes copies
+  for all 4K, HEVC and ProRes footage; an import hint offers the same help.
+  The player's **Proxy playback** button and View menu switch instantly;
+  the preference is remembered and starts on. Cards badge ready, making,
+  stale and missing copies. A changed original or missing cache falls back
+  safely. Export, saved stills, agent review, analysis and scopes always use
+  the original or its full-resolution decode fallback; opening scopes also
+  switches the viewer to that source. `create_proxies` and `delete_proxies`
+  expose the desktop workflow to agents, who rarely need it. Creation uses
+  an installed FFmpeg with libx264; the browser clearly refuses generation
+  and deletion ([[ADR-131 Playback proxies are purpose scoped and disposable cache]]).
 - Background filmstrips and waveforms, two files at a time.
 - **Hover scrub** on video cards, as in CapCut: moving across a card shows
   the frame under the pointer, with a line, from the timeline's
@@ -93,8 +108,35 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   places the range as the timeline would (CapCut); **Insert** (,) splits at
   the playhead and pushes what follows, **Overwrite** (.) covers what is
   there (Premiere's), on the main track or the first audio track.
+  Three-point edits honor timeline In/Out: source In reads forward, source
+  Out backtimes. Four marks with different lengths ask for **Fit to fill**
+  (constant speed) or **Trim source to fit**. Insufficient media refuses the
+  edit; successful Insert/Overwrite clears the timeline marks. Agents use
+  `edit_from_source`; its answer includes the made clip and speed.
 
 ## Timeline
+
+- **Timeline index:** the library's Timeline tab lists the open timeline's
+  clips, including a compound's contents while editing it. Search clip or
+  media names, any line of a title or caption, or a kind; filter by kind
+  and sort by start, name or track. Each row shows its track, timecode,
+  duration and color label; deactivated clips are dimmed. Click or use
+  arrows and Enter to select, seek and reveal a clip; double-click a
+  compound to open it. Agents use `find_clips`, which also searches nested
+  timelines and names each hit's containing compound clip.
+- **Default transitions at several cuts:** select the clips before cuts
+  and choose Apply default video transition or Apply default audio
+  crossfade in the Timeline menu or Keyboard shortcuts. With no selection,
+  the nearest eligible main-track cut is used. Preferences sets the video
+  type and length and the audio crossfade length (initially Dissolve and
+  0.5 s for each); right-click a transition card to Set as default, marked
+  by its Default badge. One undo removes the whole application. Gaps,
+  locked tracks and existing transitions are skipped; lengths fit each
+  join. Agents use `apply_default_transitions`, with optional type,
+  duration and replace overrides and an applied/skipped cut report.
+- **Mute and solo track keys:** act on the tracks of selected clips,
+  together in one undo step. A mixed selection turns them all on; when
+  all are on, it turns them off. The Timeline menu exposes both actions.
 
 - CapCut's toggles: main track **magnet** (gapless, reorders on drag, including a drop at the very front),
   **snapping** with a cyan guide, **linkage** (titles, overlays and sound
@@ -116,6 +158,17 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   so they select, move and delete together; Alt-click takes one side
   alone, each edge trims on its own, and red frame counts (+15 / −15)
   show on both when one is moved out of sync. Ungroup unlinks them.
+- **Selected edit points:** click a clip edge with Select to draw a bracket;
+  add other edges with Shift, or choose both touching sides with Alt or a
+  double-click for a roll. Extend Edit moves them to the playhead, and the
+  existing frame nudges trim selected edges. Media and neighbor limits are
+  reported; gaps remain. Keyboard selection finds the nearest/next/previous
+  edge on selected clips' tracks. Agents use `extend_edit` and `trim_edits`.
+- **Marker ranges and chapters:** set Duration in Markers to draw a ruler
+  band, then drag its end to resize it. Chapter marks explicitly choose
+  which notes become real MP4 chapters when **Chapters from markers** is
+  enabled at export (`export_video chapters: true`). A range follows its
+  start when attached to a song; ordinary notes stay out of the chapter list.
 - **Marker management** in the library and View menu: search notes or
   timecodes, filter by color, jump between notes, edit exact positions and
   labels, and undo deletion. **Delete shown** removes what the search and
@@ -229,12 +282,17 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   equal power over the seconds before the cut; `cut_music` takes bars out
   of a song on its grid and joins the pieces so the beat runs on. A split
   of one sound plays on with no click guard at the cut, its halves through
-  one EQ and compressor (ADR-117).
+  one EQ and compressor (ADR-117). Identical halves of a compound clip
+  with EQ or compression also keep one bus, so its detector does not restart
+  at the split in preview or export (ADR-136).
+  Without a grid or Bar markers, a join fading into silence can suggest
+  `roll_edit` to a nearby stretch silent in both files, within half a second
+  and within the clips' source handles.
   `preview_audio` measures every join, click and dropout
   ([[ADR-104 Voice and sound an agent can trust without ears]],
   [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]).
   A person makes a crossfade with the audio clip menu's **Crossfade into next clip** (the
-  transitions' default length, as far as the join allows, or why none
+  audio crossfade default length, as far as the join allows, or why none
   fits), sees it drawn at the cut like a transition, and sets its length
   in the Audio tab's **Crossfade** row
   ([[ADR-109 What an agent can set, a person can see and change]]);
@@ -268,7 +326,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - **Two-up trim preview:** actual clip-edge frames for trim/ripple/roll/slip/slide,
   clamped source times, one-step Undo and gesture cancellation. In a short
-  player the frames shrink so its header and footnote always show.
+  player the frames and spacing shrink so its header and footnote fit,
+  including the Large timeline layout at the minimum desktop window.
 
 ## Workspace
 
@@ -292,6 +351,18 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 ## Viewer
 
+- **Transport at narrow widths:** both timecodes keep a row of their own
+  when the playback and view controls need the space; those controls wrap
+  again in a narrow player, keeping the play button and every view control
+  reachable when a side panel is widened.
+
+- **Mute playback:** the speaker in the transport and the mixer's master
+  strip share a session-only preview switch, also in Keyboard shortcuts.
+  It silences timeline playback, scrubbing, source previews and library
+  auditions before the master peak and loudness meters. Export and saved
+  track mute/solo settings are independent
+  ([[ADR-127 Timeline conveniences share search and edit paths, monitor mute belongs to preview]]).
+
 - WebGL2 compositor: transforms, crop, 13 blend modes (CapCut's 11 plus
   Add, Difference, Exclusion), chroma key, masks, color adjustments,
   26 effects (**Blur** up to a 300-pixel radius at 1080p, amount 500, for
@@ -304,11 +375,15 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   pixel size is pixels at 1080p, so the viewer and the export draw an
   effect alike, and Glow, Reduce image noise and Sketch take a radius or
   line width, [[ADR-117 A whole file relinks to itself, effects keep their size at every render size, and a split's halves share one compressor]]),
+  Glow radii above 18 use a thresholded pyramid blur, so small highlights
+  spread smoothly instead of repeating on a tap grid; radii through 18
+  keep their original pixels (ADR-136).
   24 transitions, 17 looks, adjustment layers. The **Strobe flash**
   starts at 2 flashes a second: more than 3 can trigger seizures (WCAG
   2.3.1), so keep it there.
 - **Masks** (Video > Mask, CapCut's shapes): linear, mirror, circle,
-  rectangle with round corners, heart and star, with feather and invert;
+  rectangle with round corners, heart, star and a freeform Pen path, with
+  feather and invert;
   every number takes keyframes, and a rotated mask turns rigidly on any
   picture shape ([[ADR-049 Masks turn rigidly and grow shapes without new fields]]).
   While the Mask tab is open the viewer draws the mask's outline on the
@@ -318,6 +393,27 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   it. Each drag is one undo step and keys animated numbers. `set_mask`
   with `at` keys the values it is given there, from what the mask held at
   the clip's start ([[ADR-120 Callouts and overlays pinned to footage, and frame_region moves]]).
+- **Pen masks:** in Video > Mask choose Pen, click anchors on the viewer,
+  drag while adding an anchor to pull out paired bezier handles, and click
+  the first anchor to close. Drag anchors or handles to refine a path;
+  Alt-click an anchor switches between smooth and corner, and Delete removes
+  the selected anchor. Each gesture is one undo step. Position, width,
+  height, rotation, feather and invert work on the whole path; the numeric
+  transform takes keyframes, while individual points stay static. `set_mask`
+  accepts `shape: "path"`, `points` and `closed`. Paths fill with nonzero
+  winding, including where they cross themselves.
+- **Masks on adjustment layers:** the adjustment's Mask tab uses the same
+  shapes and viewer handles, in fractions of the canvas. Its color grade
+  and effects blend with the original picture through the mask, so one
+  adjustment can blur a face, darken a sky or brighten a subject without
+  affecting the rest. Feather blends the boundary, invert selects the
+  outside, and transform keyframes can follow a subject. `set_mask` accepts
+  adjustment clip IDs ([[ADR-133 Crop softness, continuous rotation and regional masks]]).
+- **Rotation dial:** Transform > Rotate turns continuously under the pointer,
+  keeping complete turns (370 degrees stays 370). Shift snaps to 15 degrees;
+  focused arrows step one degree, or ten with Shift. The adjacent number
+  accepts typing, the diamond keeps rotation keyframes, and double-click
+  resets. A drag is one undo step.
 - On-canvas handles: move, scale, rotate. A moved picture snaps its edges
   and center to the canvas's and to other visible pictures', and to the
   safe margins and thirds while those viewer guides show, with a guide at
@@ -340,6 +436,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   keep it while dragging. Reset, Cancel (or Escape) and Done (or Enter);
   Done is one undo step. Works on rotated and mirrored pictures
   ([[ADR-048 Crop is cut from the source and edited on a copy]]).
+  **Softness** in the Crop section and under the viewer fades inward from
+  the cropped edges, in pixels at a 1080-tall render. It stays with the
+  picture through scale, rotation and flips, and scales with delivery size;
+  zero preserves the hard edge. `set_crop` accepts `feather`, including
+  alongside a ratio.
 - **Fit / Fill / Stretch** under Transform (Resolve's and Premiere's
   framing; `frame_clips`): fit shows the whole picture, fill covers the
   canvas and crops the overflow, stretch covers it exactly; each centers.
@@ -398,6 +499,13 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   meet on a small picture.
 - **Canvas** fill behind letterboxed clips: blur or color (CapCut's
   Canvas).
+- **Compare** (Player header): before/after bypasses the selected clips'
+  look on the left, keeping geometry, masks and chroma key. Capture
+  reference holds the viewer's live frame while seeking or playing another
+  shot. The menu chooses vertical or horizontal; drag the divider, or
+  double-click its handle to center it. Session only, never saved or
+  exported. Agents use `before` and optional `before_clip_ids` in
+  `preview_frame` or `preview_frames` for the ungraded view.
 - **Scopes** (Player header or View menu): luma waveform, RGB parade,
   vectorscope with 75% targets and the skin-tone line, and histogram, of
   the graded output; live while paused, 8 updates a second while playing
@@ -583,6 +691,15 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   - **LUT**: import a 1D or 3D .cube (or drop one on the window), pick it,
     set its intensity ([[ADR-021 LUTs are files by reference, sampled as
     3D textures]]).
+- **Match color** (Adjust > Match color; also in a multi-selection): pick a
+  reference clip on the timeline, set Strength and Match saturation, then
+  Match. Strength stages the next match without changing the clip or undo
+  history. Five frames across each shot match its rendered reference look
+  with editable RGB curves and Basic saturation, all targets in one Undo
+  step (`match_color`). Replaces the targets' other look settings, keeps
+  the master curve and placement, and protects black, white and detail.
+  Cancel stops sampling; switching projects discards the result
+  ([[ADR-129 Color matching samples isolated stills and comparison stays in the viewer]]).
 - **Auto adjust** (Adjust > Basic, CapCut's): corrects exposure, levels
   and white balance from the clip's own frame at the playhead, measured
   with its adjustments off. Exposure only moves a median outside
@@ -619,6 +736,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Sound stays within a frame of the picture in preview and export.
 
 ## Text and captions
+
+New titles reuse a free overlay row above everything showing during their
+range, even across empty private rows of an earlier lower third. Private
+element rows stay private, and captions stay on top.
 
 - Text presets (title, lower third, outline, neon, caption, quote, label)
   with font, size, color, bold/italic/underline, alignment, spacing,
@@ -733,7 +854,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Each line can have its own voice (several speakers in one call; blends
   such as `af_heart:70,af_bella:30`), speed, time (`at`, on a beat or a
   cut) and pause after; the gap after a line otherwise follows its ending
-  (a comma runs on, a sentence rests, a paragraph rests longer). Pauses
+  (a comma runs on, a sentence rests, a paragraph rests longer). Gaps start
+  at the placed audio clip's end: at 30 fps a sentence gets 12 frames and
+  a comma gets three, even when the speech ends between frames. Pauses
   inside a line are written in it (`[pause 0.4]`, `[beat]`,
   `<break time="0.4s"/>`) and lengthen the voice's own pause there, so
   the sentence keeps its intonation; captions never show them.
@@ -765,6 +888,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   speed or a pronunciation, read and put in the line's place; its caption
   follows, the old take leaves the library, and `ripple` moves the lines
   after it; one undo step.
+  Sign-offs of up to three words are not judged against a words-per-second
+  band. A longer slow line's advice never asks for the slow pace it has.
 - **Voices to cast** (`list_catalog` section `voices`): each voice's
   accent, gender, its author's grade, character (measured pitch, melody
   and pace) and what it suits, the most natural first.
@@ -776,6 +901,22 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   script's words, timed by what Whisper heard, so a synthetic voice's "All
   of it, home" is no longer "Olivet Helmed"; the transcript of a whole take
   says its script too ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]).
+  Agents use **auto_captions** after cutting an interview or vlog: whole
+  readable lines, or `words_per_caption` 1-3 with each word's highlight
+  time kept, `look`, `style` and `y` applied in the same undo step.
+  `start`/`end` limit the timeline stretch and `track_ids` the speech;
+  music and effects roles are excluded by default. It shares the source
+  transcript, so words after a cut shift with their clip and a voiceover
+  keeps its script's spelling, such as "20% off." The compact answer gives
+  the count, track, first and last caption, seconds covered and words heard;
+  `detail: "full"` lists every caption. Clip hearing uses only its played
+  source window plus three seconds of sentence context on each side,
+  bounded by the file. Transcript, captions and filler removal merge and
+  reuse heard windows; a 30-second cut no longer hears an entire VOD.
+  Answers report `audio_seconds` actually heard (zero for cached words),
+  `elapsed_seconds` for hearing and the Whisper `model`; English stays
+  base.en by default. Existing captions are replaced
+  unless `replace: false` ([[ADR-130 Film tools share speech and preserve readable layouts]]).
 - **Find and replace** in captions (Captions tab; CapCut's;
   `replace_caption_text`): fix a misheard name everywhere, whole words
   and case as chosen, with a live match count; titles are left alone.
@@ -825,6 +966,8 @@ same arguments and seed give the same music.
 - **A cue sheet**: tempo, key, chords, every bar and beat, the sections,
   drops, the final hit, cut points, and Bar, section and Drop markers on
   request, so `cut_to_beats` and `add_beat_hits` work on it at once.
+  Analyzing a supplied grid preserves every planned beat through a quiet
+  ending, and replacing markers reports additions, never a negative count.
 - **Stems**: drums, bass, harmony and lead as files of their own (they add
   up to the mix), on four grouped tracks if asked.
 - **One section again**: a section's own seed regenerates its drums,
@@ -857,7 +1000,9 @@ makes a 13 s one). Times are timeline seconds.
   downbeat nudged 10 ms or set at the playhead, parts added on the bar
   nearest the playhead, each through `set_music_grid`
   ([[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]).
-- **Cut to the beat** (`cut_to_beats`): a list of shots laid end to end on
+- **Cut to the beat** (`cut_to_beats`): an explicit `end` is a final
+  boundary too, so a shot can cover the score's ring-out past its last
+  sounding beat. A list of shots laid end to end on
   the main track, every cut on a beat, bar or phrase (or the agent's own
   times): N beats a shot, a pattern such as 4, 4, 2, 2, 1, 1 that speeds
   up, or a shot's own count. One long clip gives many shots (each reads on
@@ -889,7 +1034,68 @@ makes a 13 s one). Times are timeline seconds.
   `add_sound_effect`'s `end_at`, so a riser or reverse cymbal peaks on the
   drop.
 
+## Long-session memory
+
+Working through a long VOD releases decoded sound after analysis and keeps
+only reusable features and transcript words. Whole-source transcription
+hears at most 62 seconds at a time. Filmstrips, waveforms, text rasters,
+library previews, images and animation loops have byte budgets and evict
+older entries; borrowed images stay alive until their renderer finishes.
+Whisper, Kokoro and background-removal workers unload after two idle minutes
+and before changing model size. Closing or switching projects releases
+workers, queued thumbnail work, media inputs, GPU targets, cached readings
+and undo history. Saved projects and source files stay on disk.
+
+Developers can call `window.videoEditor.memory()` to see retained bytes,
+counts, cache budgets and explicit estimates for models, input caches and
+GPU resources. See [[ADR-144 Session resources have byte budgets and explicit owners]].
+
 ## AI tools (all on this machine)
+
+- **Long jobs an agent can follow** (`job_status`, `cancel_job`): analysis,
+  speech, music, tracking, background removal, clip batches, measurements,
+  imports, previews and exports answer when done or within 45 seconds.
+  A running answer gives a job ID, progress and stage; retries return that
+  job instead of starting another. `wait: 0` returns immediately. Poll the
+  ID for the finished tool's complete answer, or omit it to list running
+  and recent jobs. Text results remain up to 30 minutes within a 32 MiB
+  budget and 128 recent jobs; delivered image/audio payloads are released.
+  Closing or switching projects cancels unfinished work and releases answers. Elapsed
+  time and `quiet_seconds` since the last progress callback help an agent
+  judge a slow stage. A progress toast names the stage and offers Cancel.
+  `export_status` continues to follow the latest export alongside jobs
+  ([[ADR-142 Long tools return retained session jobs and hear source windows]]).
+
+- **Find highlights**: choose a long stream VOD in the AI tools card, add
+  an optional chat replay, set Count and the minimum/maximum Length, then
+  Run. Ranked moments show a score, numeric reasons and optional quotes;
+  select one to seek, Play to hear it, or Add markers for following
+  Highlight N ranges in one undo step. `find_highlights` gives agents the
+  same source-second windows, with viewer-clip times, keywords, signal
+  weights and candidate-only Whisper refinement. Every refined result has a
+  short title: a complete quote up to 60 characters, preferring exclamations
+  or keywords, otherwise a phrase cut at a word boundary. Audio streams at 16 kHz
+  into compact features: a three-minute median discounts sustained loud
+  gameplay; chat spikes, emotes and clip requests add evidence. Scene
+  sampling is one small frame per second, or every four seconds past
+  20 minutes, automatic only up to two hours. A 75-second scene budget
+  keeps expensive codec seeking bounded. Sampling runs coarse to fine
+  (about 32 frames across the whole file, then the midpoints), so a reading
+  the budget cuts short still spans the file evenly; `scene_sampling`
+  reports the interval, samples, coverage, the even spacing it reached
+  (`even_interval_seconds`), completion and elapsed time. Audio and chat
+  cover the whole source either way.
+  Vocal excitement is a heuristic; review candidates before making clips
+  ([[ADR-140 Highlight discovery streams features and refines candidates]]).
+- **Readable automatic captions:** whole-line generation chooses phrase and
+  punctuation boundaries together, with up to two lines, at least 0.83 s
+  and at most 20 characters a second when the speech window permits. Short
+  orphan cues join their neighbors. Recognized words become monotonic and
+  non-overlapping before transcripts or captions use them; overlapping
+  duplicate boundary words are merged. The explicit one-to-three-word
+  caption modes keep their existing timing. `auto_captions` reports any
+  reading-time limits it could not meet; its existing Accurate model option
+  can help with recognizer errors, which still need editorial review.
 
 - **Remove silences**, **Split scenes**, **Beat markers**, **Normalize
   loudness** (EBU R128, to −14/−16/−23/−24 LUFS, the true peak under
@@ -924,7 +1130,11 @@ makes a 13 s one). Times are timeline seconds.
   `remove_filler_words`): Whisper base or small on this computer
   transcribes the clip and its "um", "hmm" and "ah" are cut with the
   hesitation around each, the gaps closed. Whisper does not transcribe
-  "uh" or "er", so those stay ([[Filler words]]).
+  "uh" or "er", so those stay ([[Filler words]]). It uses the same cached
+  whole-source hearing as `get_transcript`, selecting the words inside
+  each clip rather than re-hearing a short window with less context. Its
+  `heard` count distinguishes no fillers from no recognized speech; an
+  explicit model change still hears the source with that model.
 - **Remove background** (CapCut's Video > Remove BG > Auto removal, also an
   AI tools card): a segmentation model on this computer cuts the person or
   main subject out of every frame, once, with progress and cancel; the
@@ -954,6 +1164,41 @@ makes a 13 s one). Times are timeline seconds.
   [[Automation]]).
 
 ## Sound design and delivery
+
+- **Imported audio roles:** audio files without a known origin are analyzed
+  over their first minute. Irregular syllable energy and pauses suggest
+  dialog; sustained or regularly pulsing energy suggests music. Ambiguous
+  or unreadable audio stays unset, including its track, so it does not
+  silently join the music stem. The import toast and `import_media` answer
+  explain the result; `update_track role` overrides it. Generated speech,
+  music and effects keep their explicit roles. See
+  [[ADR-143 Clip templates repair their checks and imports classify audio conservatively]].
+- **Fade curves** (Audio tab, beside Fade in, Fade out and Crossfade;
+  `set_fades`, `set_crossfade`): Linear, Equal power, Logarithmic (fast
+  rise), Exponential (slow rise) and S curve (smooth at both ends).
+  Timeline fade ramps follow the shape. Older clips stay linear and
+  older crossfades stay at equal power.
+- **Independent pitch** (Audio tab, **Pitch**; `set_pitch`): -12 to +12
+  semitones without changing the clip's length, at constant speed, through
+  speed curves and backward. Double-click the slider to reset. The Speed
+  tab's Change pitch still controls tape-style pitch with speed; this adds
+  a separate shift. Pitch is static, not keyframeable.
+- **Voice changer** (Audio tab; `apply_voice_preset`, `list_catalog`
+  section `voice_presets`): Chipmunk, Deep, Robot, Radio, Telephone,
+  Megaphone, Cave and Monster. A chip applies the preset and auditions the
+  clip's first three seconds; hover a shortened label to read its full name.
+  Each expands into ordinary settings: pitch,
+  EQ, filters, compressor, saturation, ring modulation, mono, echo and
+  reverb. The preset label records the starting point; the settings remain
+  editable. None clears those settings and their keys, keeping timing,
+  volume, pan, fades and tape stop. The same mixer builds preview, export
+  and loudness measurement; Normalize loudness measures the processed clip
+  too ([[ADR-128 Sound shaping uses the shared mixer and retimer]]).
+
+When ducking finds dialog below -23 LUFS in its speech window, or needs a
+dip over 20 dB, its note gives the voice loudness and dip, names the dialog
+clips, and suggests normalizing them to -16 LUFS before ducking again.
+A quiet recording need not leave the music nearly silent.
 
 - **Effects** (Audio tab, under Compressor; `set_audio_filter`,
   `set_reverb`, `set_echo`, `set_tape_stop`): the trailer and epic-edit
@@ -990,12 +1235,35 @@ makes a 13 s one). Times are timeline seconds.
   that passes full scale, and measures as export with a target would
   deliver it, so an agent checks before it exports
   ([[ADR-061 Delivery holds the true peak and says whether it passes]]).
+  Flat-range advice counts the pauses the music's saved duck holds down,
+  with `min_gap` and `open_at` to open them; without music it suggests
+  keeping quiet passages quiet.
 - **Broadcast targets**: export Loudness and Normalize loudness offer
   -24 LKFS (ATSC A/85, US TV) beside -14, -16 and -23; the limiter holds
   the **true peak**, not the sample peak, under -1 dBTP (-2 for ATSC),
   and the export's answer says what the mix reached.
 
+- **Playable mix previews** (`preview_audio`): a short MP3 from registered
+  LAME, with AAC in M4A then 16-bit 24 kHz mono WAV as fallbacks; `format`
+  asks for `mp3`, `m4a` or `wav` and the answer names what was returned.
+  Measurements still describe the full-resolution mix. Complete generated
+  risers and impacts meeting at their requested moment are sound events,
+  so the checker does not suggest moving the hit as if repairing a splice.
+  Voiceover answers give each placed clip's frame-aligned start and end,
+  keeping the speech length in `seconds`.
+
 ## Ads and deliverables
+
+- **Portrait interview checks:** saliency-based framing is labeled low
+  confidence because a bright monitor can outweigh a speaker. Inspect the
+  preview and give `export_versions.focus` on the intended person, or use
+  `fit: "fit"`/`"blur"` to preserve the full picture. Explicit focus owns
+  the subject choice; diagnostics do not suggest restoring an excluded
+  saliency candidate. Independent identifiers move clear of the framed
+  subject and captions when room allows; unresolved or authored placements
+  are reported. Captions that wrap past two lines are regrouped at their
+  word times (estimated within the cue when no word times exist). Version
+  checks reject more than eight moments instead of dropping the last ones.
 
 - **Kinetic typography** (After Effects' text animators, CapCut's
   per-character text animations): a title's in, out or loop animation can
@@ -1024,11 +1292,16 @@ makes a 13 s one). Times are timeline seconds.
 - **Ad elements** (`add_ad_element`), each one call, built from ordinary
   clips in the brand's colors, grouped, inside the 90% title-safe area
   (on 9:16 clear of the apps' buttons and captions): an **end card**
-  (logo, headline typed in by word, a pulsing call-to-action button, the
-  website), a **lower third** (name in a box over the title in the primary
+  (logo, or the brand name as a wordmark when there is no logo unless
+  `logo: "none"` is asked, headline typed in by word, a pulsing
+  call-to-action button, the website), a **lower third** (name in a box over the title in the primary
   color), an **offer badge** (tilted, pulsing, with a small tag), a
   **call-to-action button**, and a **logo reveal** (the logo pops in, with
-  an optional glow flare and white flash, and the tagline).
+  an optional glow flare and white flash, and the tagline). Explicit
+  headline lines shrink to fit the column before wrapping, stopping at
+  the readable floor; the logo and room rules still apply. On 9:16,
+  the headline and button start from the safe column's width, making use
+  of the frame before the logo and room fitter give space (ADR-136).
 - **Text behind the subject** (`text_behind_subject`): a title sits behind
   the person or product in a video or a photo. The background is removed
   on this computer (a video's Remove background matte; a photo cut out once
@@ -1043,8 +1316,11 @@ makes a 13 s one). Times are timeline seconds.
   each its own file: 16:9, 9:16, 1:1 and 4:5, 30/15/6 s cut-downs (the
   opening and the end card kept, the middle cut, the music fading at the
   new end) and a textless master (titles and captions off). Footage that
-  fills the frame keeps filling it, or fits over a blurred copy of itself;
-  titles, logos and badges keep their size against the short side and
+  fills the frame keeps filling it, or fits over a blurred copy of itself.
+  Nearby titles stacked vertically keep their order and the master's gap
+  when a headline wraps taller; remaining title collisions appear in
+  `text_overlaps`, using `check_project`'s `text_overlaps_text` finding.
+  Titles, logos and badges keep their size against the short side and
   move inside the new frame's safe area. Hand-animated films adapt too:
   layers are placed where they rest and their keyed motion is laid out
   again around it, a window compound sliding in from off the edge still
@@ -1057,14 +1333,25 @@ makes a 13 s one). Times are timeline seconds.
   as one group. Captions are burned in on tall versions by default (even
   from a hidden caption track), sized by the short side and kept clear of
   the stacks; `captions` says `burn`, `none` or `as_project`
-  ([[ADR-091 Tall versions stack what stood side by side]]).
+  ([[ADR-091 Tall versions stack what stood side by side]]). Rings and
+  spotlights inside compound scenes follow their pictures just as on the
+  root timeline. On tall versions, burned captions move above a ring they
+  cross when there is safe room; the check sheet names the move in `done`.
+  A ring drawn around the caption stays with it (ADR-136).
   A title card built as a compound refits as one picture, a split screen
   whose halves filled the frame fills the new one, text never ends under
   the frame's readable size, and `overrides` move, resize or hide a clip
   in one version by hand, kept in a saved version project (ADR-101).
   The versions are built from the master as separate documents, so the
   project in the editor never changes; `check` answers one contact sheet
-  of them all first (`check_at` picks the moments). Seven 480p versions of
+  of them all first: `check_at` picks fractions of each version, while
+  `check_times` picks seconds of the master (use one). Cut-downs omit
+  removed moments and move retained end-card moments with the card.
+  A hidden-only override also works on an adjustment layer. Diffuse or
+  repeating texture without a distinct subject uses center framing and
+  says so; `focus` still chooses a region. Adapted title fades are measured
+  as the project check measures them; an uneven fade becomes a cut, with
+  the change named in `options`. Seven 480p versions of
   a 5 s ad took 4.4 s headless. A shot fitted with bands (a widescreen
   screen recording in a 9:16 master) is footage a version reframes, at
   its pixels against the short side and covering the new frame; `focus`
@@ -1078,6 +1365,23 @@ makes a 13 s one). Times are timeline seconds.
   it on a contact sheet and exports 16:9, a 6 s 9:16 cut-down and 1:1.
 
 ## Export
+
+- **Chapter verification:** chapter-enabled MP4 export results list the
+  actual chapter titles and seconds written, including UTF-8 title limits.
+  `preview_media file` reads the exported Nero chapter table independently
+  by range without downloading the media payload. Other containers and
+  QuickTime chapter tracks are explicitly outside this inspection.
+- **Canvas and cutaways:** solid canvas fill covers the complete canvas
+  behind cropped or transformed media. `add_media_clip` retains whole-source
+  fitting by default and reports transparent bands; `fit: "fill"` covers
+  the frame for a cutaway, and `fit: "blur"` puts a covering blurred copy
+  behind a fitted picture. These choices preserve deliberate overlays.
+- **Honest audio checks:** the project checker listens to short fades under
+  50 ms rather than treating any nonzero fade as an adequate ending.
+  `duck_under_speech` reports the measured per-line minimum and ceiling as
+  unmet when they are outside the requested band, even if no more dip can
+  be removed. `preview_audio` names speech, effects and ambience by their
+  track roles; speech pauses are not diagnosed as music ring-outs.
 
 - CapCut's export dialog: MP4/MOV/WebM/MKV, H.264/HEVC/VP9/AV1 by what
   the device can encode, 480p to 4K, quality levels or a bitrate, frame
@@ -1124,10 +1428,26 @@ makes a 13 s one). Times are timeline seconds.
   fps with delays that add up to the real duration, silent, up to 720p
   and 60 seconds (it is built in memory). The GIF drive reads every frame
   back against the framecode fixture.
-- **Timeline as OpenTimelineIO** (File > Export timeline): tracks, gaps,
-  transitions, speed, titles, compound clips (nested stacks) and markers
-  for DaVinci Resolve, Premiere's OTIO plugin and other editors
-  ([[ADR-034 Timelines leave as OpenTimelineIO]]).
+- **Timelines between editors** (File > Import timeline / Export timeline):
+  import OpenTimelineIO and FCPXML as a new saved project; export
+  OpenTimelineIO, FCPXML 1.10 or CMX 3600 EDL. OTIO and FCPXML carry cuts,
+  gaps, connected overlays, audio tracks, dissolves, markers and nested
+  compound clips. OTIO exports speed effects and generator metadata;
+  FCPXML writes Basic Titles as visible editable titles, clip/track volume,
+  frame-sampled volume keys (including ducking), linear fades, range markers
+  and chapter markers. Color clips and shapes remain gap placeholders with
+  OpenFrame metadata. Export warnings name unsupported processing, grading,
+  framing, title styling and animation; OTIO metadata is not a promise that
+  another editor will reproduce the finished look or sound (ADR-139).
+  EDL carries the main picture track and a separate list for each audio
+  track, with reel names, source/record timecodes and dissolve durations;
+  NTSC rates use drop-frame labels. Imports report unsupported effects,
+  retiming and schemas, keeping unresolved media available to relink.
+  Desktop resolves relative media beside the timeline file; the web picker
+  resolves HTTP(S) URLs only. Exports reference media without copying it.
+  Agents use `import_timeline` and `export_timeline` in Projects
+  ([[ADR-034 Timelines leave as OpenTimelineIO]],
+  [[ADR-137 Timeline interchange shares one import boundary]]).
 ## Library
 
 - **Sound effects** in the Audio tab (CapCut's is a cloud library;
@@ -1144,7 +1464,7 @@ makes a 13 s one). Times are timeline seconds.
   inspector; drag it to place it.
 - CapCut's tabs: Media, Audio, Text, Stickers, Effects, Transitions,
   Captions, Filters, Adjustment, with category sub-navigation; then AI
-  tools, Markers and Check.
+  tools, Markers, Timeline and Check.
 - **Check** (also File > Check project, and the Export dialog's Check
   row): the agent's `check_project`, run for a person on request, with
   the same measuring (each title's contrast on the rendered picture, the
@@ -1214,8 +1534,11 @@ Three doors, one engine ([[Automation]]):
   prompts (make an ad, an epic edit, a short) with design rules, guide
   resources and a full `list_catalog`; [[MCP tools]] is the generated
   reference. Edits answer with only what they changed; `batch` runs
-  many as one undo step; `frame_region` zooms a shot onto a rectangle of
-  its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]),
+  many as one undo step. Its quiet answer lists added clips in step order,
+  with `added_by_step` naming the steps that added them. AI answers use
+  snake_case keys and numbers rounded to three decimals; normalization
+  also answers `gain_db` to a tenth of a decibel. `frame_region` zooms a
+  shot onto a rectangle of its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]),
   through any number of moves in one call (`moves`, ADR-120), each
   region centered on any canvas point at any zoom with `place_at`
   (ADR-123).
@@ -1303,6 +1626,43 @@ In the text inspector, expand **Style range**, choose a word, and set its color 
 
 Select two to four overlapping pictures and open **Layouts** in the inspector. A picture on the main track stays there (in picture in picture it must be the full-frame one), so the timeline never ripples; the others stack above it on Layout tracks. Tiles offer side-by-side, stacked, grid, triptych (three pictures), and picture-in-picture arrangements. **Fill** (the default) crops each picture to its cell; **Fit** shows the whole picture centered in it, for screen recordings (`fit: "contain"`, with `background` filling the cell behind it as an editable shape). The Layout tracks go directly above the highest of the chosen clips' tracks, so labels already above them stay on top. `apply_layout` also accepts gap and margin (fractions of the shorter canvas side), rounded mask radius, editable border shapes, and a slide or scale entrance. Clips are placed in input order, with the first PIP picture full frame. Layout replaces position, scale, rotation, crop, mask and their keys, plus clip animations, canvas fill, edge repetition and wiggle. Other effects remain. The whole layout is one undo step. Borders are separate shapes grouped with their pictures; remove an old border before applying another bordered layout.
 
+## Stream clips
+
+- **Stream clips:** Library > Layouts > **Stream: facecam over gameplay**
+  lets a person place the facecam box on the source in the viewer, then
+  turns one VOD clip into grouped facecam and gameplay bands. A wide or
+  square canvas changes to 1080 x 1920. `apply_stream_layout` also accepts
+  gameplay and facecam source regions, band split, order, fit, gap and an
+  editable border. Sound plays once. Moving, trimming or splitting either
+  band carries the group; split halves get separate groups. Without a
+  facecam, gameplay fills the frame around its region.
+- **Make many clip projects:** `create_clips` takes source-second moments
+  and a shared stream, full 16:9 or vertical-fill template. Defaults add
+  two-word pop captions, an opening brand headline and -14 LUFS dialog;
+  supplied streamer credit adds a small opening line and a Follow end
+  card held at least two seconds, longer when its words need it. Hooks
+  sit below the facecam or clear of the detected full-frame subject;
+  without a subject, they use a boxed upper third. Credits, captions and
+  card parts keep inside the apps' clear column. Solid text boxes protect
+  contrast; rapid caption chunks join rather than flash. Creation runs
+  the measured social-short check before saving and returns remaining
+  findings, including an omitted hook when no clear room exists. Each saved
+  project shares the VOD and playback proxy.
+  Only each moment's source window is transcribed. The original project
+  stays open with its undo history. Media's context menu offers **Make
+  clips from markers** for range markers labeled Highlight N, with a
+  source facecam box, layout, captions, hook and credit controls.
+- **Export selected projects:** Home cards have export selection boxes.
+  **Export selected** asks for a folder, loudness and an optional extra
+  shape. `export_projects` accepts saved project IDs, or defaults to all
+  projects made by `create_clips` this session. It renders sequentially,
+  returns paths, lengths, measured loudness and quick social-short check
+  findings, and reports long jobs through `export_status`. Other shapes
+  use the versions path. The editor stays unchanged; the browser uses one
+  save dialog per file and refuses desktop folders.
+  See [[ADR-141 Stream clips use grouped bands and detached project documents]]
+  and [[ADR-143 Clip templates repair their checks and imports classify audio conservatively]].
+
 ## Group transforms
 
 A multi-selection has one viewer box: drag it to move, use a corner to scale the arrangement, or the rotation handle to rotate it about its combined center. Each gesture is one undo step. `transform_group` accepts a `group_id` or explicit `clip_ids`, canvas-fraction x/y offsets, a scale multiplier and a rotation offset in degrees. Add `at` in timeline seconds to key every visual member using its own clip-relative time. Existing keys are preserved; audio members remain unchanged. Without `at`, geometry is evaluated at the latest member start and existing keyed paths receive keys there. Times outside a member clamp to that member’s span.
@@ -1320,6 +1680,22 @@ Select a picture with position keyframes to see its motion path. Drag a dot to m
   pan makes one undo step; double-click resets it. Master gain is included
   in preview, offline loudness measurement and export. Commands:
   `update_track`, `set_project` (`master_volume`).
+- **Track inserts and clip dynamics:** the mixer's Effects area puts a
+  parametric EQ (up to eight bands), compressor, gate/expander, de-esser,
+  limiter, reverb or echo on an audio track, in order. Every clip feeds
+  one chain before the track fader and pan, so dialog cleanup keeps its
+  detector state across cuts. Nested tracks process before their compound
+  clip's bus. Switch inserts off, drag to reorder, open their controls or
+  reset them; each gesture is one undo step. The Audio inspector's
+  **Dynamics** section gives a single clip the same gate, de-esser,
+  lookahead limiter and parametric EQ after its existing sound settings.
+  **Dialog cleanup**, **Podcast voice**, **Music bed** and **Broadcast
+  limiter** expand into editable settings in either place. The old
+  three-band EQ stays, with the parametric bands after it. Preview,
+  export, loudness measurement, normalization, ducking and voice review
+  use the same graph. Commands: `add_audio_insert`, `update_audio_insert`,
+  `move_audio_insert`, `remove_audio_insert`, `set_dynamics`
+  ([[ADR-134 Track inserts and dynamics share one audio graph]]).
 - **Animated GIF, WebP and APNG:** when ImageDecoder supports the format,
   import reads real frame durations and retains alpha. The initial clip
   lasts one loop; extending it repeats the loop. Timeline thumbnails,

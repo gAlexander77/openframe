@@ -1,3 +1,5 @@
+import { MakeClipsDialog, StreamLayoutsTab } from "./ClipDialogs";
+import { createProxies, deleteProxies, proxyAction, proxyDetails, proxyStatus, useProxies } from "../state/proxies";
 import { EmptyState } from "./EmptyState";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { thumbs } from "../engine/thumbs";
@@ -12,6 +14,7 @@ import {
   LayoutGrid,
   List,
   ListChecks,
+  ListVideo,
   Music,
   PaintBucket,
   Scan,
@@ -38,6 +41,7 @@ import { formatDuration } from "../lib/time";
 import { TEXT_TEMPLATES, templateClips } from "../lib/templates";
 import { addAdjustmentLayer, addCalloutLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
 import { beginDrag, type DragPayload } from "../state/drag";
+import { prefsStore, usePrefs } from "../state/prefs";
 import { edit } from "../state/actions";
 import { addToTimeline, pickAndImport } from "../state/media";
 import { toast } from "../state/toast";
@@ -52,6 +56,7 @@ import { EnginePreview } from "./EnginePreview";
 import { StickersTab } from "./StickersTab";
 import "./library.css";
 import { AiToolsTab } from "./AiToolsTab";
+import { TimelineIndex } from "./TimelineIndex";
 import { MarkersTab } from "./MarkersTab";
 import { CheckTab } from "./CheckTab";
 import { MediaManager } from "./MediaManager";
@@ -63,6 +68,7 @@ import { renameMedia } from "../state/rename";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "media", label: "Media", icon: Film },
+  { id: "layouts", label: "Layouts", icon: LayoutGrid },
   { id: "audio", label: "Audio", icon: Music },
   { id: "text", label: "Text", icon: Type },
   { id: "stickers", label: "Stickers", icon: Sticker },
@@ -73,6 +79,7 @@ const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "adjustment", label: "Adjustment", icon: SlidersHorizontal },
   { id: "ai", label: "AI tools", icon: WandSparkles },
   { id: "markers", label: "Markers", icon: Bookmark },
+  { id: "timeline", label: "Timeline", icon: ListVideo },
   { id: "check", label: "Check", icon: ListChecks },
 ];
 
@@ -126,6 +133,7 @@ export function LibraryPanel() {
       </nav>
       <div className="lib-body" key={tab}>
         {tab === "media" && <MediaTab kind="all" />}
+        {tab === "layouts" && <StreamLayoutsTab />}
         {tab === "audio" && <MediaTab kind="audio" />}
         {tab === "text" && <TextTab />}
         {tab === "stickers" && <StickersTab />}
@@ -136,6 +144,7 @@ export function LibraryPanel() {
         {tab === "captions" && <CaptionsTab />}
         {tab === "ai" && <AiToolsTab />}
         {tab === "markers" && <MarkersTab />}
+        {tab === "timeline" && <TimelineIndex />}
         {tab === "check" && <CheckTab />}
       </div>
     </section>
@@ -151,6 +160,9 @@ function useThumbs() {
 /** Media lists every import, as CapCut's Media › Import does (an imported
  * MP3 used to vanish into Audio); Audio shows just the sound files. */
 function MediaTab({ kind }: { kind: "all" | "audio" }) {
+  const [selectedMedia, setSelectedMedia] = useState<string[]>([]);
+  const [clipAsset, setClipAsset] = useState<Asset | null>(null);
+  useProxies();
   const [managing, setManaging] = useState(false);
   const [source, setSource] = useState<Asset | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
@@ -235,10 +247,12 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
               asset={a}
               uses={usage.get(a.id) ?? []}
               list={options.view === "list"}
+              selected={selectedMedia.includes(a.id)}
+              onSelect={(checked) => setSelectedMedia((ids) => checked ? [...ids, a.id] : ids.filter((id) => id !== a.id))}
               onPreview={() => setSource(a)}
               onMenu={(e) => {
                 e.preventDefault();
-                setMenu({ x: e.clientX, y: e.clientY, items: mediaMenu(a, usage.get(a.id)?.length ?? 0, () => setSource(a), () => setRenaming(a.id)) });
+                setMenu({ x: e.clientX, y: e.clientY, items: mediaMenu(a, usage.get(a.id)?.length ?? 0, () => setSource(a), () => setRenaming(a.id), selectedMedia.includes(a.id) ? selectedMedia : [a.id], () => setClipAsset(a)) });
               }}
               renaming={renaming === a.id}
               onRename={(name) => {
@@ -263,6 +277,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
       )}
       {kind === "audio" && <SoundEffects />}
       {kind === "audio" && <AmbienceBeds />}
+      {clipAsset && <MakeClipsDialog asset={clipAsset} onClose={() => setClipAsset(null)} />}
       {managing && <MediaManager onClose={() => setManaging(false)} />}
       {source && <SourceMonitor asset={source} onClose={() => setSource(null)} />}
     </div>
@@ -354,7 +369,7 @@ function RecordButton() {
 
 /** A media card's right-click menu. Removing takes the media out of the
  * project only; a file the timeline uses says so and takes its clips. */
-function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () => void): MenuItem[] {
+function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () => void, assetIds: string[], makeClips: () => void): MenuItem[] {
   const remove = (withClips: boolean) => {
     try {
       edit(withClips ? `Remove ${asset.name} and its clips` : `Remove ${asset.name}`, (p) => removeMedia(p, [asset.id], withClips));
@@ -365,6 +380,11 @@ function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () =
   return [
     { label: "Add to timeline", onSelect: () => addToTimeline(asset) },
     { label: "Preview", onSelect: preview },
+    { label: "Make clips from markers", disabled: asset.kind !== "video", onSelect: makeClips },
+    { label: assetIds.length > 1 ? `Create proxies (${assetIds.length})` : "Create proxy", disabled: assetIds.some((id) => store.document().assets.find((a) => a.id === id)?.kind !== "video"), children: [
+      ...(["half", "quarter", "720p"] as const).map((size) => ({ label: size === "half" ? "Half (default)" : size === "quarter" ? "Quarter" : "720p", onSelect: () => proxyAction(Promise.resolve().then(() => createProxies(assetIds, size))) })),
+    ] },
+    { label: assetIds.length > 1 ? `Delete proxies (${assetIds.length})` : "Delete proxy", disabled: !assetIds.some((id) => store.document().assets.find((a) => a.id === id)?.playbackProxy), onSelect: () => proxyAction(Promise.resolve().then(() => deleteProxies(assetIds))) },
     { label: "Rename…", onSelect: rename },
     { label: "Favorite", checked: !!asset.favorite, onSelect: () => edit("Favorite media", (p) => organizeMedia(p, [asset.id], { favorite: !asset.favorite })) },
     "-",
@@ -374,7 +394,7 @@ function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () =
   ];
 }
 
-function MediaCard({ asset, uses, list, onPreview, onMenu, renaming, onRename }: { asset: Asset; uses: MediaUse[]; list: boolean; onPreview: () => void; onMenu: (e: React.MouseEvent) => void; renaming: boolean; onRename: (name?: string | null) => void }) {
+function MediaCard({ asset, uses, list, selected, onSelect, onPreview, onMenu, renaming, onRename }: { asset: Asset; uses: MediaUse[]; list: boolean; selected: boolean; onSelect: (checked: boolean) => void; onPreview: () => void; onMenu: (e: React.MouseEvent) => void; renaming: boolean; onRename: (name?: string | null) => void }) {
   const poster = thumbs.poster(asset);
   const Icon = asset.kind === "audio" ? AudioLines : asset.kind === "image" ? Image : Film;
   const metadata = [asset.animated ? `Animated image · ${formatDuration(asset.duration)}` : asset.kind === "image" ? "Still image" : `${asset.kind === "audio" ? "Audio" : "Video"} · ${formatDuration(asset.duration)}`,
@@ -391,11 +411,13 @@ function MediaCard({ asset, uses, list, onPreview, onMenu, renaming, onRename }:
   return (
     <div
       className="card media-card"
-      data-tip={`${asset.name}\n${metadata}`}
+      data-tip={`${asset.name}\n${metadata}\n${proxyDetails(asset)}`}
       onPointerDown={(e) => beginDrag(e, { kind: "asset", asset })}
       onDoubleClick={() => addToTimeline(asset)}
       onContextMenu={onMenu}
     >
+      <label className="media-proxy-select" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`Select ${asset.name}`} checked={selected} onChange={(e) => onSelect(e.target.checked)} /></label>
+      {proxyStatus(asset) && <span className={`proxy-badge ${proxyStatus(asset)}`} data-tip={proxyDetails(asset)} aria-label={proxyDetails(asset)}>P{proxyStatus(asset) === "making" ? "..." : proxyStatus(asset) === "ready" ? "" : "!"}</span>}
       <div className={`card-thumb${asset.kind === "audio" ? " audio" : ""}`}>
         {poster ? <img src={poster} alt="" draggable={false} /> : <Icon size={22} strokeWidth={1.4} />}
         {!list && (asset.kind === "video" || asset.animated) && asset.hasVideo && <HoverScrub asset={asset} />}
@@ -488,9 +510,9 @@ function AmbienceBeds() {
   );
 }
 
-function CatalogCard(props: { label: string; payload: DragPayload; onAdd: () => void; preview: React.ReactNode; className?: string }) {
+function CatalogCard(props: { label: string; payload: DragPayload; onAdd: () => void; preview: React.ReactNode; className?: string; onContextMenu?: (e: React.MouseEvent) => void }) {
   return (
-    <div className={`card ${props.className ?? ""}`} onPointerDown={(e) => beginDrag(e, props.payload)} onDoubleClick={props.onAdd}>
+    <div className={`card ${props.className ?? ""}`} onContextMenu={props.onContextMenu} onPointerDown={(e) => beginDrag(e, props.payload)} onDoubleClick={props.onAdd}>
       <div className="card-thumb">
         {props.preview}
         <button className="card-add" aria-label={`Add ${props.label}`} data-tip={`Add ${props.label}`} onPointerDown={(e) => e.stopPropagation()} onClick={props.onAdd}>
@@ -563,7 +585,12 @@ function EffectsTab() {
 }
 
 function TransitionsTab() {
-  return (
+  const prefs = usePrefs();
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(!!menu, menuRef, () => setMenu(null));
+  return (<>
+    {menu && <div className="ctx-anchor" ref={menuRef} style={{ left: menu.x, top: menu.y }}><MenuList items={menu.items} onDone={() => setMenu(null)} style={{ top: 0 }} /></div>}
     <CatalogTab
       defs={TRANSITIONS}
       hint="Drop on the cut between two clips, or select a clip and click +. Between two audio clips it makes a crossfade."
@@ -571,13 +598,14 @@ function TransitionsTab() {
         <CatalogCard
           key={k}
           label={d.label}
+          onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, items: [{ label: "Set as default", checked: prefs.transitionType === k, onSelect: () => prefsStore.set({ transitionType: k }) }] }); }}
           payload={{ kind: "transition", type: k, label: d.label }}
           onAdd={() => applyTransition(k)}
-          preview={<EnginePreview spec={{ kind: "transition", type: k }} />}
+          preview={<><EnginePreview spec={{ kind: "transition", type: k }} />{prefs.transitionType === k && <span className="badge-added transition-default">Default</span>}</>}
         />
       )}
     />
-  );
+  </>);
 }
 
 function FiltersTab() {

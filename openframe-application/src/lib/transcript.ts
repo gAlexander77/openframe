@@ -2,7 +2,28 @@
 // source seconds; deleting words cuts their time with cut_ranges. Pure.
 
 import type { Range } from "./analysis/silence";
-import type { Word } from "./captions";
+import { monotonicWords, type Word } from "./captions";
+import { sourceTimeAt } from "./project/ops";
+import { secondsToFrames } from "./time";
+import { frameOfSource } from "./project/cut";
+import type { AudioClip, Project, VideoClip } from "./project/types";
+import { framesToSeconds } from "./time";
+
+/** Only hear the played source window, with sentence context at either edge.
+ * Timeline ranges are intersected before mapping through the clip's speed. */
+export function speechWindow(p: Project, c: AudioClip | VideoClip, start = 0, end = Infinity, margin = 3): [number, number] {
+  const first = Math.max(c.start, secondsToFrames(start, p.fps));
+  const last = Math.min(c.start + c.duration, Number.isFinite(end) ? secondsToFrames(end, p.fps) : c.start + c.duration);
+  const duration = p.assets.find(a => a.id === c.assetId)?.duration ?? Infinity;
+  return [Math.max(0, sourceTimeAt(c, first, p.fps) - margin), Math.min(duration, sourceTimeAt(c, last, p.fps) + margin)];
+}
+
+/** Source words on a plain-speed clip's cut timeline, clipped to its edges
+ * and the requested timeline window. Never carries a word across a cut. */
+export function timelineWords(p: Project, c: AudioClip | VideoClip, words: Word[], start = 0, end = Infinity): Word[] {
+  const from = Math.max(start, framesToSeconds(c.start, p.fps)), to = Math.min(end, framesToSeconds(c.start + c.duration, p.fps));
+  return words.map((w) => ({ text: w.text.trim(), start: Math.max(from, framesToSeconds(frameOfSource(c, w.start, p.fps), p.fps)), end: Math.min(to, framesToSeconds(frameOfSource(c, w.end, p.fps), p.fps)) })).filter((w) => w.text && w.end > w.start);
+}
 
 /** The ranges to cut for the words `cut` picks (runs merged). Each run's
  * cut reaches from the previous kept word's end to the next kept word's
@@ -49,7 +70,7 @@ export function merge(h: Heard | undefined, from: number, to: number, words: Wor
   const touching = (h?.spans ?? []).filter((r) => r.end >= from && r.start <= to);
   const joined = { start: Math.min(from, ...touching.map((r) => r.start)), end: Math.max(to, ...touching.map((r) => r.end)) };
   const spans = [...(h?.spans ?? []).filter((r) => !touching.includes(r)), joined].sort((a, b) => a.start - b.start);
-  return { words: [...kept, ...words].sort((a, b) => a.start - b.start), spans };
+  return { words: monotonicWords([...kept, ...words]), spans };
 }
 
 /** The words a clip window [from, to) plays, by their middle. */

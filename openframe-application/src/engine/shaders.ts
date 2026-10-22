@@ -177,53 +177,17 @@ void main() {
 /** The layer pass. Shape layers (ADR-057) use the SHAPE build, which adds
  * the signed-distance drawing: kept out of the plain build, it would add
  * half again to the compile every layer waits on. */
-const layerShader = (shape: boolean) => `#version 300 es
-${shape ? "#define SHAPE 1" : ""}
-precision highp float;
-in vec2 v_local;
-uniform vec4 u_crop;       // display-space uv rect: x0, y0, x1, y1
-uniform mat3 u_uv;         // display uv -> texture uv: the container's quarter turns, a compound's flipped rows
-uniform int u_edge;        // past the picture's edges: 0 nothing, 1 mirrored, 2 repeated (ADR-059)
-// shape layers (ADR-057), in pixels of the render; see src/lib/shapes.ts
-uniform int u_shape;       // 0 none, 1 rectangle, 2 ellipse, 3 line
-uniform vec2 u_shapeQuad;  // the quad's size: box, stroke and an anti-aliasing margin
-uniform vec2 u_shapeBox;   // half the box (a line: half its length, half its thickness)
-uniform float u_shapeRadius, u_shapeStroke, u_shapeDraw;
-uniform bool u_shapeFill, u_gradient;
-uniform vec4 u_fill, u_fill2, u_strokeColor;   // straight RGBA
-uniform vec2 u_gradDir;    // unit vector, y down
-uniform int u_gradKind;    // 0 linear, 1 radial (ADR-069)
-uniform vec2 u_gradCenter, u_gradRadius;   // radial: center from the box's middle, radii (pixels)
-uniform float u_shapeFeather;              // soft edge width, pixels; 0 crisp
-uniform sampler2D u_tex;
-// remove background: a grayscale matte video, luma = alpha (ADR-033)
-uniform bool u_matteOn;
-uniform sampler2D u_matte;
-uniform bool u_solid;
-uniform bool u_fbo;        // premultiplied (a compound clip's composite)
-uniform vec4 u_color;
-uniform vec2 u_texel;
-uniform float u_sharpen;
-uniform float u_opacity;
-// chroma key
-uniform bool u_key;
-uniform vec3 u_keyColor;
-uniform float u_keySimilarity, u_keySmoothness, u_keySpill;
-// mask
+const MASK_UNIFORMS = `// mask
 uniform int u_maskShape;   // 0 none, 1 linear, 2 mirror, 3 circle, 4 rectangle, 5 heart, 6 star
 uniform vec2 u_maskCenter, u_maskSize;
 uniform float u_maskRotation, u_maskFeather;
 uniform float u_maskAspect;   // the visible layer's width over its height
 uniform float u_maskRadius;   // rectangle corners, 0..1
 uniform bool u_maskInvert;
-out vec4 outColor;
-${COLOR_FNS}
-
-vec2 cbcr(vec3 c) {
-  return vec2(-0.1687 * c.r - 0.3313 * c.g + 0.5 * c.b, 0.5 * c.r - 0.4187 * c.g - 0.0813 * c.b);
-}
-
-// Heart and star, signed distance in the mask's box mapped to -1..1 (y
+uniform sampler2D u_maskPath;
+uniform vec4 u_pathBounds;
+`;
+const MASK_FNS = `// Heart and star, signed distance in the mask's box mapped to -1..1 (y
 // down), so each shape fills its box. src/lib/mask.ts draws the same
 // outlines for the viewer's handles; change both together.
 float sdHeart(vec2 u) {
@@ -282,6 +246,9 @@ float maskAlpha(vec2 p) {
     float r = u_maskRadius * min(b.x, b.y);
     vec2 e = abs(d) - b + r;
     a = 1.0 - smoothstep(-f, f, length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - r);
+  } else if (u_maskShape == 7) {
+    vec2 uv = (q / max(u_maskSize, vec2(0.0001)) - u_pathBounds.xy) / (u_pathBounds.zw - u_pathBounds.xy);
+    a = any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))) ? 0.0 : texture(u_maskPath, uv).a;
   } else {
     // Feathered in half-sizes, like the circle.
     vec2 u = d / max(half_ * vec2(u_maskAspect, 1.0), vec2(0.0001));
@@ -290,6 +257,51 @@ float maskAlpha(vec2 p) {
   }
   return u_maskInvert ? 1.0 - a : a;
 }
+`;
+
+const layerShader = (shape: boolean) => `#version 300 es
+${shape ? "#define SHAPE 1" : ""}
+precision highp float;
+in vec2 v_local;
+uniform vec4 u_crop;       // display-space uv rect: x0, y0, x1, y1
+uniform mat3 u_uv;         // display uv -> texture uv: the container's quarter turns, a compound's flipped rows
+uniform int u_edge;        // past the picture's edges: 0 nothing, 1 mirrored, 2 repeated (ADR-059)
+// shape layers (ADR-057), in pixels of the render; see src/lib/shapes.ts
+uniform int u_shape;       // 0 none, 1 rectangle, 2 ellipse, 3 line
+uniform vec2 u_shapeQuad;  // the quad's size: box, stroke and an anti-aliasing margin
+uniform vec2 u_shapeBox;   // half the box (a line: half its length, half its thickness)
+uniform float u_shapeRadius, u_shapeStroke, u_shapeDraw;
+uniform bool u_shapeFill, u_gradient;
+uniform vec4 u_fill, u_fill2, u_strokeColor;   // straight RGBA
+uniform vec2 u_gradDir;    // unit vector, y down
+uniform int u_gradKind;    // 0 linear, 1 radial (ADR-069)
+uniform vec2 u_gradCenter, u_gradRadius;   // radial: center from the box's middle, radii (pixels)
+uniform float u_shapeFeather;              // soft edge width, pixels; 0 crisp
+uniform sampler2D u_tex;
+// remove background: a grayscale matte video, luma = alpha (ADR-033)
+uniform bool u_matteOn;
+uniform sampler2D u_matte;
+uniform bool u_solid;
+uniform bool u_fbo;        // premultiplied (a compound clip's composite)
+uniform vec4 u_color;
+uniform vec2 u_texel;
+uniform float u_sharpen;
+uniform float u_opacity;
+// chroma key
+uniform bool u_key;
+uniform vec3 u_keyColor;
+uniform float u_keySimilarity, u_keySmoothness, u_keySpill;
+${MASK_UNIFORMS}
+uniform float u_cropFeather;
+uniform vec2 u_cropSize;
+out vec4 outColor;
+${COLOR_FNS}
+
+vec2 cbcr(vec3 c) {
+  return vec2(-0.1687 * c.r - 0.3313 * c.g + 0.5 * c.b, 0.5 * c.r - 0.4187 * c.g - 0.0813 * c.b);
+}
+
+${MASK_FNS}
 
 #ifdef SHAPE
 // Where along a rectangle's (rounded) outline the point nearest q lies, 0..1
@@ -459,6 +471,10 @@ void main() {
   // outer 2% are codec noise, so flat areas land on exactly 0 and 1.
   if (u_matteOn) a *= clamp((texture(u_matte, v_disp).r - 0.02) / 0.96, 0.0, 1.0);
   c = adjustColor(c, local);
+  if (u_cropFeather > 0.0) {
+    vec2 edge = min(local, 1.0 - local) * u_cropSize;
+    a *= smoothstep(0.0, u_cropFeather, min(edge.x, edge.y));
+  }
   a *= u_opacity * maskAlpha(local);
   outColor = vec4(c * a, a);
 }`;
@@ -571,6 +587,35 @@ void main() {
     c.rgb = min(c.rgb, vec3(c.a));
   }
   outColor = c;
+}`;
+
+/** Threshold before downsampling: a tiny highlight must survive the pyramid. */
+export const GLOW_EXTRACT_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform float u_threshold;
+out vec4 outColor;
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  float l = c.a > 0.0 ? dot(c.rgb / c.a, vec3(0.2126, 0.7152, 0.0722)) : 0.0;
+  outColor = c * smoothstep(u_threshold * 0.01, u_threshold * 0.01 + 0.2, l);
+}`;
+
+export const GLOW_UP_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform sampler2D u_blur;
+uniform vec2 u_size;
+uniform bool u_spline;
+uniform float u_amount;
+out vec4 outColor;
+${READ_BACK}
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  vec4 b = u_spline ? bspline(u_blur, v_uv, u_size) : texture(u_blur, v_uv);
+  outColor = vec4(c.rgb + b.rgb * u_amount * 0.04, max(c.a, b.a));
 }`;
 
 /** A drop shadow (ADR-070): the layer's blurred alpha, moved and tinted,
@@ -750,8 +795,10 @@ in vec2 v_uv;
 uniform sampler2D u_a;
 uniform sampler2D u_b;
 uniform float u_t;
+${MASK_UNIFORMS}
+${MASK_FNS}
 out vec4 outColor;
-void main() { outColor = mix(texture(u_a, v_uv), texture(u_b, v_uv), u_t); }`;
+void main() { outColor = mix(texture(u_a, v_uv), texture(u_b, v_uv), u_t * maskAlpha(vec2(v_uv.x, 1.0 - v_uv.y))); }`;
 
 /** Final pass to the canvas: composite over the project background. */
 export const PRESENT_FS = `#version 300 es
@@ -926,9 +973,7 @@ export const EFFECT_SHADERS: Record<string, string> = {
     outColor = vec4(c.rgb + f * c.a, c.a);`),
   // radius: pixels at 1080p the glow reaches (7 x 7 taps a third of it
   // apart); a stored glow without one reached 18, its default (ADR-117).
-  // ponytail: at its 48 px maximum the taps are 16 px apart and a small
-  // highlight glows as a grid of copies; the big blur's pyramid (ADR-069)
-  // is the upgrade if wider glows are wanted.
+  // Wider radii run through the compositor's pyramid instead.
   glow: effect(["amount", "threshold", "radius"], `
     vec4 c = texture(u_tex, v_uv);
     vec4 acc = vec4(0.0);

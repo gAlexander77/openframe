@@ -1,3 +1,4 @@
+import { modelWorker } from "./modelWorker";
 // The score generator's worker, from the main thread (music.worker.ts):
 // one render at a time, canceled with its signal.
 
@@ -22,20 +23,12 @@ export interface Measured {
   brightness?: number;
 }
 
-let worker: Worker | null = null;
+const managed = modelWorker("worker_music", () => new Worker(new URL("./music.worker.ts", import.meta.url), { type: "module" }));
 let nextId = 1;
 
 async function call<T>(message: Record<string, unknown>, onProgress?: (p: number) => void, signal?: AbortSignal): Promise<T> {
-  worker ??= new Worker(new URL("./music.worker.ts", import.meta.url), { type: "module" });
-  const w = worker;
-  try {
-    return await workerRequest<T>(w, { id: nextId++, ...message }, { onDownload: onProgress, signal });
-  } catch (e) {
-    // A canceled render cannot be stopped mid-loop: start a fresh worker.
-    w.terminate();
-    if (worker === w) worker = null;
-    throw e;
-  }
+  return managed.run("synthesis", 0, (worker, active) =>
+    workerRequest<T>(worker, { id: nextId++, ...message }, { onDownload: onProgress, signal: active }), signal);
 }
 
 /** The score as WAV files: the mix, and the four stems when asked. */

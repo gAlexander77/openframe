@@ -67,3 +67,12 @@ describe("crossfadeJoin", () => {
     expect(crossfadeJoin(p, p.tracks.find((x) => x.main)!.clips[0].id)).toBeNull();
   });
 });
+
+
+it("never rounds a preferred crossfade past a fractional source handle", () => {
+  const { p, a } = joined({ asset_id: "two", in: 0.123456 });
+  const join = crossfadeJoin(p, a)!;
+  const seconds = newCrossfade(join, 0.5);
+  expect(seconds).toBeLessThanOrEqual(join.most);
+  expect(() => runCommand(p, "set_crossfade", { clip_id: a, seconds })).not.toThrow();
+});

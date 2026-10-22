@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { captionClips, captionsInRange, casedText, currentCaptions, DEFAULT_LINES, parseSubtitles, quietCuts, replaceText, rms10ms, toSrt, toVtt, withoutCaptions, wordsToCaptions, type Word } from "./captions";
+import { captionClips, captionsInRange, readableCaptions, casedText, currentCaptions, DEFAULT_LINES, parseSubtitles, quietCuts, replaceText, rms10ms, toSrt, toVtt, withoutCaptions, wordsToCaptions, type Word } from "./captions";
+import { checkProject } from "./designCheck";
+import { runCommand } from "./commands";
 import { createProject, createTextClip } from "./project/defaults";
 
 const words = (s: string, step = 0.3, gapAfter: Record<number, number> = {}): Word[] => {
@@ -133,4 +135,23 @@ describe("captions on export", () => {
     expect(captionClips(q)[0].disabled).toBe(true);
     expect(q.tracks[0].clips.find((c) => c.id === title.id)!.disabled).toBeUndefined();
   });
+});
+
+
+it("groups short captions by word count, keeping every word start", () => {
+  const words = ["Save", "20%", "off", "today"].map((text, i) => ({ text, start: i * 0.4, end: i * 0.4 + 0.3 }));
+  const caps = wordsToCaptions(words, { ...DEFAULT_LINES, maxWords: 2, minDuration: 0.25 });
+  expect(caps.map((c) => c.text)).toEqual(["Save 20%", "off today"]);
+  expect(caps.map((c) => c.words)).toEqual([[0, 0.4], [0.8, 1.2000000000000002]]);
+});
+
+it("film 5: readable automatic captions merge shaft and other orphan cues", () => {
+  const ws = words("on how to rappel and ascend in and out of a cave shaft. And CAVES is one of those tools that will help you prepare to go to the Moon, do research exploration stay on the Moon and have a permanent presence there.", 0.29);
+  const caps = readableCaptions(ws);
+  expect(caps.every(c => c.end - c.start >= 5 / 6 - 1e-6 && c.text.length / (c.end - c.start) <= 20 + 1e-6)).toBe(true);
+  expect(caps.every(c => c.text.split("\n").length <= 2 && c.text.split("\n").every(l => l.length <= 32))).toBe(true);
+  expect(caps.some(c => c.text === "shaft.")).toBe(false);
+  const p = runCommand(createProject(), "add_captions", { captions: caps });
+  expect(checkProject(p).findings.filter(f => f.rule === "caption_too_fast")).toEqual([]);
+  expect(caps.every((c, i) => !i || c.start >= caps[i - 1].end)).toBe(true);
 });

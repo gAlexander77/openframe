@@ -1,18 +1,21 @@
 // preview_audio (ADR-098): a stretch of the mix, or one stem, rendered
 // offline through the mixer export uses (engine/mixdown.ts), encoded as a
-// short MP3 a model that takes audio can listen to, and measured for one
+// short audio file a model that takes audio can listen to, and measured for one
 // that cannot (lib/analysis/audition.ts). Nothing is edited.
 
-import { AudioBufferSource, BufferTarget, Mp3OutputFormat, Output, Quality } from "mediabunny";
-import { ensureMp3 } from "../engine/export";
+import { AudioBufferSource, BufferTarget, Mp4OutputFormat, Mp3OutputFormat, Output, Quality } from "mediabunny";
+import { ensureAac, ensureMp3 } from "../engine/export";
 import { hasSound, measureMix, mixPreroll, planesOf, renderMixWindow, WINDOW_SECONDS } from "../engine/mixdown";
+import { audioContext, scheduleAudio } from "../engine/audio";
+import { findClip } from "../lib/project/ops";
 import { decodeMono } from "../engine/analyze";
 import { auditionSummary, type AuditionSummary } from "../lib/analysis/audition";
-import { audioCrossfade } from "../lib/audio";
-import { edgeReport, ownOnset, type AudioEdge, type EdgeReport } from "../lib/analysis/edges";
+import { previewAudioFormat, previewWav, PREVIEW_AUDIO_MIME, type PreviewAudioFormat } from "../lib/previewAudio";
+import { audioCrossfade, wholeSoundEffect } from "../lib/audio";
+import { edgeReport, ownOnset, silentJoinTarget, type AudioEdge, type EdgeReport } from "../lib/analysis/edges";
 import { isolateTracks } from "../lib/analysis/balance";
 import { applyLimiter } from "../lib/analysis/loudness";
-import { stemsOf } from "../lib/audioRoles";
+import { assetsOf, trackRole, stemsOf } from "../lib/audioRoles";
 import { EXPORT_SAMPLE_RATE } from "../lib/export";
 import { projectDuration, rollBounds } from "../lib/project/ops";
 import type { AudioClip, Id, Project, TrackRole } from "../lib/project/types";
@@ -36,16 +39,18 @@ export interface AuditionRequest {
   solo?: Solo;
   /** Hear it as export_video with this loudness delivers it. */
   loudness?: number;
-  /** Leave the MP3 out: the measurements alone. */
+  /** Leave the audio file out: the measurements alone. */
   audio?: boolean;
+  format?: PreviewAudioFormat;
 }
 
 export interface AuditionAnswer {
-  mp3?: Uint8Array;
+  audio?: { data: Uint8Array; mimeType: string };
   summary: AuditionSummary & {
     start: number;
     end: number;
     solo: Solo;
+    format?: PreviewAudioFormat;
     /** The tracks heard, when one stem is. */
     tracks?: string[];
     /** Each stem's own integrated loudness where it sounds, and the
@@ -111,8 +116,9 @@ async function edgesOf(p: Project, heard: Project, start: number, end: number, s
   // Where the join could move instead (roll_edit), a bar later or earlier
   // (the song's grid, or Bar markers on either clip), keeping both clips a
   // frame long and in their files, with the incoming file sounding before
-  // its new in-point.
-  const rollTo = async (a: AudioClip, b: AudioClip): Promise<number | undefined> => {
+  // its new in-point. With no grid or Bar markers, look for a nearby
+  // stretch silent in both files, inside their legal roll range.
+  const rollTo = async (a: AudioClip, b: AudioClip): Promise<{ to: number; silence?: boolean } | undefined> => {
     const at = sec(b.start);
     const grid = p.assets.find((x) => x.id === b.assetId)?.musicGrid;
     const bars = grid
@@ -121,6 +127,21 @@ async function edgesOf(p: Project, heard: Project, start: number, end: number, s
     const bounds = rollBounds(p, a.id, b.id);
     const asset = p.assets.find((x) => x.id === b.assetId);
     if (!bounds || !asset) return undefined;
+    if (!bars.length && plain(a) && plain(b)) {
+      const outgoing = p.assets.find(x => x.id === a.assetId);
+      if (!outgoing?.hasAudio) return undefined;
+      const outA = a.in + sec(a.duration);
+      const lo = Math.max(at - 0.5, sec(bounds.lo), at - outA, at - b.in);
+      const hi = Math.min(at + 0.5, sec(bounds.hi), at + outgoing.duration - outA, at + asset.duration - b.in);
+      if (hi <= lo) return undefined;
+      const rate = 16000;
+      const [x, y] = await Promise.all([
+        decodeMono(outgoing, outA + lo - at, outA + hi - at, rate, undefined, signal),
+        decodeMono(asset, b.in + lo - at, b.in + hi - at, rate, undefined, signal),
+      ]);
+      const to = silentJoinTarget(x, y, rate, lo, at, p.fps.num / p.fps.den);
+      return to === undefined ? undefined : { to, silence: true };
+    }
     for (const to of bars) {
       const fr = Math.round(to * p.fps.num / p.fps.den);
       if (fr < bounds.lo || fr > bounds.hi) continue;
@@ -129,7 +150,7 @@ async function edgesOf(p: Project, heard: Project, start: number, end: number, s
       const pre = await decodeMono(asset, inB - 0.05, inB, 16000, undefined, signal);
       let s = 0;
       for (const v of pre) s += v * v;
-      if (pre.length && 10 * Math.log10(s / pre.length + 1e-20) > SILENT_DBFS) return +to.toFixed(3);
+      if (pre.length && 10 * Math.log10(s / pre.length + 1e-20) > SILENT_DBFS) return { to: +to.toFixed(3) };
     }
     return undefined;
   };
@@ -143,17 +164,17 @@ async function edgesOf(p: Project, heard: Project, start: number, end: number, s
       const out1 = c.in + sec(c.duration);
       if (!prev && at0 > start + 0.16 && at0 < end - 0.16)
         out.push({ at: +at0.toFixed(3), kind: "start", clips: [c.id], faded: sec(c.fadeIn), ...(plain(c) && c.in >= SIDE ? { cameIn: diff(await level(c, c.in - SIDE, c.in), await level(c, c.in, c.in + SIDE)) } : {}), ...(await onset(c)) });
-      if (at1 > start + 0.16 && at1 < end - 0.16) {
+      if (at1 > start + 0.16 && at1 < end - 0.16 && !(next && wholeSoundEffect(p, c) && wholeSoundEffect(p, next))) {
         const goesOn = plain(c) ? diff(await level(c, out1, out1 + SIDE), await level(c, out1 - SIDE, out1)) : undefined;
         // The next clip's own step at its in-point: the music's, not the cut's.
         const cameIn = next && plain(next) && next.in >= SIDE ? diff(await level(next, next.in - SIDE, next.in), await level(next, next.in, next.in + SIDE)) : undefined;
         const silent = next ? await silentBefore(next) : undefined;
         const roll = next && silent !== undefined ? await rollTo(c, next) : undefined;
-        out.push({ at: +at1.toFixed(3), kind: next ? "join" : "end", clips: next ? [c.id, next.id] : [c.id], faded: next ? audioCrossfade(c, next, p.fps) : sec(c.fadeOut), ...(goesOn !== undefined ? { goesOn } : {}), ...(cameIn !== undefined ? { cameIn } : {}), ...(next ? await onset(next) : {}), ...(next && silent !== undefined ? { silentBefore: { seconds: silent, in: next.in }, ...(roll !== undefined ? { rollTo: roll } : {}) } : {}) });
+        out.push({ at: +at1.toFixed(3), kind: next ? "join" : "end", clips: next ? [c.id, next.id] : [c.id], faded: next ? audioCrossfade(c, next, p.fps) : sec(c.fadeOut), ...(goesOn !== undefined ? { goesOn } : {}), ...(cameIn !== undefined ? { cameIn } : {}), ...(next ? await onset(next) : {}), ...(next && silent !== undefined ? { silentBefore: { seconds: silent, in: next.in }, ...(roll !== undefined ? { rollTo: roll.to, ...(roll.silence ? { rollIntoSilence: true } : {}) } : {}) } : {}) });
       }
     }
   }
-  return out.sort((a, b) => a.at - b.at);
+  return out.map(e => ({ ...e, role: trackRole(heard.tracks.find(t => t.clips.some(c => c.id === e.clips[0]))!, assetsOf(p)) })).sort((a, b) => a.at - b.at);
 }
 
 /** [start, end) of `p` rendered as export renders it, stereo at 48 kHz. */
@@ -173,24 +194,48 @@ async function render(p: Project, start: number, end: number, signal: AbortSigna
   return [L, R];
 }
 
-/** Stereo planes as an MP3 file, LAME in WebAssembly where the platform has no encoder. */
-async function mp3(L: Float32Array<ArrayBuffer>, R: Float32Array<ArrayBuffer>): Promise<Uint8Array> {
-  await ensureMp3(BITRATE);
+/** Stereo planes as MP3 (LAME) or AAC in M4A. */
+async function encoded(L: Float32Array<ArrayBuffer>, R: Float32Array<ArrayBuffer>, format: "mp3" | "m4a"): Promise<Uint8Array> {
   const target = new BufferTarget();
-  const out = new Output({ format: new Mp3OutputFormat(), target });
-  const src = new AudioBufferSource({ codec: "mp3", quality: new Quality({ bitrate: BITRATE }) });
+  const out = new Output({ format: format === "mp3" ? new Mp3OutputFormat() : new Mp4OutputFormat(), target });
+  const src = new AudioBufferSource({ codec: format === "mp3" ? "mp3" : "aac", quality: new Quality({ bitrate: BITRATE }) });
   out.addAudioTrack(src);
-  await out.start();
-  for (let at = 0; at < L.length; at += RATE) {
-    const n = Math.min(RATE, L.length - at);
-    const piece = new AudioBuffer({ length: n, numberOfChannels: 2, sampleRate: RATE });
-    piece.copyToChannel(L.subarray(at, at + n), 0);
-    piece.copyToChannel(R.subarray(at, at + n), 1);
-    await src.add(piece);
+  try {
+    await out.start();
+    for (let at = 0; at < L.length; at += RATE) {
+      const n = Math.min(RATE, L.length - at);
+      const piece = new AudioBuffer({ length: n, numberOfChannels: 2, sampleRate: RATE });
+      piece.copyToChannel(L.subarray(at, at + n), 0);
+      piece.copyToChannel(R.subarray(at, at + n), 1);
+      await src.add(piece);
+    }
+    src.close();
+    await out.finalize();
+    return new Uint8Array(target.buffer!);
+  } catch (e) {
+    await out.cancel().catch(() => {});
+    throw e;
   }
-  src.close();
-  await out.finalize();
-  return new Uint8Array(target.buffer!);
+}
+
+async function audioFile(L: Float32Array<ArrayBuffer>, R: Float32Array<ArrayBuffer>, asked: PreviewAudioFormat) {
+  const can = { mp3: false, m4a: false };
+  // Registration and the actual encode can each fail (a worker blocked by
+  // the host, for example). Either failure advances to the next format.
+  if (asked === "mp3") {
+    try { await ensureMp3(BITRATE); can.mp3 = true; } catch { /* Try AAC. */ }
+    if (can.mp3) {
+      try { return { data: await encoded(L, R, "mp3"), format: "mp3" as const }; } catch { can.mp3 = false; }
+    }
+  }
+  if (asked !== "wav") {
+    try { await ensureAac(BITRATE); can.m4a = true; } catch { /* WAV needs no encoder. */ }
+  }
+  const format = previewAudioFormat(asked, can);
+  if (format === "m4a") {
+    try { return { data: await encoded(L, R, "m4a"), format }; } catch { /* Fall through to WAV. */ }
+  }
+  return { data: previewWav(L, R), format: "wav" as const };
 }
 
 const r3 = (x: number) => +x.toFixed(3);
@@ -231,7 +276,7 @@ export async function previewAudio(req: AuditionRequest): Promise<AuditionAnswer
   const ids = solo === "mix" ? p.tracks.map((t) => t.id) : stems[ROLE[solo]];
   if (!ids.length) throw new Error(`No ${ROLE[solo as Exclude<Solo, "mix">]} tracks to hear. describe_project names each audio track's role; update_track role sets one.`);
   const heard = solo === "mix" ? p : isolateTracks(p, ids);
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const tid = toast("Rendering the sound", "progress");
   try {
     const [L, R] = await render(heard, start, end, signal);
@@ -267,8 +312,44 @@ export async function previewAudio(req: AuditionRequest): Promise<AuditionAnswer
     if (edges.length) summary.edges = edges;
     if (summary.clipped) notes.push("The mix passes full scale here, so a file of it clips: turn tracks or clips down, or export with a loudness target.");
     if (notes.length) summary.note = notes.join(" ");
-    return { ...(req.audio === false ? {} : { mp3: await mp3(L, R) }), summary };
+    if (req.audio === false) return { summary };
+    const file = await audioFile(L, R, req.format ?? "mp3");
+    summary.format = file.format;
+    return { audio: { data: file.data, mimeType: PREVIEW_AUDIO_MIME[file.format] }, summary };
   } finally {
     dismiss(tid);
   }
+}
+
+
+let voiceAudition: (() => void) | null = null;
+let voiceTimer: ReturnType<typeof setTimeout> | undefined;
+/** Hear a selected clip's first three seconds, in isolation through the
+ * live mixer. A new chip replaces the previous audition immediately. */
+export async function auditionClip(id: Id): Promise<void> {
+  voiceAudition?.();
+  clearTimeout(voiceTimer);
+  const p = store.get().project;
+  const c = findClip(p, id)?.clip;
+  if (!c) return;
+  const ctx = audioContext();
+  await ctx.resume();
+  if (store.get().project !== p) return;
+  const heard = { ...p, tracks: p.tracks.map((t) => ({ ...t, muted: false, solo: false, clips: t.clips.filter((x) => x.id === id) })) };
+  const start = framesToSeconds(c.start, p.fps);
+  const length = Math.min(3, framesToSeconds(c.duration, p.fps));
+  const schedule = scheduleAudio(ctx, ctx.destination, heard, start, start + length, ctx.currentTime + 0.1);
+  const signal = projectWork.capture();
+  let unsubscribe = () => {};
+  const stop = () => {
+    unsubscribe();
+    schedule.stop();
+    if (voiceAudition === stop) voiceAudition = null;
+    signal.removeEventListener("abort", stop);
+  };
+  unsubscribe = store.subscribe(() => { if (store.get().project !== p) stop(); });
+  voiceAudition = stop;
+  signal.addEventListener("abort", stop, { once: true });
+  voiceTimer = setTimeout(stop, (length + 0.15) * 1000);
+  await schedule.done;
 }

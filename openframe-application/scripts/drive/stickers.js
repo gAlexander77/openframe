@@ -65,6 +65,9 @@ async (page) => {
   let all = await clips();
   const fire = all.find((c) => c.type === "image");
   check("sticker adds an image clip above the main track", fire && !fire.main && fire.transform.scale === 0.3 && fire.start === 30, fire && { track: fire.track, scale: fire.transform.scale, start: fire.start });
+  // Adding a sticker previews its pop-in, then restores the playhead.
+  // Let that run finish before seeking a fixed frame for the pixel check.
+  await page.waitForFunction(() => !window.videoEditor.state().playing);
   await ve(() => window.videoEditor.seek(52)); // past the pop-in
   const withSticker = await centerColor();
   check("sticker shows in the viewer", dist(plain, withSticker) > 40, { plain, withSticker });

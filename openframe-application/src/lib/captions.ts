@@ -12,6 +12,21 @@ export interface Word {
   end: number;
 }
 
+/** Normalize ASR output before it reaches transcripts or captions. An overlapping
+ * repeat at a window boundary is one word; other overlaps keep word order.
+ * Sequential repetitions ("very very") are retained. */
+export function monotonicWords(words: Word[]): Word[] {
+  const out: Word[] = [];
+  const key = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  for (const w of [...words].filter(w => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start && w.text.trim()).sort((a, b) => a.start - b.start)) {
+    const last = out.at(-1);
+    if (last && w.start < last.end && key(w.text) && key(w.text) === key(last.text)) { last.end = Math.max(last.end, w.end); continue; }
+    const start = Math.max(0, w.start, last?.end ?? 0);
+    if (w.end > start) out.push({ ...w, start });
+  }
+  return out;
+}
+
 export interface Caption {
   start: number;
   end: number;
@@ -34,6 +49,8 @@ export function spokenWord(text: string, times: number[] | undefined, r: number)
 }
 
 export interface LineOptions {
+  /** Short-form captions: at most this many words, keeping word timings. */
+  maxWords?: number;
   /** Longest line in characters (Netflix's guideline is 42; short-form
    * video reads better around 32). */
   maxChars: number;
@@ -75,7 +92,7 @@ export function wordsToCaptions(words: Word[], o: LineOptions = DEFAULT_LINES): 
     if (cur.length) {
       const prev = cur[cur.length - 1];
       const len = chars(cur) + t.length;
-      if (w.start - prev.end >= o.pauseBreak || w.end - cur[0].start > o.maxDuration) flush();
+      if (cur.length >= (o.maxWords ?? Infinity) || w.start - prev.end >= o.pauseBreak || w.end - cur[0].start > o.maxDuration) flush();
       else if (len > o.maxChars) {
         // Never strand a little word at the end of a line ("spoken by a /
         // computer"): carry it over to start the next one.
@@ -99,6 +116,53 @@ export function wordsToCaptions(words: Word[], o: LineOptions = DEFAULT_LINES): 
     }
   }
   return out;
+}
+
+/** The reading-time rule shared by auto captions and the project checker. */
+export function captionReading(c: Caption): { cps: number; met: boolean } {
+  const duration = c.end - c.start;
+  const cps = c.text.replace(/\s+/g, " ").trim().length / Math.max(duration, 1e-3);
+  return { cps, met: duration >= 5 / 6 && cps <= 20 };
+}
+
+/** Whole readable cues: choose phrase boundaries together, rather than
+ * leaving a final word orphaned by a greedy line break. A cue may use two
+ * lines. Reading time grows into silence, never over the next spoken word.
+ * Very fast speech or a clipped word can still be infeasible; callers report
+ * those cues instead of dropping recognized words. */
+export function readableCaptions(input: Word[], o: LineOptions = DEFAULT_LINES, limit = Infinity): Caption[] {
+  const ws = monotonicWords(input).filter(w => w.start < limit);
+  const n = ws.length, cost = Array(n + 1).fill(Infinity), next = Array(n).fill(0), cues: Caption[] = [];
+  cost[n] = 0;
+  const wrap = (a: number, b: number) => {
+    const lines = [""];
+    for (const w of ws.slice(a, b)) {
+      const t = w.text.trim(), last = lines.length - 1;
+      if (lines[last] && lines[last].length + t.length + 1 > o.maxChars) lines.push(t);
+      else lines[last] += (lines[last] ? " " : "") + t;
+    }
+    return lines.join("\n").replace(/\s+([,.!?;:])/g, "$1");
+  };
+  const cue = (i: number, j: number): Caption => {
+    const text = wrap(i, j), start = ws[i].start;
+    const need = Math.max(5 / 6, text.replace(/\s+/g, " ").trim().length / 19);
+    return { start, end: Math.min(limit, ws[j]?.start ?? Infinity, Math.max(ws[j - 1].end, start + need)), text, words: ws.slice(i, j).filter(w => !/^[,.!?;:]/.test(w.text.trim())).map(w => w.start) };
+  };
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = i + 1; j <= n && j <= i + 40; j++) {
+      const c = cue(i, j), lines = c.text.split("\n");
+      if (j > i + 1 && (lines.length > 2 || ws[j - 1].end - ws[i].start > Math.max(o.maxDuration, 5))) break;
+      const duration = c.end - c.start;
+      const cps = c.text.replace(/\s+/g, " ").trim().length / Math.max(0.001, duration);
+      const penalty = 1 + (SENTENCE_END.test(ws[j - 1].text) ? 0 : /[,;:]$/.test(ws[j - 1].text) ? 0.3 : 1.2)
+        + (WEAK.has(ws[j - 1].text.toLowerCase()) ? 3 : 0)
+        + (j - i === 1 ? 4 : 0) + Math.max(0, 5 / 6 - duration) * 1000 + Math.max(0, cps - 20) * 100;
+      if (penalty + cost[j] < cost[i]) { cost[i] = penalty + cost[j]; next[i] = j; }
+      if (j < n && ws[j].start - ws[j - 1].end >= o.pauseBreak) break;
+    }
+  }
+  for (let i = 0; i < n;) { const j = next[i] || i + 1; cues.push(cue(i, j)); i = j; }
+  return cues;
 }
 
 // ---- the project's captions ------------------------------------------------------

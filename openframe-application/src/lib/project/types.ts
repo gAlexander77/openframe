@@ -78,6 +78,16 @@ export interface Brand {
 
 export type AssetKind = "video" | "audio" | "image";
 
+export type PlaybackProxySize = "half" | "quarter" | "720p";
+export interface PlaybackProxy {
+  src: string;
+  width: number;
+  height: number;
+  size: PlaybackProxySize;
+  /** Original path, byte size and modified time, hashed by the platform. */
+  fingerprint: string;
+}
+
 export interface Asset {
   id: Id;
   kind: AssetKind;
@@ -88,6 +98,8 @@ export interface Asset {
   /** Edit-friendly copy (desktop: made by ffmpeg) when the webview cannot
    * decode the original. Preview and export read this when present. */
   proxy?: string;
+  /** Optional preview-only copy. Export and analysis always read proxy/src. */
+  playbackProxy?: PlaybackProxy;
   /** Timed image frames repeat for the length of the clip. */
   animated?: boolean;
   /** Seconds. Images report 0: they last as long as their clip. */
@@ -181,6 +193,8 @@ export type TrackKind = "video" | "audio";
 export type TrackRole = "dialog" | "music" | "effects" | "ambience";
 
 export interface Track {
+  /** Ordered audio inserts, before the track fader (ADR-134). */
+  inserts?: Insert[];
   color?: ClipLabel;
   id: Id;
   kind: TrackKind;
@@ -222,6 +236,10 @@ export interface Compound {
 }
 
 export interface Marker {
+  /** Frames after the start; absent or zero is a point. */
+  duration?: number;
+  /** Include this marker in chapter-enabled MP4 exports. */
+  chapter?: boolean;
   id: Id;
   frame: number;
   label: string;
@@ -278,6 +296,8 @@ export interface Keyframe {
 export type ClipLabel = "red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "purple" | "pink";
 
 interface ClipBase {
+  /** Ordinary grouped stream bands (ADR-141). Absent: ordinary clip. */
+  streamLayout?: "facecam" | "gameplay" | "border";
   id: Id;
   /** Timeline frame where the clip begins. */
   start: number;
@@ -329,6 +349,8 @@ export interface Transform {
 }
 
 export interface Crop {
+  /** Inward softness, pixels at a 1080-tall render. Absent: hard edges. */
+  feather?: number;
   /** Fractions of the source trimmed from each edge. */
   left: number;
   top: number;
@@ -452,10 +474,22 @@ export interface Animation {
   order?: "forward" | "backward" | "center" | "random";
 }
 
+export interface MaskPoint {
+  x: number;
+  y: number;
+  in?: [number, number];
+  out?: [number, number];
+}
+
 export interface Mask {
+  /** Path anchors in the mask's own frame, in layer fractions. Width and
+   * height multiply them before rigid rotation and translation. */
+  points?: MaskPoint[];
+  /** Absent: closed. An open path is a draft and has no filled coverage. */
+  closed?: boolean;
   /** heart and star came later (ADR-049): readers that predate them draw
    * no mask for them. */
-  shape: "linear" | "mirror" | "circle" | "rectangle" | "heart" | "star";
+  shape: "linear" | "mirror" | "circle" | "rectangle" | "heart" | "star" | "path";
   /** Center, as an offset from the layer center in layer fractions. */
   x: number;
   y: number;
@@ -734,7 +768,47 @@ export interface TapeStop {
   duration: number;
 }
 
+export const FADE_CURVES = { linear: "Linear", equalPower: "Equal power", logarithmic: "Logarithmic", exponential: "Exponential", sCurve: "S curve" } as const;
+export type FadeCurve = keyof typeof FADE_CURVES;
+export interface Saturation { /** Drive, 0..1; absent effect is clean. */ drive: number }
+export interface RingMod { /** Carrier frequency in Hz, 20..200. */ frequency: number; /** Wet amount, 0..1. */ mix: number }
+
+export interface Gate {
+  /** dBFS, -90..0. */
+  threshold: number;
+  /** Expansion ratio, 1..100. */
+  ratio: number;
+  /** Seconds. */
+  attack: number;
+  hold: number;
+  release: number;
+  /** Maximum attenuation, dB, 0..96. */
+  range: number;
+}
+export interface Deesser { low: number; high: number; amount: number }
+export interface Limiter { ceiling: number; release: number }
+export interface EqBand {
+  type: "peaking" | "lowshelf" | "highshelf" | "highpass" | "lowpass" | "notch";
+  freq: number;
+  gain: number;
+  q: number;
+  on: boolean;
+}
+export interface InsertParams {
+  eq: { bands: EqBand[] };
+  compressor: Compressor;
+  gate: Gate;
+  deesser: Deesser;
+  limiter: Limiter;
+  reverb: Reverb;
+  echo: Echo;
+}
+export type InsertType = keyof InsertParams;
+export type Insert = { [K in InsertType]: { id: Id; type: K; on: boolean; params: InsertParams[K] } }[InsertType];
+
 export interface Sound {
+  /** Ordered inserts after the legacy chain, before volume and fades. */
+  inserts?: Insert[];
   /** Linear gain, 1 = 0 dB, up to 4 (+12 dB). */
   volume: number;
   /** -1 (left) .. 1 (right). */
@@ -742,6 +816,15 @@ export interface Sound {
   /** Frames. */
   fadeIn: number;
   fadeOut: number;
+  /** Absent = linear, the original envelope. */
+  fadeInCurve?: FadeCurve;
+  fadeOutCurve?: FadeCurve;
+  /** Descriptive preset label only; the editable settings are the sound. */
+  voice?: string;
+  saturation?: Saturation;
+  ringMod?: RingMod;
+  /** Fold the channels to mono before processing. */
+  mono?: boolean;
   muted: boolean;
   /** Three-band equalizer, dB per band (-12..12); absent = flat. */
   eq?: { low?: number; mid?: number; high?: number };
@@ -776,6 +859,8 @@ export interface DuckRecord {
   openAt?: (number | string)[];
   /** Seconds a pause must last for the music to come up (min_gap). */
   minGap?: number;
+  /** Pauses this duck holds down, in this clip's source-file seconds. */
+  held?: [number, number][];
   /** Seconds the music takes to come back up after a line (release). */
   release?: number;
   /** Ducked with every clip of its track in one call (track_id). */
@@ -828,6 +913,8 @@ export interface Timed {
   /** CapCut's "Change pitch": absent (off) keeps the pitch at any speed;
    * on lets it rise and fall with the speed, like tape. */
   changePitch?: boolean;
+  /** Independent pitch shift in semitones, -12..12; absent = 0. Not keyframeable. */
+  pitch?: number;
   /** Hold the frame at `in` for the clip's whole length. */
   freeze?: boolean;
 }
@@ -925,6 +1012,8 @@ export type AudioClip = ClipBase &
      * before its start (lib/audio.ts soundOverlaps, ADR-104). Absent: a
      * butt cut, each side ramped over the 4 ms click guard. */
     crossfade?: number;
+    /** Absent = equal power, the original crossfade. */
+    crossfadeCurve?: FadeCurve;
   };
 export type ImageClip = ClipBase & Visual & { type: "image"; assetId: Id; imageIn?: number };
 export type TextClip = ClipBase &
@@ -945,7 +1034,7 @@ export type ColorClip = ClipBase & Visual & { type: "color"; color: string; shap
 /** Applies its color, filter and effects to everything composited below it
  * (Premiere's adjustment layer, CapCut's effect/filter tracks). */
 export type AdjustmentClip = ClipBase &
-  Pick<Visual, "opacity" | "adjust" | "filter" | "effects"> & {
+  Pick<Visual, "opacity" | "adjust" | "filter" | "effects" | "mask"> & {
     type: "adjustment";
   };
 

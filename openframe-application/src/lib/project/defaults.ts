@@ -1,3 +1,6 @@
+import { FADE_CURVES } from "./types";
+import { cleanMask } from "../mask";
+import { normalizePlaybackProxy } from "../proxyPolicy";
 import { cleanRuns } from "../textRuns";
 // Factories for every project object, and `normalizeProject`, the trust
 // boundary for project JSON. Whatever comes in — a file saved by an older
@@ -6,8 +9,9 @@ import { cleanRuns } from "../textRuns";
 
 import { normalizeBrand } from "../brandKit";
 import { effectDefaults } from "../catalog";
+import { cleanInserts } from "../audioInserts";
 import { cleanCompressor } from "../compressor";
-import { cleanSoundFx, FX_KEYS } from "../soundFx";
+import { cleanSoundFx, FX_KEYS, VOICE_PRESETS } from "../soundFx";
 import { cleanGrade } from "../grade";
 import { cleanPoints } from "../speed";
 import { cleanShape } from "../shapes";
@@ -289,13 +293,20 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     throw new ProjectError(`${where}: unknown clip type ${JSON.stringify(type)}`);
   }
   const c = { ...raw } as Record<string, unknown>;
+  if (type !== "video" && type !== "audio" && type !== "compound") delete c.inserts;
   c.id = typeof c.id === "string" && c.id ? c.id : uid("c");
+  if (!(type === "video" && ["facecam", "gameplay"].includes(String(c.streamLayout))) && !(type === "color" && c.streamLayout === "border")) delete c.streamLayout;
   c.start = Math.max(0, Math.round(num(c.start, 0)));
   c.duration = Math.max(1, Math.round(num(c.duration, 1)));
   if (VISUAL_TYPES.has(type)) {
     const base = visual();
     c.transform = { ...base.transform, ...(isObj(c.transform) ? c.transform : {}) };
-    c.crop = { ...base.crop, ...(isObj(c.crop) ? c.crop : {}) };
+    const crop = { ...base.crop, ...(isObj(c.crop) ? c.crop : {}) };
+    if (crop.feather !== undefined) {
+      if (typeof crop.feather === "number" && Number.isFinite(crop.feather) && crop.feather >= 0) crop.feather = Math.min(1080, crop.feather);
+      else delete crop.feather;
+    }
+    c.crop = crop;
     c.adjust = normalizeAdjust(c.adjust, where, lutIds);
     c.opacity = num(c.opacity, 1);
     c.blend = typeof c.blend === "string" ? c.blend : "normal";
@@ -310,6 +321,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     optional(c, "shadow", cleanShadow(c.shadow));
     optional(c, "border", cleanBorder(c.border));
   }
+  if (VISUAL_TYPES.has(type) || type === "adjustment") optional(c, "mask", cleanMask(c.mask));
   if (type === "adjustment") {
     c.adjust = normalizeAdjust(c.adjust, where, lutIds);
     c.opacity = num(c.opacity, 1);
@@ -321,6 +333,12 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     }
     c.in = Math.max(0, num(c.in, 0));
     c.speed = num(c.speed, 1) > 0 ? num(c.speed, 1) : 1;
+    if (isObj(c.duck) && c.duck.held !== undefined) {
+      const d = { ...c.duck };
+      if (Array.isArray(d.held)) d.held = d.held.filter((s): s is [number, number] => Array.isArray(s) && s.length === 2 && s.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0) && s[1] > s[0]).map((s) => [...s]);
+      else delete d.held;
+      c.duck = d;
+    }
     // Optional retiming fields: absent means off, so files written before
     // they existed load unchanged.
     const raw = isObj(c.speedCurve) && Array.isArray(c.speedCurve.points) ? c.speedCurve : null;
@@ -333,6 +351,13 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     else delete c.compressor;
     // Sound design (ADR-060): each effect in range, or dropped.
     cleanSoundFx(c);
+    optional(c, "inserts", cleanInserts(c.inserts));
+    for (const k of ["fadeInCurve", "fadeOutCurve", "crossfadeCurve"]) if (typeof c[k] !== "string" || !Object.hasOwn(FADE_CURVES, c[k] as string)) delete c[k];
+    if (typeof c.pitch === "number" && Number.isFinite(c.pitch)) c.pitch = Math.max(-12, Math.min(12, c.pitch));
+    else delete c.pitch;
+    if (typeof c.voice !== "string" || !Object.hasOwn(VOICE_PRESETS, c.voice)) delete c.voice;
+    if (c.mono !== true) delete c.mono;
+    if (isObj(c.keyframes)) c.keyframes = Object.fromEntries(Object.entries(c.keyframes).filter(([path]) => path !== "pitch" && !path.startsWith("saturation.") && !path.startsWith("ringMod.")));
   }
   // Remove BG (ADR-033): a reference to a matte file, or nothing. A broken
   // one is dropped, not refused: the clip still plays, with its background.
@@ -344,7 +369,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     if (typeof c.compoundId !== "string") throw new ProjectError(`${where}: missing compoundId`);
     // Not supported on compound clips yet (ADR-037): dropped, not refused,
     // so a file that has them still opens.
-    for (const k of ["speedCurve", "reverse", "freeze", ...FX_KEYS]) delete c[k];
+    for (const k of ["speedCurve", "reverse", "freeze", "pitch", "voice", "mono", ...FX_KEYS]) delete c[k];
   }
   if (type === "video" || type === "audio" || type === "image") {
     if (typeof c.assetId !== "string") throw new ProjectError(`${where}: missing assetId`);
@@ -386,7 +411,8 @@ export function normalizeProject(raw: unknown): Project {
       throw new ProjectError(`assets[${i}]: needs at least a "src"`);
     }
     const kind = a.kind === "audio" || a.kind === "image" ? a.kind : "video";
-    const { musicGrid: rawGrid, ...rest } = a;
+    const { musicGrid: rawGrid, playbackProxy: rawProxy, ...rest } = a;
+    const playbackProxy = normalizePlaybackProxy(rawProxy);
     const musicGrid = normalizeMusicGrid(rawGrid);
     return {
       ...rest,
@@ -399,6 +425,7 @@ export function normalizeProject(raw: unknown): Project {
       hasVideo: typeof a.hasVideo === "boolean" ? a.hasVideo : kind !== "audio",
       hasAudio: typeof a.hasAudio === "boolean" ? a.hasAudio : kind !== "image",
       ...(musicGrid ? { musicGrid } : {}),
+      ...(playbackProxy ? { playbackProxy } : {}),
     } as Asset;
   });
   const assetIds = new Set(assets.map((a) => a.id));
@@ -435,6 +462,14 @@ export function normalizeProject(raw: unknown): Project {
       markers: normalizeMarkers(k.markers),
     };
   });
+  // Insert ids are document-wide: editing one must never target a copy.
+  const insertIds = new Set<string>();
+  for (const t of [...tracks, ...compounds.flatMap(k => k.tracks)]) {
+    for (const list of [t.inserts, ...t.clips.map(c => "inserts" in c ? c.inserts : undefined)]) for (const i of list ?? []) {
+      if (insertIds.has(i.id)) i.id = uid("insert");
+      insertIds.add(i.id);
+    }
+  }
   // A compound that plays itself, even through others, would never finish
   // rendering.
   const byId = new Map(compounds.map((k) => [k.id, k]));
@@ -494,6 +529,7 @@ function normalizeTracks(rawTracks: unknown[], at: string, assetIds: Set<string>
     return {
       id: typeof t.id === "string" ? t.id : uid("t"),
       kind,
+      ...(kind === "audio" ? { inserts: cleanInserts(t.inserts) } : {}),
       name: typeof t.name === "string" ? t.name : kind === "audio" ? "Audio" : "Video",
       ...(t.main === true ? { main: true } : {}),
       clips,
@@ -522,6 +558,8 @@ function normalizeMarkers(raw: unknown): Marker[] {
     frame: Math.max(0, Math.round(num(m.frame, 0))),
     label: typeof m.label === "string" ? m.label : "",
     color: typeof m.color === "string" ? m.color : "#3be0f0",
+    ...(Number.isSafeInteger(m.duration) && (m.duration as number) >= 0 ? { duration: m.duration as number } : {}),
+    ...(typeof m.chapter === "boolean" ? { chapter: m.chapter } : {}),
     ...(isObj(m.follows) && typeof m.follows.clip === "string" && Number.isFinite(m.follows.at) && (m.follows.at as number) >= 0 ? { follows: { clip: m.follows.clip, at: m.follows.at as number } } : {}),
   }));
 }

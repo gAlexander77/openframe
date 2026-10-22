@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { TRANSITIONS } from "../lib/catalog";
 import { parseTyped } from "../lib/numberInput";
 import { DEFAULT_PREFS, prefsStore, usePrefs, type SecondsPref } from "../state/prefs";
 import { Toggle, useCommitOnLeave } from "./inspector/controls";
@@ -7,7 +8,8 @@ import { Dialog } from "./Dialog";
 const ROWS: [SecondsPref, string, string][] = [
   ["stillSeconds", "Pictures", "New pictures from the library"],
   ["layerSeconds", "Titles and effects", "Titles, stickers, effects, filters and adjustment layers"],
-  ["transitionSeconds", "Transitions", "Shorter when a clip beside it is"],
+  ["transitionSeconds", "Transitions", "New video transitions; shorter when a clip beside it is"],
+  ["audioCrossfadeSeconds", "Audio crossfades", "Shorter when the join has less sound to overlap"],
 ];
 
 /** A length in seconds: what was typed applies on Enter, on leaving the
@@ -40,6 +42,7 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
   const prefs = usePrefs();
   return (
     <Dialog title="Preferences" onClose={onClose} className="prefs-dialog">
+      <label className="prefs-row prefs-transition"><span>Default video transition</span><select className="field" aria-label="Default video transition" value={prefs.transitionType} onChange={(e) => prefsStore.set({ transitionType: e.target.value })}>{Object.entries(TRANSITIONS).map(([id, d]) => <option key={id} value={id}>{d.label}</option>)}</select></label>
       <h3 className="prefs-head">Default lengths</h3>
       {ROWS.map(([key, label, hint]) => (
         <label key={key} className="prefs-row">

@@ -102,6 +102,11 @@ async (page) => {
   const sticker = await page.evaluate(async () => { window.__sticker(); return await window.__job; });
   details.lateStickerDiscarded = { ok: sticker === "AbortError" && await unchanged(before) };
   let heldWorker;
+  // Captions load no model for a timeline without sound (ADR-144): give it speech.
+  await page.evaluate(async () => {
+    const [speech] = await window.videoEditor.import([{ name: "speech.wav", src: `${location.origin}/fixtures/media/speech-test.wav` }]);
+    window.videoEditor.exec("add_media_clip", { asset_id: speech.id, start: 0 });
+  });
   await page.route("**/asr.worker.ts*", (route) => { heldWorker = route; });
   const loading = page.waitForRequest("**/asr.worker.ts*");
   await page.evaluate(async () => {

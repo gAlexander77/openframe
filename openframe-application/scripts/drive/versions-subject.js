@@ -10,8 +10,8 @@
 // - save_projects saves the 9:16 version as a project of its own, the
 //   master untouched; opened, its frames show the tower and the boat
 //   inside the frame at every moment looked at, the boat followed;
-// - a focus on the tower's clip places the picture by hand, and the check
-//   says that framing cuts the tower.
+// - a focus on the tower's clip places the picture by hand; saliency
+//   does not second-guess that explicit subject choice (ADR-139).
 async (page) => {
   const fs = await import("node:fs");
   const { execFileSync } = await import("node:child_process");
@@ -69,6 +69,11 @@ async (page) => {
   await text("open_project", { project: "Subject 9x16" });
   const d = await text("describe_project");
   const vClips = d.tracks.find((t) => t.main).clips;
+  const framing = () => page.evaluate(([id, other]) => {
+    const clips = window.videoEditor.project().tracks.flatMap((t) => t.clips);
+    return { tower: clips.find((c) => c.id === id)?.transform.x, boat: clips.find((c) => c.id === other)?.transform.x };
+  }, [towerClip, boatClip]);
+  const autoFrame = await framing();
   const keyed = vClips.find((c) => c.asset === boat.id)?.keyframes?.["transform.x"];
   // Where the subject is in a frame: the darkest column of the sky (the
   // tower), or the brightest blob of the sea (the boat), as a share of the width.
@@ -97,11 +102,17 @@ async (page) => {
   const frames = await call("preview_frames", { times: [0.5, 2.5, 3.3, 5, 6.8], tile_width: 200, columns: 5 });
   fs.writeFileSync(`${dir}/versions-subject-saved.png`, Buffer.from(frames[0].data, "base64"));
 
-  // ---- a focus by hand, and the check naming what it cuts ------------------------------
+  // ---- a focus by hand owns the subject choice, and still moves the picture -----------
   await text("open_project", { project: "Subject master" });
   const byHand = await call("export_versions", { versions: [{ ratio: "9:16", focus: [{ clip_id: towerClip, x: 0.2 }] }], check: true, check_at: [0.2] });
-  const handCut = JSON.parse(byHand[1].text).subjects?.[0]?.reports ?? [];
-  details.focusByHand = { ok: handCut.some((r) => r.clip_id === towerClip) && !handCut.some((r) => r.clip_id === boatClip), handCut };
+  const hand = JSON.parse(byHand[1].text);
+  const handCut = hand.subjects?.flatMap((v) => v.reports) ?? [];
+  // Save and inspect this exact spec too: an empty report alone would
+  // also pass if focus silently stopped applying.
+  const handSaved = await text("export_versions", { versions: [{ ratio: "9:16", name: "Hand focus 9x16", focus: [{ clip_id: towerClip, x: 0.2 }] }], save_projects: true });
+  await text("open_project", { project: "Hand focus 9x16" });
+  const handFrame = await framing();
+  details.focusByHand = { ok: byHand[0].type === "image" && handCut.length === 0 && handSaved.projects?.length === 1 && Number.isFinite(handFrame.tower) && handFrame.tower > 0 && Math.abs(handFrame.tower - autoFrame.tower) > 0.1 && handFrame.boat === autoFrame.boat, handCut, handFrame, autoFrame };
 
   return { ok: Object.values(details).every((x) => x.ok), details };
 };

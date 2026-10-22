@@ -23,7 +23,6 @@ async function fileFor(src: string): Promise<File> {
   if (hit) return hit;
   const handle = await (await dir("media")).getFileHandle(src);
   const file = await handle.getFile();
-  live.set(src, file);
   return file;
 }
 
@@ -35,6 +34,7 @@ async function copyToOpfs(key: string, file: File) {
     const handle = await (await dir("media")).getFileHandle(key, { create: true });
     const w = await handle.createWritable();
     await file.stream().pipeTo(w);
+    if (live.get(key) === file) live.delete(key);
   } catch (e) {
     // Out of quota or private mode: the project still works this session.
     console.warn(`could not keep ${file.name} for next time:`, e);
@@ -59,6 +59,49 @@ const savePicker = () =>
 
 export const web: Platform = {
   kind: "web",
+  async openChatReplay(path, signal) {
+    // ponytail: JSON replays are parsed whole. Cap input at 32 MiB; a
+    // streaming tokenizer would admit larger, very busy chat replays.
+    let file: Blob, name: string;
+    if (path !== undefined) {
+      if (!/^(https?:|blob:|data:)/i.test(path)) throw new Error("The web build accepts chat replay URLs only.");
+      const response = await fetch(path, { signal });
+      if (!response.ok) throw new Error(`Chat replay address answered ${response.status}`);
+      if (Number(response.headers.get("content-length")) > 32 * 1024 * 1024) throw new Error("Chat replay exceeds 32 MiB.");
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Chat replay address returned no body");
+      const parts: BlobPart[] = [];
+      let bytes = 0;
+      try {
+        for (;;) {
+          signal?.throwIfAborted();
+          const { value, done } = await reader.read();
+          if (done) break;
+          bytes += value.byteLength;
+          if (bytes > 32 * 1024 * 1024) { await reader.cancel(); throw new Error("Chat replay exceeds 32 MiB."); }
+          parts.push(new Uint8Array(value));
+        }
+      } finally { reader.releaseLock(); }
+      file = new Blob(parts); name = "Chat replay";
+    } else {
+      const picked = (await pickFiles(".json,.jsonl,.txt"))[0];
+      if (!picked) return null;
+      file = picked; name = picked.name;
+    }
+    if (file.size > 32 * 1024 * 1024) throw new Error("Chat replay exceeds 32 MiB. Split it before importing.");
+    signal?.throwIfAborted();
+    return { name, text: await file.text() };
+  },
+  // ponytail: browser proxy generation awaits mediabunny Conversion (Roadmap).
+  async makePlaybackProxy() { throw new Error("Playback proxies are not available in the browser build. Use the desktop app."); },
+  async deletePlaybackProxy() { throw new Error("Playback proxies are not available in the browser build. Use the desktop app."); },
+  async openTimelineFile(path) {
+    if (path !== undefined) throw new Error("Importing a timeline by path is desktop only; use File > Import timeline to choose a file.");
+    const [file] = await pickFiles(".otio,.fcpxml,.xml");
+    if (!file) return null;
+    if (file.size > 32 * 1024 * 1024) throw new Error("Timeline file exceeds 32 MiB.");
+    return { name: file.name, text: await file.text() };
+  },
   async openProjectFile(path) {
     if (path) throw new Error("Opening a project by path is desktop only; use Open project file.");
     const [file] = await pickFiles(".json,application/json");
@@ -109,7 +152,6 @@ export const web: Platform = {
       throw e;
     }
     const file = await handle.getFile();
-    live.set(key, file);
     return { name, src: key, size: file.size };
   },
 
@@ -119,7 +161,7 @@ export const web: Platform = {
 
   async sourceFor(src) {
     if (/^https?:/.test(src)) {
-      return new UrlSource(src);
+      return new UrlSource(src, { maxCacheSize: 8 << 20 });
     }
     return new BlobSource(await fileFor(src));
   },

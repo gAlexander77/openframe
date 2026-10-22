@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { VideoSampleSink, EncodedPacketSink, VideoSample } from "mediabunny";
-import { VideoCursor } from "../../engine/cursor";
+import { ReverseCursor, VideoCursor } from "../../engine/cursor";
 const keys = { getKeyPacket: async () => ({ timestamp: 0 }) } as unknown as EncodedPacketSink;
 it("lends the prepared head and closes it exactly once on advancing and disposal", async () => {
   const samples = [0, 1].map(timestamp => ({ timestamp, duration: 1, close: vi.fn() }));
@@ -29,4 +29,31 @@ it("closes an arriving sample when disposal interrupts preroll", async () => {
   await c.frameAt(1);
   expect(arrived.close).toHaveBeenCalledTimes(1);
   expect(ended).toHaveBeenCalledTimes(1);
+});
+
+it("closes completed reverse prefetches when skipped or disposed and releases the input once", async () => {
+  const bitmaps: { width: number; height: number; close: ReturnType<typeof vi.fn> }[] = [];
+  const samples: { close: ReturnType<typeof vi.fn> }[] = [];
+  vi.stubGlobal("createImageBitmap", vi.fn(async () => { const bitmap = { width: 16, height: 16, close: vi.fn() }; bitmaps.push(bitmap); return bitmap; }));
+  const sink = { async *samples(from: number) {
+    for (let i = 0; i < 2; i++) {
+      const sample = { timestamp: from + i / 30, duration: 1 / 30, displayWidth: 16, displayHeight: 16, rotation: 0, close: vi.fn(), toCanvasImageSource: () => ({ width: 16, height: 16 }) };
+      samples.push(sample); yield sample;
+    }
+  } } as unknown as VideoSampleSink;
+  const release = vi.fn();
+  const cursor = new ReverseCursor(sink, keys, 0, { width: 16, height: 16 }, { budget: 4096 }, release);
+  try {
+    await cursor.frameAt(10);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(bitmaps.length).toBe(4);
+    await cursor.frameAt(1); // The finished prefetch at ~10 s is discarded.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(bitmaps.length).toBe(8);
+    cursor.dispose(); cursor.dispose();
+    await cursor.frameAt(0);
+    expect(bitmaps.every(b => b.close.mock.calls.length === 1)).toBe(true);
+    expect(samples.every(s => s.close.mock.calls.length === 1)).toBe(true);
+    expect(release).toHaveBeenCalledTimes(1);
+  } finally { cursor.dispose(); vi.unstubAllGlobals(); }
 });

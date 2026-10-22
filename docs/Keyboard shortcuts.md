@@ -16,6 +16,7 @@ on 2026-10-18; when they change, change this page with them.
 | Action | Keys |
 |---|---|
 | Play / pause | `Space` |
+| Mute playback | `Shift+S` |
 | Previous frame | `Left` |
 | Next frame | `Right` |
 | Back 10 frames | `Shift+Left` |
@@ -28,7 +29,9 @@ on 2026-10-18; when they change, change this page with them.
 | Shuttle stop | `K` |
 | Shuttle forward | `L` |
 | Loop playback | `Ctrl+L` |
+| Proxy playback | `Alt+Shift+P` |
 | Play in to out | `Ctrl+Shift+Space` |
+| Toggle compare | `Alt+Shift+C` |
 | Full-screen preview | `Ctrl+Shift+F` |
 
 ## Editing
@@ -47,6 +50,10 @@ on 2026-10-18; when they change, change this page with them.
 | Paste | `Ctrl+V` |
 | Freeze frame | `Alt+F` |
 | Extract audio | `Ctrl+Shift+S` |
+| Apply default video transition | `Ctrl+Alt+D` |
+| Apply default audio crossfade | `Ctrl+Alt+Shift+D` |
+| Mute track | `Shift+H` |
+| Solo track | `Alt+S` |
 | Create compound clip | `Alt+G` |
 | Break apart compound clip | `Alt+Shift+G` |
 | Activate / deactivate clip | `V` |
@@ -97,6 +104,11 @@ on 2026-10-18; when they change, change this page with them.
 | Clear range | `Alt+X` |
 | Lift in to out | `;` |
 | Extract in to out | `'` |
+| Select nearest edit point | `Shift+V` |
+| Select next edit point | `Shift+Down` |
+| Select previous edit point | `Shift+Up` |
+| Extend edit to playhead | `E` |
+| Fit source to fill timeline range | `Shift+F` |
 | Insert source at playhead | `,` |
 | Overwrite source at playhead | `.` |
 
@@ -115,6 +127,12 @@ on 2026-10-18; when they change, change this page with them.
 
 ## Elsewhere
 
+In the library's Timeline tab, Up/Down move through clip rows and select,
+seek and reveal the reached clip. Enter selects the focused row again.
+Default-transition actions act on selected clips' outgoing cuts, or the
+nearest eligible main-track cut with nothing selected. Mute track and
+Solo track act on the tracks of selected clips.
+
 - **The viewer:** after clicking the viewer, the arrow keys nudge the
   selected pictures 1 px (with Shift, 10 px); elsewhere they step frames.
   Ctrl with the mouse wheel zooms the viewer at the pointer.
@@ -129,5 +147,13 @@ on 2026-10-18; when they change, change this page with them.
 - **Typing on the canvas:** Escape or a click outside finishes; Enter
   breaks a title's line, and in a caption it finishes (Ctrl+Enter breaks
   the line). Shortcuts stay off while typing.
+- **Selected edit points:** the existing Alt+arrow frame nudges trim or roll
+  bracketed edges; Escape clears them. Source Fit to fill is active while
+  the source monitor is open. V keeps its existing clip activation binding.
 - **Selected keyframes** take Delete, Copy, Paste and Escape before clips
   do.
+- **Rotation dial:** focused arrows step one degree, or ten with Shift;
+  Shift while dragging snaps to 15 degrees. Double-click resets. These
+  are local control keys, like the numeric fields' arrows.
+- **Pen mask editor:** Delete removes the selected anchor while the mask
+  editor has focus; Alt-click toggles a point between smooth and corner.

@@ -55,7 +55,7 @@ Project { schema: 1, id, name, width, height, canvasFixed?, fps, sampleRate, bac
 Brand   { name?, colors: { primary, secondary, accent, background, text },
           fonts: { heading, body }, logos?: { main?, light?, dark?, icon? } (image asset ids),
           url?, tagline? }   (set_brand; a logo whose asset is gone is dropped on load)
-Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
+Asset   { id, kind: video|audio|image, name, src, proxy?, playbackProxy?, duration,
           width?, height?, fps?, hasVideo, hasAudio, rotation?,
           sticker?, folder?, favorite?, speech?, role?, sound?, musicGrid? }   (sticker: the library sticker an image was drawn from;
           role: dialog|music|effects|ambience, what a file the app made is;
@@ -73,7 +73,7 @@ Track   { id, kind: video|audio, name, main?, clips: Clip[],
           solo?, height?: small|large, role? }   (role, audio tracks only: dialog|music|effects|ambience,
           the stem it is; absent, it is judged by its clips' files: ADR-098)
 Compound { id, name, tracks: Track[], markers: Marker[] }   (a nested timeline)
-Marker  { id, frame, label, color, follows?: { clip, at } }   (follows: a song's beat,
+Marker  { id, frame, label, color, duration?: frames, chapter?: boolean, follows?: { clip, at } }   (follows: a song's beat,
           bar, part or drop on a video or audio clip, at that second of its file;
           the marker moves with the clip, through a compound clip that plays it
           once the clip is inside one, and goes when nothing plays it: ADR-101,
@@ -172,6 +172,30 @@ plays a nested timeline from `compounds` the way a video clip plays a file
   all. A compound nothing plays is dropped when the editor saves an edit.
 - Absent `compounds` means none, so projects from before compound clips
   open unchanged.
+
+## Playback proxies
+
+`Asset.playbackProxy?: { src, width, height, size, fingerprint }` is a
+preview-only cache reference. `size` is `"half"`, `"quarter"` or `"720p"`;
+width and height are positive integer display dimensions (at least 2).
+`src` and `fingerprint` are nonempty strings. Malformed objects are dropped
+at load. Absent means the existing source behavior.
+
+On desktop the fingerprint hashes the original path, byte size and modified
+time. Cache filenames include it and the chosen size. File existence and
+fingerprint checks belong to this machine, not to the saved document: a
+moved/replaced original makes the copy stale, and a missing cache on another
+computer simply falls back to `proxy ?? src`. Relinking keeps the reference
+so its stale badge explains what happened. Undoing creation removes only the
+reference; Delete proxy removes the reference and its cached file, so Undo
+of deletion restores a missing reference until it is recreated.
+
+Only preview pictures and thumbnails/filmstrips may read `playbackProxy`.
+Export, export stills, `preview_frame`/contact sheets, analysis and scopes
+always read the original or the **separate**, full-resolution `Asset.proxy`
+decode fallback. Desktop collected copies omit playback cache references. The global Proxy
+playback preference is never in a project.
+See [[ADR-131 Playback proxies are purpose scoped and disposable cache]].
 
 ## Media organization
 
@@ -424,3 +448,30 @@ then contains one loop in seconds. The image clip can last longer and loop.
 Collected JSON uses relative `src` and `proxy` paths beside the project file,
 including LUTs and nested cutout media; opening it creates a fresh id.
 `ImageClip.imageIn` optionally stores the animation phase in source seconds; trims and splits preserve it.
+
+Marker `duration` is an optional nonnegative integer frame count; absent or
+zero means a point. `chapter` is an optional boolean, absent meaning false.
+Normalization drops invalid values at both root and compound boundaries.
+Ranges follow their start when `follows` is present. Chapter-enabled MP4
+exports include only explicit chapter markers; these fields do not change
+rendered pictures or project duration. Edit-point selections are session
+state and never enter the project file.
+
+## Ordered audio inserts (ADR-134)
+
+`Track.inserts?` on audio tracks and `Sound.inserts?` on audio, video and
+compound clips are ordered arrays of `{ id, type, on, params }`. Absent
+means no inserts. Types: `eq`, `compressor`, `gate`, `deesser`, `limiter`,
+`reverb`, `echo`; unknown types are dropped. The loader caps a chain at 32
+and an EQ at eight bands, cleans each parameter and makes ids unique.
+
+Gate parameters: `threshold` (-90..0 dBFS), `ratio` (1..100), `attack`
+(0.0001..0.2 s), `hold` (0..1 s), `release` (0.005..2 s), `range` (0..96 dB).
+De-esser: `low` (2000..16000 Hz), `high` (2500..20000 Hz, above low),
+`amount` (0..24 dB). Limiter: `ceiling` (-24..0 dBFS), `release` (0.01..2 s).
+EQ: `bands`, each `{ type, freq, gain, q, on }`; types peaking, lowshelf,
+highshelf, highpass, lowpass, notch; frequency 20..20000 Hz, gain -24..24 dB,
+Q 0.1..30. Shelves use slope 1. Other processors use their legacy settings.
+Track inserts precede track volume/pan. Clip inserts follow the legacy
+chain and precede volume/fades; legacy echo/reverb keep their original
+post-fader position when no clip inserts are present.

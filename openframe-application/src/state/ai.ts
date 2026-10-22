@@ -1,3 +1,5 @@
+import { ByteLru, retainedBytes } from "../lib/memory";
+import { memoryOwners, MiB, trackCache } from "../engine/memory";
 // The local AI tools as app actions: analyze a clip's source (engine), turn
 // the result into edits with registry commands (cut_ranges, split_at_times,
 // add_markers), and apply them as ONE undoable edit with a clear label
@@ -7,8 +9,9 @@
 // Everything runs on the user's machine: decode with WebCodecs, analyze in
 // TypeScript. Nothing is uploaded and nothing needs a key.
 
+import { addedMarkerCount } from "../lib/markers";
 import { useSyncExternalStore } from "react";
-import { decodeMono, decodePcm, frameGrays, frameScores, measureLoudness } from "../engine/analyze";
+import { decodeMono, decodePcm, frameGrays, frameScores } from "../engine/analyze";
 import { AH, AW, shiftBetween, spectrum, stabilization, type StabilizeLevel } from "../lib/analysis/stabilize";
 import { denoise } from "../lib/analysis/denoise";
 import { replaceClip } from "../lib/project/replace";
@@ -25,15 +28,17 @@ import type { StructureHints } from "../lib/analysis/beats";
 import { markMusicClip, MUSIC_MARKERS, type MusicMarkerKind } from "../lib/epic";
 import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
+import { normalizationMix } from "../lib/audio";
+import { fxTail } from "../lib/soundFx";
 import { measureMix } from "../engine/mixdown";
-import { activeSpan, aimDepths, BALANCE_WINDOWS, duckDepth, duckTargetsError, isDialog, lineBalances, lineCeiling, loudnessDifference, marginSummary, speechWindows, windowLoudness, type LineBalance } from "../lib/analysis/balance";
-import { cueMoments, cuesUnderLines, DUCK_ATTACK, DUCK_MIN_GAP, DUCK_RELEASE, duckMark, duckWrote, mergeKeys, trackDuckKeys, voicesUnder as voicesUnderMusic, writtenKeys, type VoiceUnder } from "../lib/analysis/duck";
+import { activeSpan, aimDepths, lineMarginsMet, BALANCE_WINDOWS, duckDepth, duckTargetsError, isDialog, lineBalances, lineCeiling, loudnessDifference, marginSummary, speechWindows, windowLoudness, type LineBalance } from "../lib/analysis/balance";
+import { cueMoments, cuesUnderLines, DUCK_ATTACK, DUCK_MIN_GAP, DUCK_RELEASE, duckMark, duckWrote, mergeKeys, quietVoiceNote, trackDuckKeys, voicesUnder as voicesUnderMusic, writtenKeys, type VoiceUnder } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { ceilingFor, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
 import { sceneCuts } from "../lib/analysis/scenes";
 import { findSilences, totalLength, type Range } from "../lib/analysis/silence";
 import { FILLERS, fillerRanges } from "../lib/fillers";
-import { transcribePcm } from "../engine/transcribe";
+import { hearClip, type Hearing } from "./transcript";
 import { runCommand } from "../lib/commands";
 import { clipWindow, covers } from "../lib/matte";
 import { behindProblem, putBehindSubject, type SubjectCut, type BehindPlace, type GradeCopied } from "../lib/ads";
@@ -267,8 +272,8 @@ function windowOf(clip: MediaClip): [number, number] {
 async function job<T>(tool: ToolId, clip: MediaClip, label: string, work: (progress: (x: number, label?: string) => void, signal: AbortSignal) => Promise<T>): Promise<T> {
   if (state.jobs[tool]) throw new Error("Already running");
   const abort = new AbortController();
-  const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
-  const tid = toast(label, "progress");
+  const signal = AbortSignal.any([abort.signal, projectWork.capture()]);
+  const tid = toast(label, "progress", undefined, { label: "Cancel", run: () => abort.abort() });
   updateToast(tid, { progress: 0 });
   const progress = (x: number, text?: string) => {
     updateToast(tid, { progress: x, ...(text ? { text } : {}) });
@@ -388,7 +393,7 @@ export interface SilenceEdit extends SilenceAnalysis {
 
 /** Remove a clip's silences as one undoable edit. */
 export async function removeSilences(clipId?: Id, opts: Partial<SilenceSettings> = {}): Promise<SilenceEdit> {
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const id = resolve("silences", clipId).clip.id;
   const res = await analyzeSilences(id, opts);
   signal.throwIfAborted();
@@ -412,7 +417,9 @@ export async function removeSilences(clipId?: Id, opts: Partial<SilenceSettings>
   return { ...res, removed: spans.length, seconds };
 }
 
-export interface FillerAnalysis {
+export interface FillerAnalysis extends Hearing {
+  /** All words heard in this clip, including kept speech. */
+  heard: number;
   /** Source seconds. */
   ranges: Range[];
   /** The filler words heard, as transcribed. */
@@ -423,21 +430,15 @@ export interface FillerAnalysis {
  * ranges to cut. */
 export async function analyzeFillers(clipId?: Id, opts: Partial<FillerSettings> = {}): Promise<FillerAnalysis> {
   const { clip, asset } = resolve("fillers", clipId);
-  const o = { ...state.settings.fillers, ...opts };
   return job("fillers", clip, `Listening to ${asset.name}`, async (progress, signal) => {
     const [from, to] = windowOf(clip);
-    const pcm = await decodeMono(asset, from, to, SILENCE_RATE, (x) => progress(x * 0.2), signal);
-    const words = await transcribePcm(
-      pcm,
-      from,
-      { model: o.model, language: null },
-      (s) => (s.stage === "downloading" ? progress(0.2 + s.progress * 0.2, "Downloading the speech model") : progress(0.4 + s.progress * 0.6, "Finding filler words")),
-      signal,
-    );
+    const hearing = await hearClip(store.get().project, clip, { model: opts.model ?? state.settings.fillers.model }, signal,
+      (s) => progress(s.progress, s.stage === "downloading" ? "Downloading the speech model" : "Finding filler words"));
+    const { words, ...metrics } = hearing;
     const ranges = fillerRanges(words)
       .map((r) => ({ start: Math.max(r.start, from), end: Math.min(r.end, to) }))
       .filter((r) => r.end > r.start);
-    return { ranges, words: words.filter((w) => FILLERS.has(w.text.toLowerCase().replace(/[^a-z]/g, ""))).map((w) => w.text.trim()) };
+    return { ...metrics, ranges, heard: words.length, words: words.filter((w) => FILLERS.has(w.text.toLowerCase().replace(/[^a-z]/g, ""))).map((w) => w.text.trim()) };
   });
 }
 
@@ -450,7 +451,7 @@ export interface FillerEdit extends FillerAnalysis {
 /** Cut a clip's filler words, with the hesitation around each, as one
  * undoable edit. */
 export async function removeFillers(clipId?: Id, opts: Partial<FillerSettings> = {}): Promise<FillerEdit> {
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const id = resolve("fillers", clipId).clip.id;
   const res = await analyzeFillers(id, opts);
   signal.throwIfAborted();
@@ -474,7 +475,7 @@ export interface SceneEdit extends SceneAnalysis {
 
 /** Split a clip at its scene cuts (or mark them) as one undoable edit. */
 export async function splitScenes(clipId?: Id, opts: Partial<SceneSettings> = {}): Promise<SceneEdit> {
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const id = resolve("scenes", clipId).clip.id;
   const o = { ...state.settings.scenes, ...opts };
   const res = await analyzeScenes(id, o);
@@ -524,10 +525,10 @@ export async function markBeats(clipId?: Id, opts: Partial<BeatSettings> = {}): 
     finish("beats", "No beat found");
     return { bpm: mapped.bpm, beats: [], markers: 0 };
   }
-  const before = store.get().project.markers.length;
+  const before = store.get().project;
   edit(`Mark ${plural(picked.length, "beat")}`, (p) => markMusicClip(p, song.clip.id, { beats: song.m.beats.map((t) => t + song.from), downbeats: [], phrases: [], sections: [], drops: [] }, ["beats"], every));
   // Added: a second call replaces the clip's Beat markers, never doubles them.
-  const markers = store.get().project.markers.length - before;
+  const markers = addedMarkerCount(before, store.get().project);
   finish("beats", markers > 0 ? `Marked ${plural(markers, "beat")} · ${Math.round(mapped.bpm)} BPM` : `Every beat is already marked · ${Math.round(mapped.bpm)} BPM`);
   return { bpm: mapped.bpm, ...(mapped.file_bpm !== undefined ? { file_bpm: mapped.file_bpm } : {}), beats: picked, markers, ...(song.asset.musicGrid ? { grid: "given" as const } : {}) };
 }
@@ -553,7 +554,8 @@ const WINDOW_PAD = 60;
 
 /** Readings of music files, by asset, its length and the hints: a second
  * clip of the same score, or a second call, reads nothing again. */
-const musicReadings = new Map<string, MusicStructure>();
+const musicReadings = new ByteLru<string, MusicStructure>(8 * MiB);
+trackCache("music_features", musicReadings);
 
 /**
  * A music clip's beat grid and parts (Final Cut's beat grid: song parts,
@@ -569,7 +571,7 @@ const musicReadings = new Map<string, MusicStructure>();
  * (set_music_grid) and the call's own hints, for a clip of it. Times in
  * `m` are seconds from `from` in the file. */
 async function readSong(clipId: Id | undefined, given: StructureHints): Promise<{ m: MusicStructure; clip: MediaClip; asset: Asset; from: number; to: number; whole: boolean; cached: boolean; hints: StructureHints }> {
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const { clip: c0, asset } = resolve("beats", clipId);
   const hints = gridHints(asset.musicGrid, given);
   const id = c0.id;
@@ -582,8 +584,8 @@ async function readSong(clipId: Id | undefined, given: StructureHints): Promise<
   const cached = !!m;
   if (!m) {
     m = await job("beats", c0, `Reading the music in ${asset.name}`, async (progress, sig) => musicStructure(await decodeMono(asset, from, to, BEAT_RATE, progress, sig), BEAT_RATE, hints));
-    if (musicReadings.size >= 8) musicReadings.delete(musicReadings.keys().next().value!);
-    musicReadings.set(key, m);
+    signal.throwIfAborted();
+    musicReadings.set(key, m, retainedBytes(m));
   }
   signal.throwIfAborted();
   return { m, clip: stillThere(id), asset, from, to, whole, cached, hints };
@@ -629,9 +631,9 @@ export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKin
     // Following the clip, replacing its earlier markers of these kinds (a
     // second reading never doubles the first).
     const at = (ts: number[]) => ts.map((t) => t + from);
-    const before = store.get().project.markers.length;
+    const before = store.get().project;
     edit(`Mark the music`, (p) => markMusicClip(p, clip.id, { beats: at(m.beats), downbeats: at(m.downbeats), phrases: at(m.phrases), sections: m.sections.map((x) => ({ start: x.start + from, label: x.label })), drops: at(m.drops) }, kinds));
-    out.markers = store.get().project.markers.length - before;
+    out.markers = addedMarkerCount(before, store.get().project);
   }
   finish("beats", `${Math.round(out.bpm)} BPM · ${plural(out.sections.length, "section")}${out.drop !== null ? ` · drop at ${out.drop.toFixed(2)} s` : ""}`);
   return out;
@@ -650,7 +652,7 @@ function timelineTimes(clip: MediaClip, times: number[]): number[] {
 
 export interface LoudnessResult extends Normalization {
   clipId: Id;
-  /** Measured integrated loudness of the source, LUFS. */
+  /** Measured integrated loudness of the processed clip at unit gain, LUFS. */
   lufs: number;
 }
 
@@ -660,7 +662,7 @@ export interface LoudnessResult extends Normalization {
  * "Normalize loudness", measured per ITU-R BS.1770).
  */
 export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSettings> & { spec?: string } = {}): Promise<LoudnessResult[]> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   // A delivery spec names the target and the true-peak ceiling (ADR-061).
   const spec = opts.spec === undefined ? undefined : LOUDNESS_SPECS[opts.spec as SpecId];
   if (opts.spec !== undefined && !spec) throw new Error(`Unknown spec ${opts.spec}: use ${SPEC_IDS.join(", ")}`);
@@ -670,17 +672,19 @@ export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSe
   const targets = ids.map((id) => targetFor("loudness", id)).filter((t): t is Target => typeof t !== "string");
   if (!targets.length) throw new Error(ids.length ? String(targetFor("loudness", ids[0])) : `Select ${NEEDS.loudness} on the timeline`);
   const label = targets.length === 1 ? `Measuring the loudness of ${targets[0].asset.name}` : `Measuring the loudness of ${plural(targets.length, "clip")}`;
+  const before = store.get().project;
   const measured = await job("loudness", targets[0].clip, label, async (progress, signal) => {
     const out: { clipId: Id; lufs: number; peak: number; truePeak: number }[] = [];
-    for (const [i, { clip, asset }] of targets.entries()) {
-      const [from, to] = windowOf(clip);
-      // Measured as it plays: through the clip's compressor, if it has one.
-      const r = await measureLoudness(asset, from, to, (x) => progress((i + x) / targets.length), signal, "compressor" in clip ? clip.compressor : undefined);
-      out.push({ clipId: clip.id, ...r });
+    for (const [i, { clip }] of targets.entries()) {
+      const sec = (f: number) => framesToSeconds(f, before.fps);
+      const tail = "volume" in clip ? Math.min(12, fxTail(clip)) : 0;
+      const r = await measureMix(normalizationMix(before, clip.id), sec(clip.start), sec(clip.start + clip.duration) + tail, { signal, onProgress: (x) => progress((i + x) / targets.length) });
+      out.push({ clipId: clip.id, lufs: r.integrated, peak: r.samplePeak, truePeak: r.truePeak });
     }
     return out;
   });
   scope.throwIfAborted();
+  if (store.get().project !== before) throw new Error("The project changed while measuring; normalize loudness again.");
   const results = measured.map((m) => ({ clipId: m.clipId, lufs: +m.lufs.toFixed(2), ...normalizeGain(m.lufs, target, m.truePeak, { ceilingDb }) }));
   const live = results.filter((r) => Number.isFinite(r.lufs) && ops.findClip(store.get().project, r.clipId));
   if (!live.length) {
@@ -706,7 +710,7 @@ export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSe
  * then sat under the rest. Answers a note per clip.
  */
 export async function keepFilterLoudness(args: Record<string, unknown>): Promise<string[]> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const { keep_loudness: _, ...asked } = args;
   if (asked.off === true) throw new Error("keep_loudness keeps a filter's loudness; off removes the filter and its makeup");
   if (asked.sweep !== undefined) throw new Error("keep_loudness holds a fixed filter's loudness, and a sweep changes it as it moves: give makeup in dB instead");
@@ -745,6 +749,7 @@ export async function keepFilterLoudness(args: Record<string, unknown>): Promise
 // ---- ducking ---------------------------------------------------------------------
 
 export interface DuckEdit {
+  note?: string;
   /** Clips listened to for speech. */
   voices: number;
   /** Stretches of speech the music dips under. */
@@ -862,7 +867,7 @@ function duckTargets(clipId: Id | undefined, trackId: Id | undefined): Target[] 
  * speech/music classifier is the upgrade if mixed beds duck wrongly.
  */
 export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Promise<DuckEdit> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const targets = duckTargets(clipId || undefined, opts.track_id || undefined);
   let depth = opts.depth ?? state.settings.ducking.depth;
   const target = opts.voice_above_music_lu;
@@ -999,8 +1004,8 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
     const music = speechLufs(bed);
     const difference = loudnessDifference(dialogLufs, music);
     const r1 = (x: number | null) => (x === null || !Number.isFinite(x) ? null : +x.toFixed(1));
-    // A line over the ceiling with no dip left is as low as the music goes.
-    const lineMet = each.every((l, i) => l.voice_above_music_lu === null || ((minLine === undefined || l.voice_above_music_lu >= minLine - 0.05) && (maxLine === undefined || l.voice_above_music_lu <= maxLine + 0.05 || lineDb![i] === 0)));
+    // Feasibility does not change whether the measured ceiling was met.
+    const lineMet = lineMarginsMet(each.map(l => l.voice_above_music_lu), minLine, maxLine);
     const speechMet = target === undefined || difference === null ? undefined : Math.abs(target - difference) <= 0.5;
     balance = {
       window: "speech",
@@ -1046,7 +1051,11 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
   const now = store.get().project;
   const done = merged(now, keys);
   // Each clip keeps the keys it wrote, so the next duck knows the hand's.
-  edit(opts.label ?? "Duck under speech", (p) => ids.reduce((q, id) => ops.updateClip(q, id, (x) => ({ ...x, duck: { ...record, ...duckMark(x), written: writtenKeys(x as MediaClip, done.get(id)?.ours ?? [], fps) } }) as Clip), withKeys(p, keys)));
+  edit(opts.label ?? "Duck under speech", (p) => ids.reduce((q, id) => ops.updateClip(q, id, (x) => ({ ...x, duck: { ...record, held: plan.held.flatMap(([a, b]): [number, number][] => {
+      const lo = Math.max(a, x.start), hi = Math.min(b, x.start + x.duration);
+      if (hi <= lo) return [];
+      return [[ops.sourceTimeAt(x as MediaClip, lo, fps), ops.sourceTimeAt(x as MediaClip, hi, fps)]];
+    }), ...duckMark(x), written: writtenKeys(x as MediaClip, done.get(id)?.ours ?? [], fps) } }) as Clip), withKeys(p, keys)));
   const all = [...done.values()];
   const sec = (f: number) => +framesToSeconds(f, fps).toFixed(3);
   const handKept = all.flatMap((m) => m.kept.map((k) => sec(m.c.start + k.f))), handReplaced = all.flatMap((m) => m.replaced.map((k) => sec(m.c.start + k.f)));
@@ -1058,6 +1067,7 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
     return { at: sec(o.at), ...(m?.label ? { label: m.label } : {}), ...(o.up ? { up: [sec(o.up[0]), sec(o.up[1])] } : o.line ? { inside_line: [sec(o.line[0]), sec(o.line[1])] } : { plays: false }) };
   });
   const notes: string[] = [];
+  if (balance?.per_line.met === false && balance.per_line.each?.some(l => l.voice_above_music_lu !== null && maxLine !== undefined && l.voice_above_music_lu > maxLine + 0.05 && l.depth_db === 0)) notes.push("The per-line ceiling is not met: music in at least one line is already too quiet at its base volume, and ducking never raises it above that volume. Adjust the bed's base level or relax max_line_lu, then measure again.");
   const drops = now.markers.filter((m) => /^drop/i.test(m.label) && plan.held.some(([a, b]) => m.frame >= a && m.frame < b) && !opens.some((x) => x.frame === m.frame));
   if (drops.length)
     notes.push(`The music stays down through ${plural(held.length, "pause")} between lines shorter than min_gap (${opts.min_gap ?? DUCK_MIN_GAP} s, so it does not pump; held lists them), and ${drops.map((m) => `the ${m.label} at ${sec(m.frame)} s`).join(" and ")} ${drops.length === 1 ? "falls in one and plays" : "fall in them and play"} ducked: open_at ["${drops[0].label}"] brings the music up there.`);
@@ -1081,11 +1091,13 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
   const home = opts.track_id ? undefined : ops.findClip(store.get().project, ids[0])?.track;
   const more = home ? home.clips.filter((x) => x.id !== ids[0] && (x.type === "audio" || x.type === "video")).length : 0;
   if (home && more) notes.unshift(`Only ${ids[0]} was ducked; its track ${home.id} plays ${more} more ${more === 1 ? "clip" : "clips"}: duck_under_speech track_id ${home.id} ducks them all as one bed.`);
+  const note = quietVoiceNote(balance?.dialog_lufs, deepest, voices.map((v) => v.clip.id));
   return {
     voices: voices.length,
     dips,
     keys: all.reduce((n, m) => n + m.keys.length, 0),
     depth_db: depth,
+    ...(note ? { note } : {}),
     ...(opts.track_id ? { clips: ids } : {}),
     ...(held.length ? { held } : {}),
     ...(open.length ? { open } : {}),
@@ -1129,7 +1141,7 @@ export interface DenoiseEdit {
  * copy is a new WAV of exactly the clip's source window.
  */
 export async function reduceNoise(clipId?: Id, opts: Partial<DenoiseSettings> = {}): Promise<DenoiseEdit> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const { clip, asset } = resolve("denoise", clipId);
   const strength = opts.strength ?? state.settings.denoise.strength;
   const file = await job("denoise", clip, `Reducing noise in ${asset.name}`, async (progress, signal) => {
@@ -1145,7 +1157,7 @@ export async function reduceNoise(clipId?: Id, opts: Partial<DenoiseSettings> = 
     return new File([encodeWav(clean, rate)], `${asset.name.replace(/\.[^.]+$/, "")} (noise reduced).wav`, { type: "audio/wav" });
   });
   scope.throwIfAborted();
-  const [cleaned] = await adoptAndImport([file]);
+  const [cleaned] = await adoptAndImport([file], scope);
   scope.throwIfAborted();
   const c = stillThere(clip.id);
   let target = c.id;
@@ -1173,7 +1185,7 @@ export interface StabilizeEdit {
  * that preview and export apply. Level "off" removes them. One undo step.
  */
 export async function stabilizeClip(clipId?: Id, opts: { level?: StabilizeLevel | "off" } = {}): Promise<StabilizeEdit> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const { clip, asset } = resolve("stabilize", clipId);
   const level = opts.level ?? state.settings.stabilize.level;
   if (level === "off") {
@@ -1260,7 +1272,7 @@ function cameraFor(audio: AudioClip, videoId?: Id): VideoClip {
  * clearly match. muteCamera sets the video's volume to 0.
  */
 export async function syncAudio(clipId?: Id, opts: { videoId?: Id; muteCamera?: boolean } = {}): Promise<SyncEdit> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const t = targetFor("sync", clipId);
   if (typeof t === "string") refuse(t);
   const { clip, asset } = t;
@@ -1314,7 +1326,7 @@ export interface ReframeEdit {
  * centered does the same from a box placed on the viewer.
  */
 export async function reframeClip(clipId?: Id, opts: Partial<ReframeSettings> & { box?: Region } = {}): Promise<ReframeEdit> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const { clip, asset } = resolve("reframe", clipId);
   const ratio = opts.ratio ?? state.settings.reframe.ratio;
   const p0 = store.get().project;
@@ -1374,7 +1386,7 @@ export async function matteFor(clipId?: Id): Promise<{ clipId: Id; cutout: Cutou
   const own = (clip as VideoClip).cutout;
   const ready = own && covers(own, from, to) ? { ...own, enabled: true } : findMatte(asset, from, to);
   if (ready) return { clipId: clip.id, cutout: ready, result: { clipId: clip.id, cached: true, model: ready.model, matte: ready.src }, note: "Background removed" };
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const started = performance.now();
   // Starting the model takes a moment even when it is cached.
   const made = await job("cutout", clip, "Starting the background model", async (progress, signal) => {
@@ -1421,6 +1433,7 @@ export async function removeBackground(clipId?: Id): Promise<CutoutResult> {
 
 /** Pictures cut out this session, by source, so asking again is instant. */
 const cutPictures = new Map<string, Asset>();
+memoryOwners.register("matte_references", () => ({ bytes: retainedBytes([madeMattes, cutPictures]), count: madeMattes.length + cutPictures.size, estimated: true }), () => { madeMattes.length = 0; cutPictures.clear(); });
 
 /** A picture clip's subject as a new picture with its background
  * transparent (engine/cutout.ts cutOutImage), made once a session. */
@@ -1451,7 +1464,7 @@ export async function textBehindSubject(clipId: Id, opts: { textIds?: Id[] } = {
   const ids = opts.textIds ?? [];
   const problem = behindProblem(store.get().project, clipId, ids);
   if (problem) throw new Error(problem);
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const clip = ops.findClip(store.get().project, clipId)!.clip;
   let cut: SubjectCut, cached: boolean, model: string, note: string;
   if (clip.type === "image") {

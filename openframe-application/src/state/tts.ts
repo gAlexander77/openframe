@@ -17,7 +17,7 @@ import type { Asset, Id, Project, SpeechInfo, TextStyle } from "../lib/project/t
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { checkVoice, DEFAULT_VOICE, speechFileName, speechText } from "../lib/tts";
 import { retakeLine } from "../lib/voiceLines";
-import { asksEmphasis, breaksOf, checkPronounce, chunkSentences, EMPHASIS_NOTE, lateLineNotes, layoutLines, matchPauses, parseLine, pauseAfter, syllables, writtenWords } from "../lib/voiceScript";
+import { asksEmphasis, breaksOf, checkPronounce, chunkSentences, EMPHASIS_NOTE, lateLineNotes, layoutLines, placedLineTimes, matchPauses, parseLine, pauseAfter, syllables, writtenWords } from "../lib/voiceScript";
 import { bandSource, CHOSEN_MAX_SPS, landSpeed, readWps, speedBounds, syllableBand, targetBand, type ReadAs, type ReadSpan } from "../lib/voicePace";
 import { finishTake, FINISHES, joinTakes, NATURAL_REVERB, resizePauses, type Finish, type FinishId } from "../lib/voiceTake";
 import { encodeWav } from "../lib/wav";
@@ -236,7 +236,7 @@ export async function readLine(text: string, o: ReadOptions, signal: AbortSignal
  * project: the caller's edit adds them, so one undo removes them. */
 async function takeAssets(takes: Take[], signal: AbortSignal): Promise<Asset[]> {
   const files = takes.map((t) => new File([encodeWav([t.audio], t.rate)], speechFileName(t.written), { type: "audio/wav" }));
-  const assets = await adoptAndProbe(files);
+  const assets = await adoptAndProbe(files, signal);
   signal.throwIfAborted();
   if (assets.length !== takes.length) throw new Error("A speech file could not be read back");
   return assets.map((a, i) => ({ ...a, speech: takes[i].info }));
@@ -261,8 +261,8 @@ export async function textToSpeech(clipId?: Id, opts: ReadOptions = {}): Promise
   if (!loc || loc.clip.type !== "text") throw new Error("Select a title to speak");
   if (!speechText(loc.clip.text)) throw new Error("The title has no words to speak");
   const abort = new AbortController();
-  const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
-  const tid = toast("Making the voice", "progress");
+  const signal = AbortSignal.any([abort.signal, projectWork.capture()]);
+  const tid = toast("Making the voice", "progress", undefined, { label: "Cancel", run: () => abort.abort() });
   set({ clipId: loc.clip.id, progress: 0, abort });
   try {
     // The first run downloads the model; then it is cached.
@@ -349,8 +349,8 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
   if (!lines.length) throw new Error("Every line needs words to speak");
   for (const l of [opts, ...lines]) if (l.voice !== undefined) checkVoice(l.voice);
   const abort = new AbortController();
-  const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
-  const tid = toast(`Making the voiceover: ${lines.length} lines`, "progress");
+  const signal = AbortSignal.any([abort.signal, projectWork.capture()]);
+  const tid = toast(`Making the voiceover: ${lines.length} lines`, "progress", undefined, { label: "Cancel", run: () => abort.abort() });
   set({ clipId: "", progress: 0, abort });
   try {
     const takes: Take[] = [];
@@ -372,6 +372,8 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
     const times = layoutLines(
       lines.map((l, i) => ({ at: l.at, seconds: takes[i].seconds, before: takes[i].before, gap: (l.pauseAfter ?? opts.gap ?? pauseAfter(l.text, l.paragraph)) + takes[i].after })),
       opts.start ?? 0,
+      0.4,
+      store.document().fps,
     );
     const finish = opts.finish ?? "natural";
     type Placed = { text: string; start: number; end: number; seconds: number; voice: string; speed: number; words_per_second: number; target_words_per_second: [number, number]; speed_chosen?: true; reads?: number; pace_note?: string; voice_clip: string; caption_clip?: string; caption_clips?: string[]; pauses?: Take["pauses"] };
@@ -386,9 +388,10 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
         const before = ids(q);
         q = runCommand(q, "add_media_clip", { asset_id: asset.id, start: times[i].start, track_id: track.id });
         const t = takes[i];
+        const clip = added(before, q)[0]!;
         placed.push({
           text: t.written,
-          ...times[i],
+          ...placedLineTimes(clip, q.fps),
           seconds: +t.seconds.toFixed(3),
           voice: t.info.voice,
           speed: t.info.speed,
@@ -396,7 +399,7 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
           target_words_per_second: t.band,
           ...(t.speedChosen ? { speed_chosen: true as const, reads: t.reads } : {}),
           ...(t.paceNote ? { pace_note: t.paceNote } : {}),
-          voice_clip: added(before, q)[0]?.id ?? "",
+          voice_clip: clip.id,
           ...(t.pauses.length ? { pauses: t.pauses } : {}),
         });
       });
@@ -466,8 +469,8 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
   const text = o.text ?? was?.text;
   if (!text) throw new Error(`${clipId} was not spoken from a script (it was recorded or imported): give text to read in its place`);
   const abort = new AbortController();
-  const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
-  const tid = toast("Reading the line again", "progress");
+  const signal = AbortSignal.any([abort.signal, projectWork.capture()]);
+  const tid = toast("Reading the line again", "progress", undefined, { label: "Cancel", run: () => abort.abort() });
   set({ clipId, progress: 0, abort });
   let ran = false;
   try {
@@ -491,7 +494,6 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
     const shown = take.info.caption ?? take.written;
     const words = chunked ? await takeChunks(asset, shown, text, chunked, signal) : was?.captionWords ? { chunks: [{ start: 0, end: take.seconds, text: shown }], heard: true } : undefined;
     let answer: { shift: number; captionId?: Id; captionIds?: Id[] } = { shift: 0 };
-    let start = 0;
     // The take and the music dipped again under it undo as one step.
     store.beginRun();
     ran = true;
@@ -499,7 +501,6 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
     store.editDocument("Retake voiceover line", (q) => {
       const r = retakeLine(q, { clipId, asset, frames: secondsToFrames(take.seconds, q.fps), caption, ripple: o.ripple, ...(words ? { chunks: words.chunks } : {}) });
       answer = r;
-      start = framesToSeconds(findClip(r.project, clipId)!.clip.start, q.fps);
       const finish = take.info.finish ?? "natural";
       // A new finish brings its clip settings; the line's own stay otherwise.
       return o.finish && o.finish !== was?.finish ? finishClips(r.project, [clipId], finish, undefined) : r.project;
@@ -516,8 +517,7 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
       voice_clip: clipId,
       ...(answer.captionIds ? { caption_clips: answer.captionIds } : { caption_clip: answer.captionId }),
       text: take.written,
-      start,
-      end: +(start + take.seconds).toFixed(3),
+      ...placedLineTimes(findClip(store.document(), clipId)!.clip, fps),
       seconds: +take.seconds.toFixed(3),
       voice: take.info.voice,
       speed: take.info.speed,

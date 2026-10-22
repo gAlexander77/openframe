@@ -1,33 +1,51 @@
 # Next agent handoff - OpenFrame
 
-**Updated:** 2026-10-21. This is the current owner direction for the next
+**Updated:** 2026-10-22. This is the current owner direction for the next
 Claude Code or Codex pickup. Read it before resuming previous tasks.
 
-## Current state - 2026-10-21 (read first)
+## Current state - 2026-10-22 (read first)
 
-- `main` holds all six improvements rounds (to ADR-125): `improvements-6`
-  merged on 2026-10-21 after a full drive sweep on a second machine
-  (History, "The sixth branch swept on a second machine, and merged").
+- `main` holds all seven improvements rounds (to ADR-144): `improvements-7`
+  merged on 2026-10-22 after a full drive sweep (History, "The seventh
+  improvements branch").
 - **The owner's standing direction (2026-10-21):** keep finding and fixing
   bugs, add what major editors have that OpenFrame lacks, test the MCP
   tools with real, voiced edits, and merge finished work into `main`
   through pull requests (the owner is the only person on the repository).
   Hand detailed work to Codex (`codex exec`) to spare Claude usage.
+- **New on 2026-10-22: a stream-clipping channel.** The owner wants to clip
+  streamers' VODs into shorts, with the streamers' permission, credited.
+  `find_highlights`, `apply_stream_layout`, `create_clips` and
+  `export_projects` do it (ADR-140 to ADR-143). The app has no downloader
+  on purpose: the owner brings the VOD file.
+- **How lanes ran in round 7:** Claude Code writes a spec, `codex exec`
+  builds it in its own worktree, and Claude Code runs the drives, reviews
+  and merges. Codex's sandbox cannot launch a browser or vitest's default
+  pool: give it `npx vitest run --configLoader native --pool threads
+  --maxWorkers 2` and run every drive yourself. A Codex blind tester needs
+  `--approve-for-me` (approvals "never" refuses every MCP tool not marked
+  read-only; it cannot be combined with `-s`) and a longer tool timeout,
+  `-c mcp_servers.openframe.tool_timeout_sec=900`.
+- **Memory is the limit on this machine.** One highlight run on a
+  45-minute VOD peaks the app's WebView2 at about 5.5 GB (back to 2 GB on a
+  project switch, ADR-144). Run one drive at a time while the desktop app
+  is up; Claude Code stops background jobs when memory runs low.
 - **Sweeps:** skip the desktop-only `media-relink` and
   `desktop-session-jobs`, and `window-header`, which needs its own runner;
   `music-structure` needs the private promo track. Rerun failures alone
   before reading them as bugs ([[Driving the app]], traps 23 to 26).
-- **Then:** the open items the ADRs record (per-letter border fades, a
-  compressor restarting on a split compound, glow sampling at radius 48,
-  captions over rings on tall versions, callouts inside compounds, the ad
-  spot's small 9:16 end card, the on-canvas editor's single line spacing,
-  the silent-join hint without a beat grid).
-- **Blind MCP tests** found most of rounds 5 and 6: run `claude -p` from a
-  folder outside the repo, so only the user-scope OpenFrame MCP server is
-  registered. Allow only the OpenFrame tools plus Read, Write, Edit and
-  Glob, with no shell or web. Give it a brief and its media, and fix what
-  its report and calls show. Run one tester per app, because the tools act
-  on the app's one open project.
+- **Then:** rerun the clipping blind test through to exported files (the
+  first one was stopped by low memory before it exported); bring the
+  highlight peak memory down (the analysis of one long file);
+  variable-line canvas editing and per-letter border fades (ADR-136);
+  the compositor's shader warm-up polls programs a draw or unmount already
+  deleted (harmless `GL_INVALID_VALUE: glGetProgramiv` warnings).
+- **Blind MCP tests** found most of rounds 5 to 7: run `claude -p` (or
+  `codex exec`) from a folder outside the repo, so only the user-scope
+  OpenFrame MCP server is registered. Allow only the OpenFrame tools plus
+  Read, Write, Edit and Glob, with no shell or web. Give it a brief and its
+  media, and fix what its report and calls show. Run one tester per app,
+  because the tools act on the app's one open project.
 
 ## Decisions and scope
 

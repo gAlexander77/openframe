@@ -1,4 +1,6 @@
-import { imageFor } from "./media";
+import { scenePasses, sceneSampling, SCENE_BUDGET_SECONDS } from "../lib/analysis/highlights";
+import { proxySource } from "../lib/proxyPolicy";
+import { borrowImage } from "./media";
 // Decoding for the local AI tools: a clip's source range as mono PCM at a
 // fixed analysis rate, or as per-frame scene scores from small frames.
 // Each call opens its own mediabunny Input (like thumbs.ts), so analysis
@@ -20,8 +22,95 @@ import { platform } from "../platform";
 
 export type Progress = (fraction: number) => void;
 
+/** One decoder pass, bounded 10-second 16 kHz buffers. Source timestamps
+ * preserve gaps and encoder priming, as decodeMono does. */
+export async function streamMono(asset: Asset, consume: (pcm: Float32Array) => void, onProgress?: Progress, signal?: AbortSignal): Promise<void> {
+  const input = await openInput(asset);
+  try {
+    const track = await input.getPrimaryAudioTrack();
+    if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no sound this app can decode`);
+    const t0 = await soundOrigin(input, proxySource(asset, "analysis", false));
+    const size = 160000, length = Math.ceil(asset.duration * 16000);
+    const sum = new Float32Array(size), count = new Uint16Array(size);
+    let base = 0, previous = 0, plane = new Float32Array(0), mono = new Float32Array(0);
+    const flush = (n: number) => {
+      for (let i = 0; i < n; i++) { if (count[i]) previous = sum[i] /= count[i]; else sum[i] = previous; }
+      consume(sum.subarray(0, n)); sum.fill(0); count.fill(0); base += n;
+    };
+    const report = throttle(onProgress);
+    let yielded = performance.now();
+    for await (const sample of new AudioSampleSink(track).samples(Math.max(0, t0 - DECODE_PREROLL), t0 + asset.duration)) {
+      try {
+        signal?.throwIfAborted();
+        const frames = sample.numberOfFrames, channels = sample.numberOfChannels;
+        if (mono.length < frames) [mono, plane] = [new Float32Array(frames), new Float32Array(frames)];
+        mono.fill(0, 0, frames);
+        for (let ch = 0; ch < channels; ch++) {
+          sample.copyTo(plane, { planeIndex: ch, format: "f32-planar" });
+          for (let j = 0; j < frames; j++) mono[j] += plane[j] / channels;
+        }
+        const first = (sample.timestamp - t0) * 16000, step = 16000 / sample.sampleRate;
+        for (let j = 0; j < frames; j++) {
+          const k = Math.floor(first + j * step);
+          if (k < base || k >= length) continue;
+          while (k >= base + size) { signal?.throwIfAborted(); flush(size); }
+          sum[k - base] += mono[j]; count[k - base]++;
+        }
+        report((sample.timestamp - t0) / asset.duration);
+      } finally { sample.close(); }
+      if (performance.now() - yielded > 50) { await new Promise(resolve => setTimeout(resolve, 0)); yielded = performance.now(); }
+    }
+    while (base < length) { signal?.throwIfAborted(); flush(Math.min(size, length - base)); }
+    onProgress?.(1);
+  } finally { input.dispose(); }
+}
+
+/** Sparse low-resolution frames (1 or 4 s). Seeking skips intervening pictures;
+ * codecs may still decode dependency frames within a GOP. */
+export async function sparseSceneCuts(asset: Asset, onProgress?: Progress, signal?: AbortSignal): Promise<{ cuts: number[]; sampling: { interval_seconds: number; samples: number; covered_seconds: number; complete: boolean; even_interval_seconds?: number; elapsed_seconds: number } }> {
+  const input = await openInput(asset);
+  try {
+    const track = await input.getPrimaryVideoTrack();
+    if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
+    const origin = await mediaOrigin(track, await input.getPrimaryAudioTrack());
+    const sink = new CanvasSink(track, { width: 96, poolSize: 1 });
+    const report = throttle(onProgress);
+    const started = performance.now(), { interval_seconds } = sceneSampling(asset.duration);
+    const passes = scenePasses(asset.duration, interval_seconds), total = passes.reduce((n, p) => n + p.length, 0);
+    // 96 px RGBA per sample (about 20 KB): neighbors are known only once the passes end.
+    const frames = new Map<number, Uint8ClampedArray>();
+    let attempted = 0, finest: number | undefined;
+    reading: for (const [i, pass] of passes.entries()) {
+      let k = 0;
+      for await (const wrapped of sink.canvasesAtTimestamps(pass.map(t => origin + t))) {
+        // ponytail: bound costly long-GOP seeking to 75 s; a worker with a
+        // keyframe scene index could cover the full file within this budget.
+        if ((performance.now() - started) / 1000 >= SCENE_BUDGET_SECONDS) break reading;
+        signal?.throwIfAborted();
+        const t = pass[k++];
+        attempted++;
+        report(attempted / total);
+        if (!wrapped) continue;
+        const { canvas } = wrapped;
+        const ctx = canvas.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+        frames.set(t, ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+      }
+      finest = interval_seconds * 2 ** (passes.length - 1 - i);
+    }
+    const cuts: number[] = [];
+    let previous: Uint8Array | undefined;
+    for (const t of [...frames.keys()].sort((a, b) => a - b)) {
+      const hsv = rgbaToHsv(frames.get(t)!);
+      if (previous && contentScore(previous, hsv, DEFAULT_WEIGHTS) >= 25) cuts.push(t);
+      previous = hsv;
+    }
+    const samples = frames.size, covered_seconds = Math.min(asset.duration, attempted * interval_seconds);
+    return { cuts, sampling: { interval_seconds, samples, covered_seconds, complete: attempted === total, ...(finest === undefined ? {} : { even_interval_seconds: finest }), elapsed_seconds: (performance.now() - started) / 1000 } };
+  } finally { input.dispose(); }
+}
+
 async function openInput(asset: Asset): Promise<Input> {
-  return new Input({ source: await platform.sourceFor(asset.proxy ?? asset.src), formats: ALL_FORMATS });
+  return new Input({ source: await platform.sourceFor(proxySource(asset, "analysis", false)), formats: ALL_FORMATS });
 }
 
 /** Call `onProgress` at most every 100 ms. */
@@ -53,7 +142,7 @@ export async function decodeMono(asset: Asset, from: number, to: number, rate: n
     // or every result lands 21 ms late (measured on the fixtures). A stream
     // that starts late (MPEG-TS) still maps its first timestamp to 0, and
     // an MP3's encoder delay is skipped as ffmpeg skips it (ADR-112).
-    const t0 = await soundOrigin(input, asset.proxy ?? asset.src);
+    const t0 = await soundOrigin(input, proxySource(asset, "analysis", false));
     const n = Math.max(0, Math.ceil((to - from) * rate));
     const sum = new Float32Array(n);
     const count = new Uint16Array(n);
@@ -108,7 +197,7 @@ export async function decodePcm(asset: Asset, from: number, to: number, onProgre
   try {
     const track = await input.getPrimaryAudioTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no sound this app can decode`);
-    const t0 = await soundOrigin(input, asset.proxy ?? asset.src);
+    const t0 = await soundOrigin(input, proxySource(asset, "analysis", false));
     const rate = track.sampleRate;
     const n = Math.max(0, Math.round((to - from) * rate));
     const channels = Array.from({ length: Math.min(2, track.numberOfChannels) }, () => new Float32Array(n));
@@ -145,7 +234,7 @@ export async function measureLoudness(asset: Asset, from: number, to: number, on
   try {
     const track = await input.getPrimaryAudioTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no sound this app can decode`);
-    const t0 = await soundOrigin(input, asset.proxy ?? asset.src);
+    const t0 = await soundOrigin(input, proxySource(asset, "analysis", false));
     let meter: LoudnessMeter | null = null;
     // And the 4x-oversampled true peak, which broadcast ceilings are in.
     let tp: TruePeakMeter | null = null;
@@ -247,7 +336,7 @@ export async function frameGrays(
     const track = await input.getPrimaryVideoTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
     const t0 = await mediaOrigin(track, await input.getPrimaryAudioTrack());
-    const sink = new CanvasSink(track, { width, height, fit: "fill" });
+    const sink = new CanvasSink(track, { width, height, fit: "fill", poolSize: 1 });
     const report = throttle(onProgress);
     for await (const wrapped of sink.canvases(t0 + from, t0 + to)) {
       signal?.throwIfAborted();
@@ -276,7 +365,7 @@ export async function frameScores(
     const track = await input.getPrimaryVideoTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
     const t0 = await mediaOrigin(track, await input.getPrimaryAudioTrack());
-    const sink = new CanvasSink(track, { width: opts.width ?? 128 });
+    const sink = new CanvasSink(track, { width: opts.width ?? 128, poolSize: 1 });
     const weights = opts.lumaOnly ? LUMA_WEIGHTS : DEFAULT_WEIGHTS;
     const times: number[] = [];
     const scores: number[] = [];
@@ -305,8 +394,16 @@ export async function frameScores(
  * wide: what an agent looks at to choose the moments to cut. A time past
  * the end gives the last frame; a file without picture gives nulls.
  */
-export async function sourceFrames(asset: Asset, times: number[], width: number): Promise<(CanvasImageSource | null)[]> {
-  if (asset.kind === "image") return Promise.all(times.map(t => imageFor(asset, t)));
+export async function sourceFrames(asset: Asset, times: number[], width: number, signal?: AbortSignal): Promise<(CanvasImageSource | null)[]> {
+  if (asset.kind === "image") return Promise.all(times.map(async t => {
+    const borrowed = await borrowImage(asset, t);
+    try {
+      const bitmap = borrowed.value;
+      const canvas = new OffscreenCanvas(width, Math.max(1, Math.round(width * bitmap.height / bitmap.width)));
+      canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    } finally { borrowed.release(); }
+  }));
   const input = await openInput(asset);
   try {
     const track = await input.getPrimaryVideoTrack();
@@ -314,7 +411,10 @@ export async function sourceFrames(asset: Asset, times: number[], width: number)
     const t0 = await mediaOrigin(track, await input.getPrimaryAudioTrack());
     const sink = new CanvasSink(track, { width, fit: "contain" });
     const out: (CanvasImageSource | null)[] = [];
-    for (const t of times) out.push((await sink.getCanvas(t0 + Math.max(0, Math.min(t, asset.duration - 1e-3))))?.canvas ?? null);
+    for (const t of times) {
+      signal?.throwIfAborted();
+      out.push((await sink.getCanvas(t0 + Math.max(0, Math.min(t, asset.duration - 1e-3))))?.canvas ?? null);
+    }
     return out;
   } finally {
     input.dispose();

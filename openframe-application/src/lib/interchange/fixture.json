@@ -1,0 +1,26 @@
+{
+  "schema": 1, "id": "fixture", "name": "Cuts & layers", "width": 1920, "height": 1080,
+  "fps": { "num": 25, "den": 1 }, "createdAt": 0, "updatedAt": 0,
+  "assets": [
+    { "id": "v", "kind": "video", "name": "Long shot.mp4", "src": "C:/Media/Long shot.mp4", "duration": 30, "hasVideo": true, "hasAudio": true },
+    { "id": "a", "kind": "audio", "name": "Music.wav", "src": "https://media.test/Music.wav", "duration": 30, "hasVideo": false, "hasAudio": true }
+  ],
+  "tracks": [
+    { "id": "overlay", "kind": "video", "name": "Overlay", "clips": [
+      { "id": "overlay1", "type": "video", "assetId": "v", "start": 25, "duration": 30, "in": 10 },
+      { "id": "nested", "type": "compound", "compoundId": "k", "start": 150, "duration": 30, "in": 0.2 }
+    ] },
+    { "id": "main", "kind": "video", "main": true, "name": "Main", "clips": [
+      { "id": "first", "type": "video", "assetId": "v", "start": 0, "duration": 50, "in": 2, "transitionOut": { "type": "dissolve", "duration": 10 } },
+      { "id": "second", "type": "video", "assetId": "v", "start": 50, "duration": 50, "in": 5 },
+      { "id": "third", "type": "video", "assetId": "v", "start": 125, "duration": 50, "in": 8 }
+    ] },
+    { "id": "sound", "kind": "audio", "name": "Music", "clips": [
+      { "id": "sound1", "type": "audio", "assetId": "a", "start": 25, "duration": 125, "in": 1 }
+    ] }
+  ],
+  "markers": [{ "id": "m", "frame": 50, "label": "Cut & cue", "color": "#ff0000" }],
+  "compounds": [{ "id": "k", "name": "Nested", "tracks": [{ "id": "kt", "kind": "video", "main": true, "name": "Nested main", "clips": [
+    { "id": "kc", "type": "video", "assetId": "v", "start": 10, "duration": 40, "in": 3 }
+  ] }], "markers": [{ "id": "km", "frame": 12, "label": "Inside", "color": "#ff0000" }] }]
+}

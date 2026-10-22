@@ -27,6 +27,7 @@ of the documentation and how agents use it as shared working memory.
 
 ## Map of content
 
+- [[Film 5 remediation]] — all thirteen blind-test findings, fixes and validation evidence
 - [[Development pass 2026-10-16]] — approved workflow additions, decisions and verification
 - [[User guide]] — setup, a first editing session, storage and platform limits
 - [[AI development]] — the Claude Code/Codex experiment, documentation purpose,
@@ -550,3 +551,36 @@ Every non-obvious choice gets a short Architecture Decision Record in
   add_callout clicks on each glide's arrival; check_project names a
   callout that leaves the frame; export_video and export_versions replace
   a file of their name in the folder named when asked.
+- [[ADR-126 The MCP server answers at once when the editor page is not listening]] —
+  a listener flag and the main page's load hook answer requests at once
+  while the editor is unavailable, drain interrupted requests with a
+  warning to check the project, and keep the long timeout for exports.
+- [[ADR-127 Timeline conveniences share search and edit paths, monitor mute belongs to preview]] - shared clip search and bulk transition setters, viewer defaults, and a session-only output gain for preview sound.
+- [[ADR-128 Sound shaping uses the shared mixer and retimer]] — fade curves,
+  independent pitch, editable voice presets, continuous split processing,
+  and normalization through the export mixer.
+- [[ADR-129 Color matching samples isolated stills and comparison stays in the viewer]] —
+  match sampled shots through editable RGB curves and saturation; bypass
+  looks on derived plans, and own reference captures only in the player.
+- [[ADR-130 Film tools share speech and preserve readable layouts]]
+- [[ADR-131 Playback proxies are purpose scoped and disposable cache]] — separate preview copies from delivery sources, validate cache
+  health on this machine, and make batches as undoable metadata.
+- [[ADR-132 Precise edits resolve marks before placement and chapters extend movie metadata]] - session edge selection, three/four-point placement, range markers and opt-in MP4 chapters.
+- [[ADR-133 Crop softness, continuous rotation and regional masks]] —
+  crop softness follows picture space, the rotation dial preserves turns,
+  adjustments mix through masks, and static bezier paths share mask transforms.
+- [[ADR-134 Track inserts and dynamics share one audio graph]] ? ordered
+  track and clip inserts, shared worklet dynamics and parametric EQ,
+  continuous detector history across cuts and offline windows.
+- [[ADR-135 Film tools preserve authored timing and degrade previews gracefully]] —
+  playable audio fallbacks, master-second version checks, authored lines and
+  frame times, score endings, sound events, concrete duck advice, conservative
+  subject framing and measured version fades.
+- [[ADR-136 Split compound sound, wide glow and version details keep their continuity]] — continuous compound compression, smooth wide glows, nested callouts, captions above rings, larger tall end cards and nearby silent joins.
+- [[ADR-137 Timeline interchange shares one import boundary]] — OTIO/FCPXML imports, FCPXML and CMX EDL exports, frame clocks, connected lanes and relinkable media.
+- [[ADR-139 Film finishing reports measured limits and preserves portable elements]] - native FCPXML titles/audio, chapter readback, honest checks and conservative portrait/caption repair.
+- [[ADR-140 Highlight discovery streams features and refines candidates]] ? bounded mono analysis, rolling context and chat signals, candidate-only speech, shared UI/MCP results and following range markers.
+- [[ADR-141 Stream clips use grouped bands and detached project documents]] — grouped source crops, bounded captions, shared-media clip projects and sequential batch export without editor navigation.
+- [[ADR-142 Long tools return retained session jobs and hear source windows]] - retained MCP jobs, progress and cancellation, bounded source hearing and sparse scene sampling.
+- [[ADR-143 Clip templates repair their checks and imports classify audio conservatively]] - subject-safe hooks, clear-column credit, measured template checks and conservative audio roles.
+- [[ADR-144 Session resources have byte budgets and explicit owners]] - byte LRU caches, borrowed image lifetimes, idle model teardown, session cleanup and memory diagnostics.

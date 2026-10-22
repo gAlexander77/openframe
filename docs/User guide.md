@@ -19,6 +19,53 @@ and [[Roadmap]] for what is still planned.
 
 ## Make your first edit
 
+### Turn a stream into clips
+
+Import the VOD once. On desktop, create a playback proxy from the Media
+card's context menu for smoother previews of a long recording. Every clip
+project shares that file and proxy; keep the originals available.
+
+For one stream layout, select the VOD clip on the timeline and open
+**Library > Layouts > Stream: facecam over gameplay**. Place the box around
+the facecam on the viewer, then choose **Apply stream layout**. A wide
+canvas becomes 1080 x 1920. The facecam appears above gameplay and its
+copy is silent. The bands move, trim and split together; ungroup them
+when they need independent timing.
+
+To make several projects, add range markers labeled **Highlight 1**,
+**Highlight 2**, and so on over moments on the VOD clip. Right-click its
+Media card and choose **Make clips from markers**. Choose a stream,
+vertical-fill or full 16:9 layout, optionally place the facecam box on the
+source preview, and choose captions and an opening hook. Enter the
+streamer's name, handle and platform to add an opening credit and Follow
+end card. Making clips saves separate projects and leaves this project
+open. Each reported length includes the credit card, held at least two
+seconds and longer for longer copy. Hooks stay below the facecam or clear
+of the detected subject; credits and captions stay clear of the apps'
+buttons. Captions join short chunks when reading needs more time. Creation
+checks the finished project, including rendered contrast. Agents receive
+remaining findings; an impossible hook is omitted and reported. Open a
+saved clip and use **Check** to review it, then review speech recognition
+and edit its hook before publishing.
+
+Imported audio is sampled for up to a minute to distinguish speech from
+music. The import message explains the assigned role; uncertain audio
+stays unclassified. Set an audio track's role yourself when a mixed bed,
+singing or background noise makes the result ambiguous. Agents receive
+`role` and the analysis reason from `import_media`.
+
+On Home, select projects with their selection boxes and choose **Export
+selected**. Choose a desktop folder (blank uses the usual export folder),
+loudness (default -14 LUFS), and an optional additional shape. Original
+shapes are always included. Browser export uses a save dialog per file;
+it cannot write to a named desktop folder. Agents use `create_clips` and
+`export_projects`; `help` topic `stream_clips` explains the full pipeline.
+Credit the streamer in each clip, keep shorts around 15-60 seconds, and
+add deliberate framing, captions and a hook. Use 16:9 compilations for
+long-form videos. Credit and editing do not guarantee monetization.
+
+### Arrange and finish an edit
+
 On desktop, drag any noninteractive part of the top header to move the
 window, including the logo, save status and spaces between controls.
 Double-click the same areas to maximize the window; double-click again to
@@ -55,6 +102,31 @@ changes nothing, and a decimal comma works ("1,5" is 1.5). Sections stay
 open or closed as you left them, across clips and reloads. A section with
 a switch in its header (Border, Shadow, Colorize, a title's Glow) opens
 when you switch it on, so its settings show.
+
+To soften a picture's crop, open **Video > Basic > Crop** and raise
+**Softness**, or use the Softness slider beneath the viewer in crop mode.
+Done applies the crop and softness together; Cancel drops the draft. The
+soft edge stays inside the crop, so it reveals the pictures underneath.
+
+**Transform > Rotate** has a dial beside its number. Drag around its center
+(Shift snaps to 15 degrees), type an angle, or focus the dial and use arrows
+for one degree (Shift for ten). It keeps complete turns, has the usual
+keyframe diamond, and resets on double-click.
+
+For a custom cutout, open **Video > Mask > Pen**. Click anchors around the
+region to keep; drag while placing an anchor for a curved edge, and click
+its first point to close. Drag a point or one of its round handles to refine
+it. Alt-click a point for smooth or corner; Delete removes the selected
+point. Choosing Pen again starts a new path. Position, size, rotation,
+Feather and Invert affect the whole path; key the numeric controls to move
+it over time. Individual anchors do not animate.
+
+To grade one region, add an **adjustment layer**, open its **Mask** tab, and
+choose a circle, rectangle or Pen path on the canvas. Set its exposure to
+darken a sky, or add Blur to soften a face. Only the masked region receives
+the adjustment's grade and effects. Feather softens the boundary and Invert
+applies the change outside. Adjustment masks use the whole canvas as their
+coordinate frame, and their numeric controls take keyframes too.
 
 The inspector fits any width its splitter gives it. Narrower than about
 340 px, each slider takes a line of its own, with its keyframe buttons,
@@ -175,6 +247,31 @@ with the grid. Search/filter/view choices survive tab changes. Opening or
 creating a project clears search/type/usage filters; view and sort last for
 the app session. Browsing and selecting uses do not consume Undo steps.
 
+## Edit heavy footage with playback proxies
+
+On desktop, right-click a video card and choose **Create proxy**, then
+**Half** (the default), **Quarter**, or **720p** (720 pixels on the short
+side). To make a batch, check several video cards and right-click one of
+them. A progress toast names each file; **Cancel** stops the remaining work.
+Completed copies are added as one undo step. FFmpeg with libx264 must be
+installed for this conversion.
+
+The card's **P** badge and tooltip show the proxy's state, size and dimensions.
+**P...** means making; **P!** means stale or missing. **Manage media** lists
+that information and offers **Create proxies for all 4K and HEVC media**
+(also including ProRes). An import hint offers proxies once per heavy import
+batch. **Delete proxy** removes the cached file and reference. Undo restores
+the reference, and the missing copy can be recreated.
+
+Use **Proxy playback** in the player's toolbar or **View** to compare the
+original and proxy without reopening the project. The choice is remembered;
+it starts on. Export, saved frames, AI review and analysis always use the
+original or its full-resolution decode fallback. Scopes switch the viewer
+to that source while open. Missing copies, including on another computer,
+and copies made from an original that changed or was relinked are ignored.
+The browser build offers the controls but clearly says proxy generation and
+deletion are desktop-only.
+
 ## Select and arrange clips
 
 Click a picture in the viewer to select the top unlocked clip whose box
@@ -212,6 +309,48 @@ A title an AI agent gave a drop shadow, a border or a colorize shows them
 in its **Text** tab (as **Drop shadow**, **Border** and **Colorize**), where
 you can change them or switch them off.
 
+## Match and compare color
+
+Select a video or picture and open **Adjust > Match color**. Choose
+**Pick reference**, then click the timeline clip whose look you want. The
+selection stays on your targets; Escape cancels picking. Adjust Strength
+and **Match saturation**, then choose **Match**. Select several targets to
+match them together in one Undo step. **Cancel match** discards the work.
+Matching replaces the targets' other look settings with editable red,
+green and blue curves and Basic saturation; it preserves the master curve,
+placement, crop, opacity and chroma key. Strength zero leaves everything
+unchanged. Similar subjects match best; clipped tones cannot be recovered.
+
+Turn on **Compare** in the Player header to see the selected clips before
+and after their look. Open **Comparison options** to choose **Reference
+frame** or **Capture reference**: the captured picture stays on the left
+while the live viewer follows the playhead on the right. Choose a vertical
+or horizontal split, drag its handle to move it, and double-click the
+handle to center it. Arrow keys move a focused handle, and Home/End put it
+at an edge. Turn Compare off to release the captured picture. Compare is
+only for this session and has no effect on exports or Undo.
+
+Agents can call `match_color` with `reference_clip_id`, target `clip_ids`,
+`strength` and `match_saturation`. For an ungraded preview without an edit,
+use `preview_frame` or `preview_frames` with `before: true`; optional
+`before_clip_ids` limits the bypass to those clips, otherwise every visible
+look, including adjustment layers, is bypassed.
+
+## Apply transitions at several cuts
+
+Set **Default video transition**, **Transitions** seconds and **Audio
+crossfades** seconds in Preferences. In the Transitions library,
+right-click a card and choose **Set as default**; its Default badge marks
+it. The starting choices are Dissolve, 0.5 s for video and 0.5 s for audio.
+
+Select the clips before the cuts, then choose **Timeline > Apply default
+video transition** or **Apply default audio crossfade**. The Keyboard
+shortcuts panel lists their keys. One Undo removes the whole application.
+With no selection, the nearest eligible main-track cut is used. On audio
+tracks, select the outgoing audio clips; the incoming clips need sound
+before their in-points. Gaps and locked tracks are skipped, existing
+transitions stay, and each new length shortens to fit the join.
+
 ## Compose with viewer guides
 
 Choose **Safe margins**, **Rule of thirds**, or **Safe margins + thirds**
@@ -225,6 +364,19 @@ Guides follow the picture when resizing, using a portrait canvas or entering
 full screen. They do not block editing handles, appear in exports, change
 the project or consume an Undo step. The choice lasts for this app session;
 choose **Guides off** to hide them.
+
+## Find a clip on the timeline
+
+Open the library's **Timeline** tab beside Markers. Search a clip's name,
+its media name, its text (including a title's later lines), or its kind.
+Filter by Video, Audio, Text, Captions, Pictures or Other, and sort by
+Start, Name or Track. Rows show the track, start timecode, duration and
+color label; deactivated clips are dimmed.
+
+Click a row to select its clip, jump to its start and bring it into view.
+Up and Down move through rows; Enter selects the focused row. Selecting
+on the timeline highlights the matching row too. Double-click a compound
+row to open it; the list then follows that compound's own timeline.
 
 ## Organize edits with markers
 
@@ -251,8 +403,18 @@ own; giving it a new position does the same. Searching a clip's name
 lists the markers that follow it. Notes beyond the last clip are
 reachable and appear in the list, but do not make the exported movie
 longer. Editing markers leaves clips, gaps and clip selection alone.
-Saved markers reopen with the project; range markers are not
-implemented yet.
+Saved markers reopen with the project. Set **Duration** with the same
+timecode or seconds rules as Position (zero makes a point marker). A range
+draws a band on the ruler; drag its right end to resize it in one undo step.
+Its start keeps following its clip when attached; changing only Duration
+does not detach it. Turn on **Chapter** to include its start and note in an
+MP4 export with **Chapters from markers** enabled. Only chapter-marked notes
+are included. Partial exports start the preceding chapter at zero.
+MP4 supports up to 255 chapters, and titles use at most 255 UTF-8 bytes.
+Chapter exports put their movie metadata at the end of the file. Export
+answers list the chapter titles and seconds written. To verify the delivered
+file, use `preview_media` with `file`; it reads OpenFrame's Nero MP4 chapter
+table and says which other chapter formats it does not inspect.
 
 Use **Export shown markers** to preview and save just the notes shown by
 the current search and color filter. **Timecoded notes** keeps frame-exact
@@ -362,6 +524,44 @@ tools need a separate download or installation; local inference can still
 require network access to obtain model files. The current AI assistant uses a
 local model server such as Ollama or LM Studio.
 
+**Find the moments in a stream:** import the VOD, place it on the timeline,
+then open **AI tools > Find highlights**. Choose the media and optionally
+**Choose chat replay** (TwitchDownloader/Twitch JSON, chat-downloader JSON
+or JSONL, or timestamped text, up to 32 MiB). Set Count and the minimum and
+maximum seconds, then Run. Cancel stops a reading. The first pass streams
+the audio; repeat runs reuse its features. Scores suggest moments to
+review, not guaranteed highlights: music and game sounds can resemble a
+shout. Select a result to seek or use its Play button. **Add markers** adds
+all results as Highlight N ranges following that source clip, one undo step;
+rerunning replaces those ranges. A range follows its start through edits.
+Turn on **Hear candidates** for local Whisper quotes and sentence boundaries;
+only candidates plus five seconds of context are heard, and first use may
+download a speech model. Results include short quote or phrase titles. Agents use `find_highlights` (source-second times,
+optional viewer clip times and transcript keywords), `preview_media` to
+review, and `add_highlight_markers` to mark a reviewed reading. Long videos
+sample scenes every four seconds after 20 minutes; the answer reports
+sampling coverage if its 75-second scene budget runs out.
+
+**Long operations:** a progress toast names the current stage; use its
+**Cancel** button to stop. Agents get a job ID if a tool takes over
+45 seconds (or immediately with `wait: 0`). Call `job_status` with
+`job_id` until `state` is `done`, then read `result` as the tool's original
+answer; `failed` includes an error, and `canceled` stays canceled. Without
+an ID, `job_status` lists running and recent jobs. `cancel_job` stops a
+specific ID. Text results remain up to 30 minutes within a 32 MiB budget
+and 128 recent jobs. Image/audio payloads are released after delivery; ask
+for another preview to receive them again. Switching projects cancels
+running jobs and releases cached answers. `elapsed_seconds` and
+`quiet_seconds` show total time and time since the last progress update.
+The existing `export_status` also keeps following the latest export.
+
+**Long editing sessions:** thumbnails and analysis features are cached within
+byte budgets. Older entries regenerate when needed. Speech and background
+models unload after two idle minutes, so the next use may take a little
+longer to start; downloaded weights remain available offline. Back to home
+or opening another project releases the previous project's working caches
+and undo history. The saved edit and its media remain available to reopen.
+
 **Remove a background:** select a video clip, open Video > Remove BG and
 turn on Auto removal (or use the AI tools card). The first time downloads
 the model (88 MB, or 0.5 MB on a computer without a capable GPU); after
@@ -383,7 +583,22 @@ with natural pauses, one level, and a quiet room under the silences.
 timeline on this computer. A voice made by the app (Text to speech, or an
 agent's voiceover) is captioned in the words it was given to read, at the
 times it says them, so a word the recognizer mishears never reaches the
-captions.
+captions. An agent can call `auto_captions` after the cuts: whole lines by
+default, or `words_per_caption: 2` and `look: "pop"` for a short. Set
+`start`/`end` to caption a stretch, `track_ids` to choose the speech tracks,
+and `replace: false` to keep earlier captions. Imported audio intended as
+speech should have the Dialog role; music and effects roles are skipped.
+`detail: "full"` lists the caption times. Captions, `get_transcript` and
+filler removal hear the clip's source window with three seconds of context
+on each side and reuse cached words from that file. Their answers report
+`audio_seconds` heard (zero when reused), hearing `elapsed_seconds` and
+`model`; English uses base.en unless another model is chosen. Whole-line captions use phrase
+breaks, up to two lines, at least 0.83 s and at most 20 characters a second
+where the available speech window allows. The answer's `readability` names
+cues that still need repair. For difficult source speech, choose Accurate
+(English), or pass `model: "onnx-community/whisper-small.en_timestamped"`;
+review names and technical terms even with that model. This is one undoable
+edit.
 
 **Ask the AI assistant for an edit:** click **AI assistant** in the title
 bar. It opens as a column at the right of the editor, which makes room for
@@ -549,6 +764,30 @@ frame you see. The range is placed using the current timeline mode; Undo
 removes it. Previewing does not move the timeline playhead. Marks reset when
 the preview closes. Image previews offer **Add image** instead.
 
+**Insert** and **Overwrite** also honor the timeline marks. Mark source In
+and Out plus timeline In to place that source range at the timeline In.
+With timeline In and Out, mark only source In to read forward for that
+length, or only source Out to backtime the source so it ends there. Outs
+are exclusive in commands; the source monitor includes the displayed frame.
+Four marks of different lengths ask for **Fit to fill** (change constant
+speed) or **Trim source to fit** (speed one). The separate **Fit to fill**
+button overwrites the timeline range using the selected source range; its
+binding is shown in Keyboard shortcuts. Too little media leaves the timeline
+and marks untouched. Successful Insert/Overwrite clears the timeline marks.
+Agents use `edit_from_source` with optional source/timeline In/Out seconds.
+
+To extend a timeline cut precisely, click a clip edge with Select. Its
+bracket shows the chosen side. Add edges with Shift; Alt-click or
+double-click a touching cut to choose both sides for a roll. Move the
+playhead and use **Extend edit to playhead** from Timeline or Keyboard shortcuts.
+With no edge selected, it finds the nearest edge on selected clips' tracks
+(or all unlocked tracks). The frame nudge actions move selected edges; with
+no selected edges they move clips. Escape clears brackets. **Select nearest
+edit point**, **Select next edit point**, and **Select previous edit point**
+move the edge selection without moving the playhead. A tie chooses the
+earlier frame, then the outgoing side; gaps never roll. Limits appear in a
+toast. These edits leave gaps even with the main-track magnet enabled.
+
 ## Organize media
 
 In **Manage media → Organize folders**, create a folder, then choose it beside
@@ -599,13 +838,36 @@ A multi-selection has one viewer box: drag it to move, use a corner to scale the
 
 Select a picture with position keyframes to see its motion path. Drag a dot to move that key position; the gesture is one undo step. A focused dot can also move one canvas pixel with an arrow key. The `move_motion_point` command takes a clip id, an existing key time in timeline seconds, and x/y positions in canvas fractions from center. Both axes receive a key at that time, with existing easing preserved.
 
+## Shape a clip's sound
+
+Select an audio clip or a video with sound and open **Audio**. Beside each
+fade slider, choose its curve: **Linear** rises steadily, **Equal power**
+uses a sine curve, **Logarithmic** rises quickly, **Exponential** rises
+slowly, and **S curve** eases both ends. The timeline draws that shape.
+The **Crossfade** row has the same choice; its default is Equal power.
+
+**Pitch** moves the sound up or down by as much as an octave (12 semitones)
+without changing its length. It works with speed changes and reverse.
+Double-click the slider to reset to zero. This is separate from the Speed
+tab's **Change pitch**, which lets pitch follow speed like tape. Pitch
+cannot be keyframed.
+
+In **Voice changer**, click Chipmunk, Deep, Robot, Radio, Telephone,
+Megaphone, Cave or Monster to apply it and hear the clip's first three
+seconds alone. Another chip replaces the audition. Fine-tune Pitch and
+the ordinary EQ, compressor, filter, saturation, Robot frequency/mix,
+echo and reverb controls. **None** clears those settings and their keys;
+volume, pan, fades and tape stop stay. Undo restores the previous settings.
+**Normalize loudness** measures the processed sound, including the voice
+changer, so a filtered or distorted voice can be balanced with other lines.
+
 ## Crossfade audio clips
 
 Where one audio clip ends and another starts on the same track, right-click
 the first and choose **Crossfade into next clip**: the first fades out as
 the second fades in, at constant power, over the seconds before the cut, so
 the cut itself still lands where you put it. It takes the default
-transition length from **Preferences** (0.5 s), or as much as the clips
+**Audio crossfades** length from **Preferences** (0.5 s), or as much as the clips
 allow when that is less.
 The timeline draws it as a small marker at the end of the first clip;
 click it to open the clip's **Audio** tab, where **Crossfade** sets its
@@ -626,6 +888,32 @@ controls the whole mix, including exports, and shows stereo levels and
 short-term LUFS; with many tracks, their strips scroll sideways and the
 master stays in view at the right. A drag is one undo step. Double-click a
 fader or pan to reset it. Close the panel with **Close mixer** or Escape.
+
+In an audio strip's **Effects** area, choose a processor and press **Add
+insert**, or choose **Add preset**. **Dialog cleanup** starts with an 80 Hz
+high-pass, a -50 dBFS gate, 4 dB de-essing, voice compression and a -1 dBFS
+limiter. Click an insert's name to open its controls, then adjust sliders
+or reset it. Its checkbox bypasses it; drag rows or use their up/down
+buttons to change order; the trash button removes it. Track effects hear
+all of the track's clips together and keep their state across cuts.
+
+For one clip, select it and open **Audio > Dynamics**. Switch on **Gate**
+to reduce noise between words, **De-esser** to soften sibilance, or
+**Limiter** to hold peaks. Each shows its main control; **More** exposes
+attack, hold, release or detector frequencies. **Parametric EQ** adds up
+to eight bands with frequency (Hz), gain (dB), Q and filter shape. It runs
+after the old Equalizer. Presets also work here and replace the clip's
+insert chain; **Insert order and other effects** exposes the full chain.
+A limiter's ceiling applies before later inserts and faders, which can
+raise the level again. Its lookahead delays sound 5 ms per limiter.
+
+
+The speaker in the player's transport and on the master strip is **Mute
+playback**. It silences previews, scrubbing and auditions, and the master
+meters read silence. It lasts for the app session and leaves exports
+unchanged. Use **Mute track** and **Solo track** in the Timeline menu or
+their entries in Keyboard shortcuts to toggle the tracks of selected
+clips in one undo step. Those track settings do affect export.
 
 ## Use animated images
 
@@ -674,3 +962,90 @@ second export of the same name is saved as "Name (2)", and the agent is told.
 Only when it names the folder and asks to replace (to supersede its own
 earlier export there) does a new file take the old one's place, once the
 export has finished.
+
+## Move a timeline between editors
+
+Choose **File > Import timeline…** and pick an `.otio`, `.fcpxml` or FCPXML
+`.xml` file. It opens as a new saved project. The result lists the imported
+tracks and media, plus anything that could not be mapped. Cuts, gaps,
+overlays, audio tracks, dissolves, markers and compound sequences are
+supported. Effects and speed changes need rebuilding after import.
+On desktop, relative media paths are resolved beside the timeline file.
+For missing sources, open **Media > Manage media** and relink the files.
+The web build accepts the timeline file but can resolve only HTTP(S) media
+URLs; local paths need relinking through its media picker.
+
+Choose **File > Export timeline > OpenTimelineIO, FCPXML or EDL** to save
+an editable timeline for another editor. FCPXML is version 1.10; EDL is
+CMX 3600 and writes the main video track plus one file per audio track.
+EDL omits overlays and markers and represents compounds as black.
+FCPXML carries basic editable titles, clip and track levels, ducking volume
+keys, linear audio fades, dissolves, markers and chapter starts. Color clips
+and shapes become gaps; OpenFrame can recover their color from metadata.
+Use the finished video and a final WAV mix as references for the colleague:
+cleanup/inserts, grading, picture transforms, advanced title styling and
+animation need finishing in the receiving editor. OTIO's OpenFrame metadata
+also needs OpenFrame to reproduce those elements.
+The export result names each saved file and any format limitations.
+Keep the original source files available: these exports do not collect
+or render media. Other editors' interpretation still needs checking.
+
+Agents use `import_timeline` with an absolute desktop `file` path (omit it
+for the picker), and `export_timeline` with `format` (`otio`, `fcpxml`,
+`edl`) and an optional absolute desktop `folder`. Each answer includes the
+import or export report. On the web, export uses the save picker or download.
+
+### Checking an agent-made film
+
+Ask `preview_audio` to hear up to 30 seconds of the mix or one stem. MP3
+is the default; if its encoder cannot run, the preview uses M4A or WAV and
+names the actual `format`. You can request `format: "wav"` directly.
+If a join fades into silence and there is no grid or Bar marker, its
+measurements can suggest a `roll_edit` target within half a second where
+both source files are silent. Apply that target to move the handoff while
+keeping the two clips' outer edges.
+`audio: false` returns measurements alone. Flat-range advice names pauses
+held down by ducking; lower `duck_under_speech min_gap` or choose `open_at`
+moments if you want music to rise there.
+
+For portrait hooks, use size 70-110 and two to four words per line;
+ordinary portrait titles use 50-90. Explicit lines in an end-card headline
+shrink to fit the column before wrapping, down to the readable floor.
+A 9:16 end card sizes its headline and button from the safe column, then
+gives logo space first if the card needs to fit a shorter room.
+Voiceover line start/end answers are the placed clip times; `seconds`
+remains the speech length.
+
+With `export_versions check: true`, use `check_times: [1, 11.5, 29]` for
+seconds of the master, or `check_at: [0.15, 0.5, 0.92]` for fractions of
+each version. Choose one. Cut-downs omit moments cut out of the master,
+move end-card moments with the card, and show the opening if none remain.
+Rings and spotlights inside compound scenes follow the footage in each
+version. On tall versions, captions crossing a ring move above it when
+there is safe room; the check sheet reports what moved in `done`.
+A version override with `hidden: true` can hide a cinematic-bars adjustment.
+On repeating texture without a distinct subject, automatic reframing stays
+centered and says so; give `focus` to choose a region yourself. An adapted
+title whose fade measures unevenly ends with a cut instead, named in
+`options`; the master keeps its original animation.
+
+## Interview cutaways and portrait review
+
+A fitted picture shows its whole source and leaves transparent bands when
+its shape differs from the canvas. For a cutaway over an interview, agents
+can add the clip with `fit: "fill"` to cover the frame, or `fit: "blur"` to
+show the whole source over a covering blurred copy. For an existing clip,
+use `frame_region` with `mode: "fill"`, or enlarge it in the Video inspector.
+Solid **Canvas fill** covers the entire frame even when the picture is cropped.
+
+Review `export_versions` with `check: true` before exporting. `check_times`
+and `check_at` accept up to eight moments per call; request another check
+for additional moments. Read `options`: automatic subject framing uses
+visual saliency and can favor a background monitor over an interviewee.
+Use `preview_media` to locate the speaker in the original picture, then give
+`focus: [{clip_id: "the-shot-id", x: 0.68, y: 0.5}]` with that person's
+coordinates, measured from the source's top-left corner. An explicit focus
+wins over the saliency candidate. Portrait identifiers move out of the
+framed subject's box where space permits, and unresolved placements are
+reported. Use `overrides` to move a title by hand, or save the portrait as
+a project to refine its layout. Inspect the resulting frames again.

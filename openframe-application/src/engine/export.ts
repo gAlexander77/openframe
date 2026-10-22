@@ -1,3 +1,4 @@
+import { memoryOwners, MiB } from "./memory";
 // Export: the timeline rendered into a file, entirely on this machine
 // (ADR-003), looking exactly like the preview because it runs the same plan
 // (lib/render/plan.ts), sources (player.ts) and compositor.
@@ -10,6 +11,8 @@
 // captureStream, so a slow machine takes longer but never drops a frame
 // (research pitfall 23).
 
+import { appendChapters, chapterBox, readChapterBox, chaptersInRange } from "../lib/chapters";
+import { beforePlan } from "../lib/viewerCompare";
 import {
   ALL_FORMATS,
   AudioBufferSink,
@@ -30,6 +33,7 @@ import {
   canEncodeAudio,
   getEncodableVideoCodecs,
   getFirstEncodableVideoCodec,
+  type IsobmffOutputFormatOptions,
   type OutputFormat,
   type StreamTargetChunk,
 } from "mediabunny";
@@ -71,6 +75,8 @@ export interface ExportProgress {
 export interface ExportResult {
   frames: number;
   seconds: number;
+  /** Actual Nero chapter titles and times written (including title truncation). */
+  chapters?: import("../lib/chapters").Chapter[];
   bytes: number;
   /** Wall-clock seconds the export took. */
   elapsed: number;
@@ -166,37 +172,42 @@ export async function encodableVideoCodecs(format: VideoFormat, width: number, h
   return VIDEO_FORMATS[format].codecs.filter((c) => found.includes(c as MediaCodec));
 }
 
+const memoryExports = new Set<{ bytes: () => number; dispose: () => void }>();
+memoryOwners.register("export_buffers", () => ({ bytes: [...memoryExports].reduce((n, m) => n + m.bytes(), 0), count: memoryExports.size, budget: 128 * MiB }), () => { for (const target of memoryExports) target.dispose(); });
+
 /** An in-memory export target with positional writes (MP4 patches its
- * header at the end). For automation and tests.
- * ponytail: the whole file lives in RAM; past ~1 GB use an OPFS target. */
+ * header at the end). Larger deliveries use the streaming file target. */
 export function memoryTarget() {
-  let buf = new Uint8Array(1 << 20);
-  let size = 0;
+  const budget = 128 * MiB;
+  let buf = new Uint8Array(1 << 20), size = 0, disposed = false;
+  const resource = { bytes: () => buf.byteLength, dispose: () => { disposed = true; buf = new Uint8Array(0); memoryExports.delete(resource); } };
+  memoryExports.add(resource);
   const writable = new WritableStream<StreamTargetChunk>({
     write({ data, position }) {
+      if (disposed) throw new Error("Export buffer was released");
       const end = position + data.byteLength;
+      if (end > budget) throw new Error("In-memory export exceeds 128 MiB. Export to a file instead.");
       if (end > buf.byteLength) {
-        const grown = new Uint8Array(Math.max(end, buf.byteLength * 2));
-        grown.set(buf.subarray(0, size));
-        buf = grown;
+        const grown = new Uint8Array(Math.min(budget, Math.max(end, buf.byteLength * 2)));
+        grown.set(buf.subarray(0, size)); buf = grown;
       }
-      buf.set(data, position);
-      size = Math.max(size, end);
+      buf.set(data, position); size = Math.max(size, end);
     },
+    abort: () => resource.dispose(),
   });
-  return { writable, bytes: () => buf.slice(0, size) };
+  return { writable, bytes: () => buf.slice(0, size), dispose: resource.dispose };
 }
 
 /** The codecs mediabunny encodes (a GIF has its own encoder). */
 type MediaCodec = Exclude<VideoCodec, "gif">;
 
-function outputFormat(c: Container, plan: ExportPlan): OutputFormat {
+function outputFormat(c: Container, plan: ExportPlan, chapterOptions?: IsobmffOutputFormatOptions): OutputFormat {
   // MP4/MOV reserve room for the index up front ("fast start": playable
   // while downloading) - possible because the packet counts are known.
   switch (c) {
     case "mp4":
     case "m4a":
-      return new Mp4OutputFormat({ fastStart: "reserve" });
+      return new Mp4OutputFormat(chapterOptions ?? { fastStart: "reserve" });
     case "mov":
       return new MovOutputFormat({ fastStart: "reserve" });
     case "webm":
@@ -215,7 +226,7 @@ function outputFormat(c: Container, plan: ExportPlan): OutputFormat {
 
 /** AAC encoding where the platform has none (Linux Chromium, Windows N,
  * some WebKitGTK builds): a WASM encoder, loaded only when needed. */
-async function ensureAac(bitrate: number): Promise<string | undefined> {
+export async function ensureAac(bitrate: number): Promise<string | undefined> {
   const opts = { numberOfChannels: 2, sampleRate: 48000, quality: new Quality({ bitrate }) };
   if (await canEncodeAudio("aac", opts)) return undefined;
   const { registerAacEncoder } = await import("@mediabunny/aac-encoder");
@@ -228,7 +239,6 @@ async function ensureAac(bitrate: number): Promise<string | undefined> {
  * one), so LAME in WebAssembly is loaded on first use. */
 export async function ensureMp3(bitrate: number): Promise<void> {
   const opts = { numberOfChannels: 2, sampleRate: 48000, quality: new Quality({ bitrate }) };
-  if (await canEncodeAudio("mp3", opts)) return;
   const { registerMp3Encoder } = await import("@mediabunny/mp3-encoder");
   registerMp3Encoder();
   if (!(await canEncodeAudio("mp3", opts))) throw new ExportError("This device can't encode MP3 audio. Choose WAV or AAC (M4A).");
@@ -294,12 +304,22 @@ export async function exportProject(
   // ---- the canceled file must not be committed ---------------------------------
   const inner = target.writable.getWriter();
   let bytes = 0;
+  const chapters = plan.chapters && plan.container === "mp4" ? chaptersInRange(p.markers, p.fps, plan.range) : [];
+  let movie: { data: Uint8Array<ArrayBuffer>; position: number } | null = null;
+  const chapterOptions: IsobmffOutputFormatOptions | undefined = chapters.length ? { fastStart: false, onMoov: (data, position) => { movie = { data: appendChapters(data, chapters), position }; } } : undefined;
   const writable = new WritableStream<StreamTargetChunk>({
     write: (chunk) => {
       bytes = Math.max(bytes, chunk.position + chunk.data.byteLength);
       return inner.write(chunk);
     },
-    close: () => (stopError ? inner.abort(stopError) : inner.close()),
+    close: async () => {
+      if (stopError) return inner.abort(stopError);
+      if (movie) {
+        await inner.write({ type: "write", ...movie });
+        bytes = Math.max(bytes, movie.position + movie.data.byteLength);
+      }
+      await inner.close();
+    },
     abort: (reason) => inner.abort(reason),
   });
 
@@ -314,7 +334,7 @@ export async function exportProject(
     // Titles must rasterize in their real font from the first frame.
     await guard(document.fonts.ready);
 
-    output = new Output({ format: outputFormat(plan.container, plan), target: new StreamTarget(writable, { chunked: true, chunkSize: 8 * 2 ** 20 }) });
+    output = new Output({ format: outputFormat(plan.container, plan, chapterOptions), target: new StreamTarget(writable, { chunked: true, chunkSize: 8 * 2 ** 20 }) });
 
     // ---- video track ------------------------------------------------------------
     let video: CanvasSource | null = null;
@@ -516,6 +536,7 @@ export async function exportProject(
     finalPeak?.flush();
     return {
       ...(finalMeter && finalPeak ? { loudness: { integrated: +finalMeter.integrated().toFixed(2), truePeak: +toDbtp(finalPeak.peak).toFixed(2) } } : {}),
+      ...(plan.chapters ? { chapters: readChapterBox(chapterBox(chapters)) } : {}),
       frames: plan.frames,
       seconds: plan.seconds,
       bytes,
@@ -573,8 +594,8 @@ function humanize(e: unknown): unknown {
 }
 
 /** One frame as a PNG at the export size: CapCut's "export still frame". */
-export async function exportStill(p: Project, frame: number, width: number, height: number): Promise<Blob> {
-  return (await exportStills(p, [frame], width, height))[0];
+export async function exportStill(p: Project, frame: number, width: number, height: number, signal?: AbortSignal): Promise<Blob> {
+  return (await exportStills(p, [frame], width, height, undefined, undefined, signal))[0];
 }
 
 /** Frames as PNGs at the export size, drawn as the export draws them,
@@ -587,18 +608,21 @@ export async function exportStill(p: Project, frame: number, width: number, heig
  * bilinearly, as a player scales video and as the compositor scaled
  * footage before: a smoother filter took a dark sky's grain away and its
  * JPEG sheet banded (ADR-073). */
-export async function exportStills(p: Project, frames: number[], width: number, height: number, drawAt?: { width: number; height: number }): Promise<Blob[]> {
+export async function exportStills(p: Project, frames: number[], width: number, height: number, drawAt?: { width: number; height: number }, before?: { clipIds?: readonly string[]; signal?: AbortSignal }, signal = before?.signal): Promise<Blob[]> {
   const big = drawAt && drawAt.width > width ? drawAt : { width, height };
   const comp = new Compositor(new OffscreenCanvas(big.width, big.height));
-  const pool = new CursorPool();
+  const pool = new CursorPool({}, "still");
   const small = big.width > width ? new OffscreenCanvas(width, height) : null;
   try {
     await document.fonts.ready;
     comp.resize(big.width, big.height);
     const out: Blob[] = [];
     for (const frame of frames) {
-      const items = planFrame(p, frame);
+      signal?.throwIfAborted();
+      const plan = planFrame(p, frame);
+      const items = before ? beforePlan(plan, before.clipIds) : plan;
       const resolved = await resolveSources(p, items, pool);
+      signal?.throwIfAborted();
       comp.render(items, sourceImages(resolved, big.width, big.height), p.background);
       if (small) {
         const bmp = await createImageBitmap(comp.canvas as OffscreenCanvas, { resizeWidth: width, resizeHeight: height, resizeQuality: "low" });

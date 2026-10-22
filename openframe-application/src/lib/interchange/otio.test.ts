@@ -61,5 +61,6 @@ describe("toOtio", () => {
     expect(fileUrl("/music/a #1.mp3")).toBe("file:///music/a%20%231.mp3");
     expect(fileUrl("https://x.test/a.mp4")).toBe("https://x.test/a.mp4");
     expect(fileUrl("opfs-name.mp4")).toBe("opfs-name.mp4");
+    expect(fileUrl("\\\\server\\share\\a #1.mov")).toBe("file://server/share/a%20%231.mov");
   });
 });

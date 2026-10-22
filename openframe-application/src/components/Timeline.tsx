@@ -27,7 +27,7 @@ import { clampZoom, fitZoom, refitTimeline, rulerTicks, snapSpan, trackHeight } 
 import { formatTimecode, framesToSeconds, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { canPaste, edit, provide, settleOptions } from "../state/actions";
-import { addAdjustmentLayer, addCalloutLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, layerSeconds, placeTextPreset, transitionSeconds } from "../state/apply";
+import { audioCrossfadeSeconds, crossfadeInto, addAdjustmentLayer, addCalloutLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, layerSeconds, placeTextPreset, transitionSeconds } from "../state/apply";
 import { registerDropZone, useDragging, type DragPayload, type DragState } from "../state/drag";
 import { addToTimeline, importFiles, pickAndImport } from "../state/media";
 import { syncAudio } from "../state/ai";
@@ -38,6 +38,8 @@ import { renameClip } from "../state/rename";
 import { copiedEffects, copyEffects, pasteEffects } from "../state/effects";
 import { showInspectorTab } from "./inspector/Inspector";
 import { store, useEditor } from "../state/store";
+import { cutSides } from "../lib/editPoints";
+import { updateMarker } from "../lib/markers";
 import { openMarkers } from "../state/markers";
 import { projectWork } from "../state/projectWork";
 import { ClipView, type ClipZone } from "./ClipView";
@@ -189,7 +191,7 @@ function planDrop(payload: DragPayload, row: number, frame: number): { view: Dro
       const join = audioJoin(tracks, row, frame);
       if (join) {
         const j = crossfadeJoin(p, join.clipId);
-        const d = Math.max(1, secondsToFrames(j && !j.why ? newCrossfade(j, transitionSeconds()) : transitionSeconds(), p.fps));
+        const d = Math.max(1, secondsToFrames(j && !j.why ? newCrossfade(j, audioCrossfadeSeconds()) : audioCrossfadeSeconds(), p.fps));
         const view = { row: join.row, newTrack: false, frame: join.frame - d, duration: d, shifts: none, label: "Crossfade", insert: false, attach: true };
         return {
           view,
@@ -208,36 +210,11 @@ function planDrop(payload: DragPayload, row: number, frame: number): { view: Dro
   }
 }
 
-/**
- * Crossfade audio clip `clipId` into the next one (ADR-109): the
- * transitions' default length, as far as the join allows; where none
- * fits, say what to change. The clip menu's item toggles it off again; a
- * transition dropped on the join (ADR-111) always sets it. True when the
- * crossfade was set or removed.
- */
-function crossfadeInto(clipId: Id, toggle: boolean): boolean {
-  const join = crossfadeJoin(store.get().project, clipId);
-  if (!join) return false;
-  const off = toggle && join.plays > 0;
-  if (!off && join.why) {
-    toast(join.why, "error");
-    return false;
-  }
-  const seconds = off ? 0 : newCrossfade(join, transitionSeconds());
-  try {
-    edit(seconds ? "Crossfade" : "Remove crossfade", (p) => runCommand(p, "set_crossfade", { clip_id: clipId, seconds }));
-    return true;
-  } catch (err) {
-    toast((err as Error).message, "error");
-    return false;
-  }
-}
-
 // A list outside the timeline (the Check tab) moved the playhead: the
 // timeline scrolls it into view, as it does for a marker.
-const revealers = new Set<() => void>();
-export function revealPlayhead() {
-  revealers.forEach((r) => r());
+const revealers = new Set<(clipId?: string) => void>();
+export function revealPlayhead(clipId?: string) {
+  revealers.forEach((r) => r(clipId));
 }
 
 /** Equal previews draw the same; skip the re-render on every pointer move. */
@@ -273,7 +250,7 @@ export function Timeline() {
   const display = useTimelineDisplay();
   const { rows, height: rowsH } = useMemo(() => layoutRows(project), [project, display]);
   const duration = ops.projectDuration(project);
-  const timelineEnd = project.markers.reduce((end, m) => Math.max(end, m.frame), duration);
+  const timelineEnd = project.markers.reduce((end, m) => Math.max(end, m.frame + (m.duration ?? 0)), duration);
   const fpsN = project.fps.num / project.fps.den;
   const contentW = Math.max(view.width, HEADER_W + (timelineEnd + fpsN * 30) * zoom);
   const focusedFrame = useEditor((s) => s.project.markers.find((m) => m.id === s.markerEdit)?.frame);
@@ -302,7 +279,17 @@ export function Timeline() {
   useLayoutEffect(showPlayhead, [depth]);
   useEffect(() => {
     // After the seek renders: leaving a compound clip changes the width.
-    const reveal = () => requestAnimationFrame(showPlayhead);
+    const reveal = (clipId?: string) => requestAnimationFrame(() => {
+      showPlayhead();
+      const el = scrollRef.current;
+      // A distant clip is culled until the horizontal scroll renders.
+      // Reveal its row from layout, so vertical reach does not need its DOM.
+      const row = clipId && layoutRows(store.get().project).rows.find((r) => r.track.clips.some((c) => c.id === clipId));
+      if (el && row) {
+        if (row.top < el.scrollTop) el.scrollTop = row.top;
+        else if (RULER_H + row.top + row.height > el.scrollTop + el.clientHeight) el.scrollTop = RULER_H + row.top + row.height - el.clientHeight;
+      }
+    });
     revealers.add(reveal);
     return () => void revealers.delete(reveal);
   }, [showPlayhead]);
@@ -436,7 +423,9 @@ export function Timeline() {
         // Alt narrows even a selection that holds the clip: it is how one
         // side of a linked pair is taken alone.
       } else if (!sel.includes(clip.id) || e.altKey) sel = picked;
+      const edges = s.tool === "select" && zone !== "body" ? (e.altKey ? cutSides(s.project, { clipId: clip.id, edge: zone }) : [{ clipId: clip.id, edge: zone }]) : [];
       store.select(sel);
+      if (edges.length) store.set({ selectedEdits: e.shiftKey ? [...s.selectedEdits, ...edges].filter((x, i, all) => all.findIndex((o) => o.clipId === x.clipId && o.edge === x.edge) === i) : edges });
       if (zone === "body" && (s.tool === "slip" || s.tool === "slide")) {
         gesture.current = { kind: s.tool, id: clip.id, started: false, x0: e.clientX, y0: e.clientY };
       } else if (zone !== "body") {
@@ -1068,7 +1057,7 @@ export function Timeline() {
 
 /** Open a compound clip for editing (ADR-037); playback stops, as it
  * would for any change of timeline. */
-function openCompound(clipId: Id) {
+export function openCompound(clipId: Id) {
   player.pause();
   store.openCompound(clipId);
 }
@@ -1366,9 +1355,22 @@ function MarkersLayer({ zoom }: { zoom: number }) {
   return (
     <>
       {markers.map((m) => (
+        <Fragment key={m.id}>
+        {!!m.duration && <div className="tl-marker-band" style={{ left: HEADER_W + m.frame * zoom, width: m.duration * zoom, color: m.color }} onPointerDown={(e) => e.stopPropagation()}>
+          <button className="tl-marker-end" aria-label={`Resize ${m.label || "marker"} range end`} onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.preventDefault(); e.stopPropagation();
+            const x = e.clientX, duration = m.duration!;
+            store.beginGesture();
+            const move = (ev: PointerEvent) => store.previewGesture((p) => updateMarker(p, m.id, { duration: Math.max(1, duration + Math.round((ev.clientX - x) / zoom)) }));
+            const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", cancel); store.endGesture("Resize marker range"); };
+            const cancel = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", cancel); store.cancelGesture(); };
+            window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", cancel);
+          }} />
+        </div>}
         <button
           key={m.id}
-          className="tl-marker"
+          className={`tl-marker${m.chapter ? " chapter" : ""}`}
           style={{ left: HEADER_W + m.frame * zoom - 5, borderTopColor: m.color }}
           aria-label={m.label || "Untitled marker"}
           data-tip={`${m.label || "Marker"} (double-click to edit, right-click to delete)`}
@@ -1384,6 +1386,7 @@ function MarkersLayer({ zoom }: { zoom: number }) {
             store.edit("Delete marker", (p) => ops.removeMarker(p, m.id));
           }}
         />
+        </Fragment>
       ))}
     </>
   );

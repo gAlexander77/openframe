@@ -44,7 +44,9 @@ async (page) => {
   const edge = (e) => page.evaluate(({ id, e }) => window.videoEditor.exec("set_edge_mode", { clip_ids: [id], edge: e }), { id, e });
   const near = (c, want) => c.every((v, i) => Math.abs(v - want[i]) <= 30);
   const same = (a, b) => a.every((c, i) => c.every((v, k) => Math.abs(v - b[i][k]) <= 24));
-  const pt = [0.05, 0.4], mid = [0.5, 0.4];
+  // mid sits inside the magenta bar (canvas x 0.5..0.5625): x 0.5 is its
+  // border with green, where a viewer a pixel narrower samples a blend.
+  const pt = [0.05, 0.4], mid = [0.53, 0.4];
   const details = {};
   let s = await sample([pt, mid]);
   details.none = { ok: near(s.viewer[0], [0, 0, 0]) && near(s.viewer[1], [191, 0, 191]) && same(s.viewer, s.exported), ...s };

@@ -26,19 +26,21 @@
 // and the end card, cutting the middle out of the picture tracks; the
 // music runs from the start and fades at the new end.
 
+import { onCanvas } from "./follow";
+import { subjectBox } from "./analysis/subject";
 import { titleWrap } from "./ads";
 import { titleZone, VERTICAL_SAFE } from "./align";
 import { minTextSize } from "./brandKit";
 import { canvasSize } from "./canvas";
 import { EFFECTS } from "./catalog";
 import { CAPTION_WRAP, captionFit, captionMax, captionY } from "./captionLooks";
-import { withoutCaptions } from "./captions";
-import { seenLetters, seenTexts } from "./designCheck";
+import { DEFAULT_LINES, readableCaptions, withoutCaptions } from "./captions";
+import { seenLetters, seenTexts, seenShots, type Measured as CheckMeasured } from "./designCheck";
 import { paramAt } from "./keyframes";
-import { clipEnd, findCompound, getAsset, liftRange, projectDuration } from "./project/ops";
+import { clipEnd, findCompound, getAsset, liftRange, projectDuration, sourceTimeAt } from "./project/ops";
 import type { Clip, ColorClip, CompoundClip, Id, ImageClip, Keyframe, Project, TextClip, TextStyle, Track, VideoClip, VisualClip } from "./project/types";
-import { fittedSize, textPad } from "./render/size";
-import { lookFor, reframeShot, type Focus, type Looks, type OptionNote, type Reframe, type ShotTargets, type SubjectNote } from "./reframe";
+import { fittedSize, textLines, textPad } from "./render/size";
+import { lookFor, focusAt, restLayer, reframeShot, type Focus, type Looks, type OptionNote, type Reframe, type ShotTargets, type SubjectNote } from "./reframe";
 import { anchorOf, reanchor } from "./anchors";
 import { calloutReports, calloutsOf, followCallouts, followed, shotTargets, type CalloutReport } from "./versionCallouts";
 import { maskReach } from "./mask";
@@ -408,7 +410,7 @@ function scalePixels(c: Clip, g: number, a: Frame, b: Frame): Clip {
   const kh = +((g * a.h) / b.h).toFixed(4), kw = +((g * a.w) / b.w).toFixed(4);
   const fx = c.effects.filter((e) => Object.keys(e.params).some((k) => EFFECTS[e.type]?.params[k]?.pixels));
   const shake = (["x", "y"] as const).filter((t) => c.wiggle?.[t]);
-  if ((!fx.length && !shake.length) || (kh === 1 && kw === 1)) return c;
+  if ((!fx.length && !shake.length && !c.crop.feather) || (kh === 1 && kw === 1)) return c;
   const r = (v: number, k: number) => +(v * k).toFixed(5);
   const keyed: Record<string, Keyframe[]> = {};
   const keys = (path: string, k: number) => {
@@ -431,7 +433,7 @@ function scalePixels(c: Clip, g: number, a: Frame, b: Frame): Clip {
     wiggle[t] = { ...wiggle[t]!, amplitude: r(wiggle[t]!.amplitude, k) };
     keys(`wiggle.${t}.amplitude`, k);
   }
-  return { ...c, effects, ...(shake.length ? { wiggle } : {}), ...(Object.keys(keyed).length ? { keyframes: { ...c.keyframes, ...keyed } } : {}) } as Clip;
+  return { ...c, effects, ...(c.crop.feather ? { crop: { ...c.crop, feather: r(c.crop.feather, kh) } } : {}), ...(shake.length ? { wiggle } : {}), ...(Object.keys(keyed).length ? { keyframes: { ...c.keyframes, ...keyed } } : {}) } as Clip;
 }
 
 /** How many times larger clip `c` (now `v`) is drawn in pixels in q than
@@ -478,7 +480,7 @@ function asPicture(p: Project, a: Frame, b: Frame, c: Clip): Clip {
     // A solid fills the canvas: keep only the part the old frame covered.
     const { left, right, top, bottom } = v.crop;
     const ex = (1 - kx) / 2, ey = (1 - ky) / 2;
-    return { ...v, crop: { left: ex + left * kx, right: ex + right * kx, top: ey + top * ky, bottom: ey + bottom * ky } };
+    return { ...v, crop: { ...v.crop, left: ex + left * kx, right: ex + right * kx, top: ey + top * ky, bottom: ey + bottom * ky } };
   }
   return v;
 }
@@ -588,7 +590,7 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
       const kw = (a.w / b.w) * (short(b) / short(a)), kh = (a.h / b.h) * (short(b) / short(a));
       const cx = (left + 1 - right) / 2, cy = (top + 1 - bottom) / 2;
       const w = Math.min(1, (1 - left - right) * kw), h = Math.min(1, (1 - top - bottom) * kh);
-      out = { ...c, crop: { left: Math.max(0, cx - w / 2), right: Math.max(0, 1 - cx - w / 2), top: Math.max(0, cy - h / 2), bottom: Math.max(0, 1 - cy - h / 2) } };
+      out = { ...c, crop: { ...c.crop, left: Math.max(0, cx - w / 2), right: Math.max(0, 1 - cx - w / 2), top: Math.max(0, cy - h / 2), bottom: Math.max(0, 1 - cy - h / 2) } };
     }
     if (c.shape) {
       // A shape's box is fractions of the frame and its stroke pixels at a
@@ -811,6 +813,13 @@ function ownPlan(master: Project, q: Project, m: Measured, captions: Span[] = []
   const centered = Math.abs((was.left + was.right) / 2 - master.width / 2) < master.width * 0.01;
   const safeA = areaOf(master, centered), safeB = areaOf(q, centered);
   safeB.bottom = aboveCaptions(q, safeB, spanOf(m.set), captions);
+  // Leave the outline room settleTitles measures before fitting the group:
+  // moving its type up afterward must not push its logo above the safe area.
+  if (group) {
+    const margin = Math.max(0, ...now.filter((c): c is TextClip => c.type === "text").map(c => outlineRoom(q, c)));
+    safeB.top += margin;
+    safeB.bottom -= margin;
+  }
   // A lone picture that the new frame would cut (a floating window wider
   // than a 9:16 frame) is fitted as a group is.
   const fitted = group || (now[0].type !== "text" && (size.w > q.width + 1 || size.h > q.height + 1));
@@ -1179,6 +1188,85 @@ function followerPlans(master: Project, q: Project, follows: Map<Measured, Measu
   }
 }
 
+/** A whole-line caption that wraps past two lines in the new column is
+ * regrouped at its spoken-word times. Imported cues without word times
+ * distribute words within their existing window; no words are discarded. */
+function fitCaptionLines(q: Project): Project {
+  return { ...q, tracks: q.tracks.map(t => ({ ...t, clips: t.clips.flatMap((c): Clip[] => {
+    if (c.type !== "text" || !c.caption || c.disabled) return [c];
+    const lines = textLines(q, c);
+    const chars = Math.max(8, Math.floor(c.style.maxWidth * q.width / (c.style.size * q.height / 1080 * 0.6)));
+    if (lines ? lines.length <= 2 : c.text.split("\n").length <= 2 && c.text.length <= chars * 2) return [c];
+    const texts = c.text.trim().split(/\s+/), sec = (f: number) => framesToSeconds(f, q.fps);
+    // ponytail: cues without word times are distributed evenly; forced
+    // alignment can replace this estimate without changing the cue window.
+    const timed = c.wordTimes?.length === texts.length ? c.wordTimes : undefined;
+    const words = texts.map((text, i) => ({ text, start: sec(timed?.[i] ?? c.duration * i / texts.length), end: sec(timed?.[i + 1] ?? c.duration * (i + 1) / texts.length) }));
+    const caps = readableCaptions(words, { ...DEFAULT_LINES, maxChars: chars }, sec(c.duration));
+    return caps.map((cap, i) => {
+      const start = secondsToFrames(cap.start, q.fps), end = secondsToFrames(cap.end, q.fps);
+      return { ...c, id: i ? `${c.id}_portrait_${i}` : c.id, start: c.start + start, duration: Math.max(1, end - start), text: cap.text, wordTimes: cap.words?.map(w => secondsToFrames(w, q.fps) - start) };
+    });
+  }) })) };
+}
+
+/** Speaker identifiers in a tall version leave room for the framed subject.
+ * Saliency is only a candidate (reframeShot says so); explicit focus wins.
+ * Sample the subject through the identifier's entire visible window. */
+function clearSubjectTitles(q: Project, looks: Looks | undefined, focus: Focus[] | undefined, keep: Set<Id>, said: OptionNote[]): Project {
+  if (q.height <= q.width) return q;
+  const shots = q.tracks.filter(t => !t.hidden).flatMap(t => t.clips).filter((c): c is VideoClip => c.type === "video" && !c.disabled && !!getAsset(q, c.assetId)?.hasAudio);
+  const seen = seenShots(q, true), changed = new Map<Id, Clip>();
+  const hit = (a: Rect, b: Rect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  const z = titleZone(q), zone = { left: z.left * q.width, right: (1 - z.right) * q.width, top: z.top * q.height, bottom: (1 - z.bottom) * q.height };
+  const titles = q.tracks.filter(t => !t.hidden).flatMap(t => t.clips).filter((c): c is TextClip => c.type === "text" && !c.caption && !c.disabled);
+  const captions = q.tracks.filter(t => !t.hidden).flatMap(t => t.clips).filter((c): c is TextClip => c.type === "text" && !!c.caption && !c.disabled);
+  for (const c of titles) {
+    const boxes: Rect[] = [];
+    for (const shot of shots) {
+      const from = Math.max(c.start, shot.start), to = Math.min(clipEnd(c), clipEnd(shot));
+      if (to <= from) continue;
+      const look = lookFor(looks, shot), points = focus?.filter(f => f.clip_id === shot.id);
+      if (!look && !points?.length) continue;
+      const step = Math.max(1, secondsToFrames(0.5, q.fps));
+      const samples = new Set([from, to - 1]);
+      for (let f = from; f < to; f += step) samples.add(f);
+      for (const f of samples) {
+        if (!seen.some(r => r.clipId === shot.id && f >= r.start && f < r.start + r.duration)) continue;
+        const rel = f - shot.start;
+        const x = points?.length ? focusAt(points, "x", rel, secondsToFrames(0.4, q.fps)) ?? 0.5 : undefined;
+        const y = points?.length ? focusAt(points, "y", rel, secondsToFrames(0.4, q.fps)) ?? 0.5 : undefined;
+        const time = sourceTimeAt(shot, f, q.fps);
+        const i = look?.times.reduce((best, t, i) => Math.abs(t - time) < Math.abs(look.times[best] - time) ? i : best, 0) ?? 0;
+        // ponytail: focus is a point, not a face box; reserve this envelope
+        // until a person/face detector provides actual subject bounds.
+        const box = x !== undefined && y !== undefined ? { left: x - 0.12, right: x + 0.12, top: y - 0.18, bottom: y + 0.18 } : look?.maps[i] && subjectBox(look.maps[i]);
+        if (!box) continue;
+        const a = onCanvas(q, shot, restLayer(shot, rel), box.left, box.top), b = onCanvas(q, shot, restLayer(shot, rel), box.right, box.bottom);
+        boxes.push({ left: Math.min(a.x, b.x), right: Math.max(a.x, b.x), top: Math.min(a.y, b.y), bottom: Math.max(a.y, b.y) });
+      }
+    }
+    const bounds = boxOf(q, c);
+    if (!boxes.some(b => hit(bounds, b))) continue;
+    if (keep.has(c.id) || c.group || c.anchor || c.keyframes?.["transform.y"] || c.keyframes?.["transform.x"]) {
+      said.push({ option: "reframe", clip_id: c.id, note: `${c.id}: title overlaps the framed subject; its override, group, anchor or position keys keep its placement. Move the identifier with overrides {clip_id: "${c.id}", x, y}.` }); continue;
+    }
+    const gap = 0.02 * q.height;
+    const offsets = boxes.flatMap(b => [{ dx: 0, dy: b.top - gap - bounds.bottom }, { dx: 0, dy: b.bottom + gap - bounds.top }]).sort((a, b) => Math.abs(a.dy) - Math.abs(b.dy));
+    const blocked = [...boxes, ...captions.filter(k => k.start < clipEnd(c) && c.start < clipEnd(k)).map(k => boxOf(q, k)), ...titles.filter(k => k !== c && k.start < clipEnd(c) && c.start < clipEnd(k)).map(k => boxOf(q, (changed.get(k.id) ?? k) as TextClip))];
+    const move = offsets.find(({ dx, dy }) => {
+      const b = { left: bounds.left + dx, right: bounds.right + dx, top: bounds.top + dy, bottom: bounds.bottom + dy };
+      return b.left >= zone.left && b.right <= zone.right && b.top >= zone.top && b.bottom <= zone.bottom && !blocked.some(k => hit(b, k));
+    });
+    if (move) {
+      const y = c.transform.y + move.dy / q.height;
+      changed.set(c.id, { ...c, transform: { ...c.transform, y } });
+      said.push({ option: "reframe", clip_id: c.id, note: `${c.id}: identifier moved clear of the framed subject (y ${+y.toFixed(3)}); inspect the portrait preview, then overrides can place it by hand.` });
+    } else said.push({ option: "reframe", clip_id: c.id, note: `${c.id}: no safe room for this identifier clear of the framed subject and captions. Shorten it, move it with overrides, or use fit "blur" to leave more room.` });
+  }
+  return changed.size ? { ...q, tracks: q.tracks.map(t => ({ ...t, clips: t.clips.map(c => changed.get(c.id) ?? c) })) } : q;
+}
+
 /** A caption on a tall frame: its type kept against the short side, as a
  * title's is, wrapped in and centered on the column the apps leave, at the
  * height captions take there (lib/captionLooks.ts). */
@@ -1271,10 +1359,12 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
   // of a picture. The crop keeps what they point at, and they are kept on
   // it (followCallouts, reanchor) instead of laid out with the titles.
   const callouts = calloutsOf(p);
-  const kept = followed(callouts);
-  const framing: ReframeOptions = { ...frame, targets: (id) => shotTargets(p, callouts, id) };
   // One timeline refit as a frame: each clip on its own, then its overlays placed.
   const asFrame = (m: Project, out: Project): Track[] => {
+    // Each nested scene is a frame too: its rings belong to its shots,
+    // rather than the root timeline's overlay layout.
+    const local = calloutsOf(m), kept = followed(local);
+    const framing: ReframeOptions = { ...frame, targets: (id) => shotTargets(m, local, id) };
     const caption = (c: Clip): c is TextClip => !!place && c.type === "text" && !!c.caption;
     const k = place === "open" ? captionScale(m, out) : 1;
     const placeOne = (c: TextClip) => (place === "tall" ? placeCaption(m, out, c) : placeOpenCaption(m, out, c, k));
@@ -1313,14 +1403,14 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
     // The captions burned in, where the stacks must leave room for them.
     const shown = fitted.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((c): c is TextClip => caption(c) && !c.disabled)));
     const captions = shown.map((c) => ({ ...spanOf([c]), top: boxOf(fitted, c).top }));
-    return placeSets(m, fitted, sets, stacks, follows, captions, bleeds).tracks;
+    return followCallouts(m, placeSets(m, fitted, sets, stacks, follows, captions, bleeds), local).tracks;
   };
   let out: Project = q;
   if (p.compounds) {
     out = { ...q, compounds: p.compounds.map((k) => (pictures.has(k.id) ? { ...k, tracks: k.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => asPicture(p, a, b, c)) })) } : k)) };
     out = { ...out, compounds: out.compounds!.map((k) => (pictures.has(k.id) ? k : { ...k, tracks: asFrame({ ...p, tracks: k.tracks }, { ...out, tracks: k.tracks }) })) };
   }
-  const settled = settleTitles(keepReadable(p, { ...out, tracks: asFrame(p, out) }, pictures), pictures);
+  const settled = separateTitles(p, settleTitles(keepReadable(p, { ...out, tracks: asFrame(p, out) }, pictures), pictures), pictures);
   // Callouts back on what they point at, as this version shows it.
   const done = reanchor(followCallouts(p, settled, callouts));
   // What rides on each picture, once its size is settled (ADR-110).
@@ -1401,6 +1491,72 @@ function settleTitles(q: Project, pictures: Set<Id>): Project {
   }
   if (!changed.size) return q;
   return { ...q, tracks: q.tracks.map((t) => (t.clips.some((c) => changed.has(c.id)) ? { ...t, clips: t.clips.map((c) => changed.get(c.id) ?? c) } : t)) };
+}
+
+/** Nearby independent titles form a vertical stack too. Wrapping one must
+ * make room for the others, retaining the master's order and pixel gap.
+ * Explicit groups and compound cards already keep their layout together. */
+function separateTitles(master: Project, q: Project, pictures: Set<Id>): Project {
+  const run = (before: Track[], after: Track[]) => {
+    const m = { ...master, tracks: before }, view = { ...q, tracks: after };
+    // Use the check's rendered lines, box padding and outline, excluding
+    // empty shadow/glow margins. Raster boxes can overlap in the master
+    // while its letters and background boxes still have a positive gap.
+    const measured = (p: Project) => seenTexts(p).filter((s) => !s.via.length && !s.c.caption && !s.c.group).flatMap((s) => {
+      const g = seenLetters(p, s);
+      return g ? [{ c: s.c, box: g.box }] : [];
+    });
+    const original = measured(m), current = measured(view);
+    const titles = original.map(({ c }) => c);
+    const now = new Map(current.map(({ c }) => [c.id, c]));
+    const boxes = new Map(original.map(({ c, box }) => [c.id, box]));
+    const fittedBoxes = new Map(current.map(({ c, box }) => [c.id, box]));
+    const neighbors = new Map(titles.map((c) => [c.id, new Set<Id>()]));
+    for (const a of titles) for (const b of titles) {
+      if (a === b || a.start >= clipEnd(b) || b.start >= clipEnd(a)) continue;
+      const x = boxes.get(a.id)!, y = boxes.get(b.id)!;
+      const gap = y.top - x.bottom;
+      if (gap >= -0.5 && gap <= master.height * 0.1 && Math.min(x.right, y.right) > Math.max(x.left, y.left)) {
+        neighbors.get(a.id)!.add(b.id);
+        neighbors.get(b.id)!.add(a.id);
+      }
+    }
+    const visited = new Set<Id>(), moved = new Map<Id, Clip>();
+    for (const c of titles) {
+      if (visited.has(c.id)) continue;
+      const ids: Id[] = [], todo = [c.id];
+      while (todo.length) {
+        const id = todo.pop()!;
+        if (visited.has(id)) continue;
+        visited.add(id); ids.push(id); todo.push(...neighbors.get(id)!);
+      }
+      if (ids.length < 2 || ids.some((id) => !now.has(id))) continue;
+      ids.sort((a, b) => boxes.get(a)!.top - boxes.get(b)!.top);
+      const list = ids.map((id) => now.get(id)!);
+      const fitted = list.map((v) => fittedBoxes.get(v.id)!);
+      const k = Math.min(q.width, q.height) / Math.min(master.width, master.height);
+      const gaps = ids.slice(1).map((id, i) => Math.max(0, boxes.get(id)!.top - boxes.get(ids[i])!.bottom) * k);
+      // Nothing grew into the next title: preserve the version's placement.
+      if (fitted.every((b, i) => !i || b.top >= fitted[i - 1].bottom + gaps[i - 1] - 0.5)) continue;
+      const heights = fitted.map((b) => b.bottom - b.top), total = heights.reduce((a, b) => a + b, 0) + gaps.reduce((a, b) => a + b, 0);
+      const z = titleZone(q), low = z.top * q.height, high = (1 - z.bottom) * q.height;
+      const first = fitted[0], last = fitted.at(-1)!;
+      const oldFirst = boxes.get(ids[0])!, oldLast = boxes.get(ids.at(-1)!)!;
+      const correction = ((oldFirst.top + oldLast.bottom) / 2 - (oldFirst.top + oldFirst.bottom + oldLast.top + oldLast.bottom) / 4) * k;
+      const center = (first.top + first.bottom + last.top + last.bottom) / 4 + correction;
+      let top = Math.max(low, Math.min(high - total, center - total / 2));
+      list.forEach((v, i) => {
+        const dy = (top - fitted[i].top) / q.height;
+        moved.set(v.id, mapPath(v, "transform.y", (y) => +(y + dy).toFixed(6)));
+        top += heights[i] + (gaps[i] ?? 0);
+      });
+    }
+    return after.map((t) => ({ ...t, clips: t.clips.map((c) => moved.get(c.id) ?? c) }));
+  };
+  return { ...q, tracks: run(master.tracks, q.tracks), ...(q.compounds ? { compounds: q.compounds.map((c) => {
+    const old = master.compounds?.find((x) => x.id === c.id);
+    return old && !pictures.has(c.id) ? { ...c, tracks: run(old.tracks, c.tracks) } : c;
+  }) } : {}) };
 }
 
 /** Every timeline's clips: the project's and each compound's, with the
@@ -1711,11 +1867,11 @@ export function applyOverrides(q: Project, list: VersionOverride[]): Project {
     if (!where) throw new Error(`overrides: no clip ${o.clip_id} in this version (describe_project's clip ids; a clip inside a compound clip by its own id)`);
     const view: Project = { ...q, tracks: where.tracks };
     const anchor = where.tracks.flatMap((t) => t.clips).find((c) => c.id === o.clip_id)!;
-    if (!("transform" in anchor)) throw new Error(`overrides: ${o.clip_id} is ${anchor.type === "audio" ? "a sound" : "an adjustment layer"}, with nothing to place`);
     const moved = o.x !== undefined || o.y !== undefined || o.scale !== undefined;
-    const members = (moved && anchor.group ? where.tracks.flatMap((t) => t.clips).filter((c) => c.group === anchor.group && "transform" in c) : [anchor]) as VisualClip[];
-    const rest = restOf(view, members);
-    const ax = paramAt(anchor, "transform.x", rest - anchor.start), ay = paramAt(anchor, "transform.y", rest - anchor.start);
+    if (moved && !("transform" in anchor)) throw new Error(`overrides: ${o.clip_id} is ${anchor.type === "audio" ? "a sound" : "an adjustment layer"}, with nothing to place`);
+    const members = (!moved ? [] : anchor.group ? where.tracks.flatMap((t) => t.clips).filter((c) => c.group === anchor.group && "transform" in c) : [anchor]) as VisualClip[];
+    const rest = moved ? restOf(view, members) : 0;
+    const ax = moved ? paramAt(anchor, "transform.x", rest - anchor.start) : 0, ay = moved ? paramAt(anchor, "transform.y", rest - anchor.start) : 0;
     const s = o.scale ?? 1;
     const dx = o.x === undefined ? 0 : o.x - ax, dy = o.y === undefined ? 0 : o.y - ay;
     const changed = new Map<Id, Clip>();
@@ -1927,6 +2083,33 @@ export function clearCaptions(master: Project, q: Project, keep = new Set<Id>(),
   // ring grazing the letters' outline, under a quarter of their height) is
   // not (the film's porthole grazed its caption by 7 px).
   const was = new Set(collide(master).filter((x) => x.depth >= 0.25).map((x) => x.clip_id));
+  if (q.height > q.width) {
+    const done = new Set<Id>();
+    // collide names the first caption a ring crosses. Re-measure after
+    // every move, so later captions and rings also leave room for each other.
+    const count = q.tracks.reduce((n, t) => n + t.clips.length, 0);
+    for (let i = 0; i < count; i++) {
+      const hits = collide(q).filter(h => !keep.has(h.clip_id) && !keep.has(h.caption_clip_id));
+      let changed = false;
+      for (const hit of hits) {
+        const c = q.tracks.flatMap(t => t.clips).find(c => c.id === hit.clip_id);
+        if (!c || !(anchorOf(c) || (c.type === "color" && c.shape?.fill === false))) continue;
+        if (calloutsOf(q).some(k => k.id === c.id && k.title === hit.caption_clip_id)) continue;
+        const s = seenTexts(q).find(s => s.c.id === hit.caption_clip_id && !s.via.length);
+        const box = s && seenLetters(q, s, secondsToFrames(hit.at, q.fps))?.box;
+        if (!s || !box) continue;
+        const dy = hit.box.top - 0.02 * Math.min(q.width, q.height) - box.bottom;
+        if (box.top + dy < titleZone(q).top * q.height) continue;
+        const y = +(s.c.transform.y + dy / q.height).toFixed(5);
+        q = applyOverrides(q, [{ clip_id: s.c.id, y }]);
+        if (!done.has(hit.clip_id)) moved.push({ ...hit, done: `captions moved above the ring in this version; ${s.c.id} y ${y}` });
+        done.add(hit.clip_id);
+        changed = true;
+        break;
+      }
+      if (!changed) break;
+    }
+  }
   const done = new Map<Id, { hit: CaptionCollision; y: number; scale: number }>();
   const root = new Map(q.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
   // A fix is measured at one moment; a taller caption later may need a second.
@@ -2113,6 +2296,8 @@ export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, loo
   const said: OptionNote[] = [], framed: Id[] = [], eased: Id[] = [];
   const shaped = reshape(q, v.ratio, v.fit ?? "fill", { looks, reframe: v.reframe, focus, notes, pushes: v.pushes, said, framed, eased });
   q = shaped === q || v.textless ? shaped : clearCaptions(q, shaped, new Set((v.overrides ?? []).map((o) => o.clip_id)), moved);
+  if (q.height > q.width && shaped !== master) q = fitCaptionLines(q);
+  if (shaped !== master && !v.textless) q = clearSubjectTitles(q, looks, focus, new Set((v.overrides ?? []).map(o => o.clip_id)), said);
   if (v.textless) q = textless(q);
   // By hand, last: the version's overrides, and what points into a picture they move.
   if (v.overrides?.length) q = carryPinned(master, applyOverrides(q, v.overrides), v.overrides, said);
@@ -2157,4 +2342,41 @@ export function expandVersions(a: { versions?: VersionSpec[]; ratios?: VersionRa
   const dup = names.find((n, i) => names.indexOf(n) !== i);
   if (dup !== undefined) throw new Error(`two versions are the same (${dup.trim() || "the master"}); name them apart`);
   return out;
+}
+
+/** Master seconds mapped through the same opening/end-card cut as cutDown.
+ * Removed moments are omitted; the check sheet labels the frames it shows. */
+export function versionCheckFrames(master: Project, version: Project, times: number[], keepEnd?: number): number[] {
+  const total = projectDuration(master), length = projectDuration(version);
+  const card = endCardStart(master);
+  const keep = keepEnd ?? (card === undefined ? 0 : total - card);
+  const tail = Math.max(0, Math.min(keep, length - 1));
+  return times.flatMap((t) => {
+    const f = secondsToFrames(t, master.fps);
+    if (length >= total || f < length - tail) return [Math.min(length - 1, f)];
+    if (tail && f >= total - tail) return [Math.min(length - 1, f - total + length)];
+    return [];
+  });
+}
+
+/** Apply the checker's cut alternative only to a measured uneven fade.
+ * No change to an unmeasured title or the caller's master (ADR-135). */
+export function repairVersionFades(p: Project, fades: NonNullable<CheckMeasured["fades"]>): { project: Project; changed: Id[] } {
+  const slots = new Map<Id, Set<"animIn" | "animOut">>();
+  for (const s of seenTexts(p)) {
+    const fade = fades[s.key];
+    if (!fade) continue;
+    const slot = fade.frame < s.start + s.duration / 2 ? "animIn" : "animOut";
+    if (!s.c[slot]) continue;
+    if (!slots.has(s.c.id)) slots.set(s.c.id, new Set());
+    slots.get(s.c.id)!.add(slot);
+  }
+  if (!slots.size) return { project: p, changed: [] };
+  const tracks = (ts: Track[]) => ts.map((t) => ({ ...t, clips: t.clips.map((c) => {
+    if (c.type !== "text" || !slots.has(c.id)) return c;
+    const q = { ...c };
+    for (const slot of slots.get(c.id)!) delete q[slot];
+    return q;
+  }) }));
+  return { project: { ...p, tracks: tracks(p.tracks), ...(p.compounds ? { compounds: p.compounds.map((k) => ({ ...k, tracks: tracks(k.tracks) })) } : {}) }, changed: [...slots.keys()] };
 }

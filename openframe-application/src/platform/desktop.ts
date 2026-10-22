@@ -8,7 +8,7 @@ import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
-import { CustomSource, type StreamTargetChunk } from "mediabunny";
+import { CustomSource, UrlSource, type StreamTargetChunk } from "mediabunny";
 import type { AgentCliResult } from "../lib/agentSetup";
 import type { AgentEndpoint, ImportedFile, Platform, ProjectSummary, RenderJob } from "./types";
 
@@ -118,6 +118,27 @@ export const desktop: Platform = {
   },
 
   kind: "desktop",
+  async openChatReplay(path, signal) {
+    // ponytail: JSON replays are parsed whole. Cap input at 32 MiB to keep
+    // multi-hour analysis bounded; incremental message parsing is next.
+    if (path !== undefined && !/^(?:[a-z]:[\\/]|\/|\\\\)/i.test(path)) throw new Error("Chat replay must be an absolute path.");
+    const picked = path ?? await open({ multiple: false, title: "Open chat replay", filters: [{ name: "Chat replay", extensions: ["json", "jsonl", "txt"] }] });
+    if (!picked) return null;
+    signal?.throwIfAborted();
+    const { size } = await register(picked);
+    if (size > 32 * 1024 * 1024) throw new Error("Chat replay exceeds 32 MiB. Split it before importing.");
+    const text = await (await desktop.blobFor(picked)).text();
+    signal?.throwIfAborted();
+    return { name: picked.split(/[\\/]/).at(-1)!, text };
+  },
+  async openTimelineFile(path) {
+    if (path !== undefined && !/^(?:[a-z]:[\\/]|\/|\\\\)/i.test(path)) throw new Error("Timeline file must be an absolute path.");
+    const picked = path ?? await open({ multiple: false, title: "Import timeline", filters: [{ name: "Timelines", extensions: ["otio", "fcpxml", "xml"] }] });
+    if (!picked) return null;
+    const { size } = await register(picked);
+    if (size > 32 * 1024 * 1024) throw new Error("Timeline file exceeds 32 MiB.");
+    return { path: picked, name: picked.split(/[\\/]/).at(-1)!, text: await (await desktop.blobFor(picked)).text() };
+  },
   async openProjectFile(path) {
     const result = await invoke<{ project: Project; path: string } | null>("project_open_file", { path: path ?? null });
     return result ? rewriteProjectPaths(result.project, src => resolveProjectPath(src, result.path)) : null;
@@ -179,6 +200,7 @@ export const desktop: Platform = {
   },
 
   async sourceFor(src) {
+    if (/^https?:\/\//i.test(src)) return new UrlSource(src, { maxCacheSize: 8 << 20 });
     const { id, size } = await register(src);
     const url = convertFileSrc(id, "media"); // http://media.localhost/m3 | media://localhost/m3
     return new CustomSource({
@@ -187,7 +209,7 @@ export const desktop: Platform = {
       // Grows sequential read-ahead toward the protocol's cap: few requests,
       // each one IPC round trip (research §1.3).
       prefetchProfile: "network",
-      maxCacheSize: 64 << 20,
+      maxCacheSize: 8 << 20,
     });
   },
 
@@ -205,6 +227,33 @@ export const desktop: Platform = {
     }
   },
 
+  async makePlaybackProxy(asset, size, onProgress, signal) {
+    if (signal?.aborted) throw new Error("canceled");
+    const job = crypto.randomUUID();
+    const channel = new Channel<{ fraction: number }>();
+    channel.onmessage = (m) => onProgress(m.fraction);
+    // Abort can arrive while Rust is still probing, before the child is in
+    // its job map. Repeat until invoke settles so that race cannot orphan it.
+    let cancelTimer: ReturnType<typeof setInterval> | undefined;
+    const cancel = () => {
+      const stop = () => void invoke("ffmpeg_cancel", { job });
+      stop();
+      cancelTimer ??= setInterval(stop, 100);
+    };
+    signal?.addEventListener("abort", cancel);
+    try {
+      return await invoke("ffmpeg_playback_proxy", { path: asset.src, size, job, onProgress: channel });
+    } finally { clearInterval(cancelTimer); signal?.removeEventListener("abort", cancel); }
+  },
+  async playbackProxyInfo(asset) {
+    const info = await invoke<{ fingerprint?: string; exists: boolean }>("ffmpeg_playback_proxy_info", { path: asset.src, proxy: asset.playbackProxy?.src ?? null });
+    // Re-register on the next open: Rust detects a file replaced at the same
+    // path. Old inputs retain their registered handles until their owners end.
+    registered.delete(asset.src);
+    return info;
+  },
+  deletePlaybackProxy: (path) => invoke("ffmpeg_delete_playback_proxy", { path }),
+
   async head(src, bytes, at = 0) {
     const { id, size } = await register(src);
     return size > at ? readRange(convertFileSrc(id, "media"), at, Math.min(size, at + bytes)) : new Uint8Array();
@@ -212,6 +261,11 @@ export const desktop: Platform = {
 
   /** For stills only: the whole file lands in memory. */
   async blobFor(src) {
+    if (/^https?:\/\//i.test(src)) {
+      const response = await fetch(src);
+      if (!response.ok) throw new Error(`The media address answered ${response.status}.`);
+      return response.blob();
+    }
     const { id, size } = await register(src);
     const url = convertFileSrc(id, "media");
     const parts: Uint8Array<ArrayBuffer>[] = [];

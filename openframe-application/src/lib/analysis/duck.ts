@@ -2,12 +2,20 @@
 // volume keyframes rather than a hidden sidechain (Premiere's Auto-Duck
 // works this way; CapCut's ducking is a black box you cannot touch up).
 
+import { tracksOfRole } from "../audioRoles";
+import { sourceToTimeline } from "./musicMap";
 import { soundingClips, soundSpan } from "../audio";
 import { interpolate } from "../keyframes";
 import { clipEnd } from "../project/ops";
 import type { AudioClip, Clip, DuckRecord, Id, Keyframe, MusicGrid, Project, VideoClip } from "../project/types";
 import { framesToSeconds, secondsToFrames, type Rational } from "../time";
 import { voiceClips } from "../voiceLines";
+
+/** A deep dip often hides a quiet recording; normalize the voice first. */
+export function quietVoiceNote(lufs: number | null | undefined, depth: number, clipIds: Id[]): string | undefined {
+  if (!(typeof lufs === "number" && lufs < -23) && depth <= 20) return undefined;
+  return `The voice is quiet${typeof lufs === "number" ? ` (${+lufs.toFixed(1)} LUFS in the speech window)` : ""}; the music had to dip ${+depth.toFixed(1)} dB. Run normalize_loudness clip_ids ${JSON.stringify([...new Set(clipIds)])} target -16 on the dialog first to let the music dip less.`;
+}
 
 /** A sound that plays under ducked music: the clip as it plays on the
  * timeline (moved out through any compound clips it is in), the top-level
@@ -407,4 +415,22 @@ export function cuesUnderLines(moments: CueMoment[], lines: [number, number][], 
     out.push({ moment: m, line });
   }
   return out;
+}
+
+/** Pauses actually held by the last duck, clipped to the measured window.
+ * Split pieces may share one pause: count the union, not the records. */
+export function duckRangeContext(p: Project, start = 0, end = Infinity): { music: boolean; heldPauses?: number } {
+  const clips = tracksOfRole(p, "music").filter((t) => !t.muted && t.volume > 0).flatMap((t) => t.clips).filter((c): c is AudioClip => c.type === "audio" && !c.muted && !c.disabled && c.volume > 0 && framesToSeconds(c.start, p.fps) < end && framesToSeconds(c.start + c.duration, p.fps) > start);
+  const ducked = clips.filter((c) => c.duck);
+  if (!ducked.length || ducked.some((c) => c.duck!.held === undefined)) return { music: clips.length > 0 };
+  const spans = ducked.flatMap((c) => {
+    const map = sourceToTimeline(c, p.fps);
+    return c.duck!.held!.map(([a, b]) => [Math.max(start, map.edge(a)), Math.min(end, map.edge(b))]).filter(([a, b]) => b > a);
+  }).sort((a, b) => a[0] - b[0]);
+  let count = 0, last = -Infinity;
+  for (const [a, b] of spans) {
+    if (a > last + 0.001) count++;
+    last = Math.max(last, b);
+  }
+  return { music: clips.length > 0, heldPauses: count };
 }

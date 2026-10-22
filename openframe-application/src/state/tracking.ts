@@ -193,7 +193,7 @@ export interface TrackResult {
  * used, or else one around the layer's center.
  */
 export async function trackMotion(targetId?: Id, opts: { box?: Region; at?: number; videoId?: Id; mode?: TrackMode } = {}): Promise<TrackResult> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const s = store.get();
   const p = s.project;
   const id = targetId ?? s.selection[0];
@@ -218,7 +218,7 @@ export async function trackMotion(targetId?: Id, opts: { box?: Region; at?: numb
   const signal = AbortSignal.any([abort.signal, scope]);
   running = { target: id, progress: 0, abort };
   changed();
-  const tid = toast(`Tracking in ${asset.name}`, "progress");
+  const tid = toast(`Tracking in ${asset.name}`, "progress", undefined, { label: "Cancel", run: () => abort.abort() });
   updateToast(tid, { progress: 0 });
   let result: { path: Path; lost: number };
   try {

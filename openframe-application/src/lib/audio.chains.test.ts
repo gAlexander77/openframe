@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
-import { sharedChains, soundingClips } from "./audio";
+import { sharedChains, soundingClips, soundBuses } from "./audio";
 import { COMPRESSOR_PRESETS } from "./compressor";
 import { createCompound } from "./project/compound";
-import { clipForAsset, createProject, createTrack } from "./project/defaults";
+import { clipForAsset, createColorClip, createProject, createTrack } from "./project/defaults";
 import { splitAt } from "./project/ops";
 import type { AudioClip, Project } from "./project/types";
 
@@ -48,10 +48,31 @@ it("keeps two chains where the halves differ or do not go on", () => {
 
 it("carries a split inside a compound clip, as the mixer hears it", () => {
   let p = splitAt(song({ compressor: COMPRESSOR_PRESETS.voice }), 90);
+  p.tracks.find(t => t.kind === "video")!.clips = [createColorClip("#000000", 0, 600)];
   const ids = p.tracks.flatMap((t) => t.clips).map((c) => c.id);
+  const first = p.tracks.flatMap(t => t.clips).find(c => c.type === "audio")!.id;
   p = createCompound(p, ids, "Scene").project;
+  expect(p.compounds).toHaveLength(1);
   const r = chains(p);
   expect(r).toHaveLength(2);
-  expect(r[0]).toEqual({ key: ids[0], next: true });
-  expect(r[1]).toEqual({ key: ids[0], next: false });
+  expect(r[0]).toEqual({ key: first, next: true });
+  expect(r[1]).toEqual({ key: first, next: false });
+});
+
+it("keeps a split compressed compound on one bus, with no new inner clip edge", () => {
+  let p = song();
+  p.tracks.find(t => t.kind === "video")!.clips = [createColorClip("#000000", 0, 600)];
+  p = createCompound(p, p.tracks.flatMap(t => t.clips).map(c => c.id), "Scene").project;
+  const c = p.tracks.flatMap(t => t.clips).find(c => c.type === "compound")!;
+  Object.assign(c, { compressor: COMPRESSOR_PRESETS.strong, eq: { low: 6 } });
+  const whole = soundingClips(p, () => true);
+  const split = soundingClips(splitAt(p, 90), () => true);
+  expect(split).toHaveLength(1);
+  expect(split[0].clip).toEqual(whole[0].clip);
+  expect(split[0].via?.map(v => v.clip)).toEqual(whole[0].via?.map(v => v.clip));
+  expect(split.map(s => soundBuses(s).buses.map(b => ({ key: b.key, clip: b.clip })))).toEqual(whole.map(s => soundBuses(s).buses.map(b => ({ key: b.key, clip: b.clip }))));
+  const apart = splitAt(p, 90);
+  const second = apart.tracks.flatMap(t => t.clips).filter(c => c.type === "compound")[1];
+  Object.assign(second, { compressor: COMPRESSOR_PRESETS.voice });
+  expect(soundingClips(apart, () => true)).toHaveLength(2);
 });

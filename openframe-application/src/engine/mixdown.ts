@@ -3,6 +3,7 @@
 // loudness report (measure_loudness) both render through here, so what an
 // agent measures is what the file will hold.
 
+import { insertsPreroll } from "../lib/audioInserts";
 import { soundingClips, soundPreroll } from "../lib/audio";
 import { planLoudness, ceilingFor, loudnessStats, shortTermSeries, type LoudnessPlan, type LoudnessStats } from "../lib/analysis/delivery";
 import { applyLimiter, LIMIT_BLOCK, LoudnessMeter } from "../lib/analysis/loudness";
@@ -12,11 +13,11 @@ import { getAsset } from "../lib/project/ops";
 import type { Project } from "../lib/project/types";
 import { scheduleAudio } from "./audio";
 
-/** Audio rendered per OfflineAudioContext: 10 s of stereo float is 3.8 MB,
- * where a whole-timeline context would allocate it all up front. */
+/** Retained audio per window: 10 s of stereo float is 3.8 MB. Stateful
+ * insert graphs additionally render their earlier history (mixPreroll). */
 export const WINDOW_SECONDS = 10;
 
-/** The longest pre-roll a window takes, seconds (a long echo at high
+/** The legacy chain's longest pre-roll, seconds (a long echo at high
  * feedback rings for minutes, far under hearing at the end). */
 const PREROLL_MAX = 12;
 
@@ -29,8 +30,19 @@ export const hasSound = (p: Project) => soundingClips(p, (id) => getAsset(p, id)
  * compressor's settling (lib/audio soundPreroll). 0 when no clip has any,
  * which keeps a plain mix rendered exactly as before. */
 export function mixPreroll(p: Project): number {
-  const tails = soundingClips(p, (id) => getAsset(p, id)?.hasAudio ?? false).map(soundPreroll);
-  return Math.min(PREROLL_MAX, Math.max(0, ...tails));
+  // Hysteresis can hold a gate open indefinitely in its dead band. No
+  // finite warm-up can reconstruct that state. Replay history for new
+  // stateful inserts rather than resetting a detector at a window edge.
+  // ponytail: long timelines with inserts replay earlier samples for each
+  // window; worklet state checkpoints would retain bounded render memory.
+  const tracks = [...p.tracks, ...(p.compounds ?? []).flatMap(k => k.tracks)];
+  if (tracks.some(t => [t.inserts, ...t.clips.map(c => "inserts" in c ? c.inserts : undefined)].some(list => list?.some(i => i.on && ["gate", "deesser", "limiter", "compressor"].includes(i.type))))) return Infinity;
+  const sounding = soundingClips(p, (id) => getAsset(p, id)?.hasAudio ?? false);
+  const tails = sounding.map(soundPreroll);
+  // New ordered chains may contain several time effects in series. Their
+  // tails add rather than taking the longest individual effect's tail.
+  const insertTails = sounding.map(s => insertsPreroll(s.track.inserts) + insertsPreroll(s.clip.inserts) + (s.via ?? []).reduce((sum, v) => sum + insertsPreroll(v.track.inserts) + insertsPreroll(v.clip.inserts), 0));
+  return Math.max(Math.min(PREROLL_MAX, Math.max(0, ...tails)), ...insertTails);
 }
 
 /**
@@ -42,12 +54,15 @@ export async function renderMixWindow(p: Project, t0: number, length: number, ra
   // Nothing sounds before the timeline's start.
   const pre = Math.round(Math.min(preroll, Math.max(0, t0)) * rate);
   const ctx = new OfflineAudioContext({ numberOfChannels: channels, length: length + pre, sampleRate: rate });
-  await scheduleAudio(ctx, ctx.destination, p, t0 - pre / rate, t0 + length / rate, 0).done;
-  const b = await ctx.startRendering();
-  if (!pre) return b;
-  const out = new AudioBuffer({ length, numberOfChannels: channels, sampleRate: rate });
-  for (let c = 0; c < channels; c++) out.copyToChannel(b.getChannelData(c).subarray(pre), c);
-  return out;
+  const schedule = scheduleAudio(ctx, ctx.destination, p, t0 - pre / rate, t0 + length / rate, 0);
+  try {
+    await schedule.done;
+    const b = await ctx.startRendering();
+    if (!pre) return b;
+    const out = new AudioBuffer({ length, numberOfChannels: channels, sampleRate: rate });
+    for (let c = 0; c < channels; c++) out.copyToChannel(b.getChannelData(c).subarray(pre), c);
+    return out;
+  } finally { schedule.stop(); }
 }
 
 export const planesOf = (b: AudioBuffer) => Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c));

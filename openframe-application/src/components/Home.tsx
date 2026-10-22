@@ -1,3 +1,4 @@
+import { ExportProjectsDialog } from "./ClipDialogs";
 import { useEffect, useRef, useState } from "react";
 import { Clapperboard, Copy, LayoutGrid, List, Pencil, Plus, RotateCcw, Search, Trash2 } from "../icons";
 import { expiryText, TRASH_DAYS } from "../lib/projectTrash";
@@ -52,6 +53,8 @@ export function Home() {
   /** Recently deleted (ADR-078). */
   const [trash, setTrash] = useState<ProjectSummary[]>([]);
   const [q, setQ] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [exporting, setExporting] = useState(false);
   const [view, setViewState] = useState(savedView);
   const setView = (v: View) => {
     setViewState(v);
@@ -149,6 +152,7 @@ export function Home() {
       {icon}
     </button>
   );
+  const selectProject = (p: ProjectSummary) => <label className="home-project-select" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}><input type="checkbox" aria-label={`Select ${p.name} for export`} checked={selected.includes(p.id)} onChange={e => setSelected(ids => e.target.checked ? [...ids, p.id] : ids.filter(id => id !== p.id))} />Select</label>;
   const nameOf = (p: ProjectSummary) =>
     renaming === p.id ? (
       <RenameField
@@ -168,6 +172,7 @@ export function Home() {
 
   return (
     <div className="home" aria-busy={transitioning}>
+      {exporting && <ExportProjectsDialog ids={selected} onClose={() => setExporting(false)} />}
       <section className="home-hero">
         <button className="create-card" disabled={transitioning} onClick={() => void newProject()}>
           <span className="create-icon">
@@ -192,6 +197,7 @@ export function Home() {
       <section className="home-projects">
         <header className="home-projects-head">
           <h2>Projects</h2>
+          <button className="btn" disabled={!selected.length || transitioning} onClick={() => setExporting(true)}>Export selected{selected.length ? ` (${selected.length})` : ""}</button>
           {transitioning && <span role="status">Opening project…</span>}
           <span className="home-head-tools">
             <label className="lib-search home-search">
@@ -226,7 +232,7 @@ export function Home() {
             </div>
             {shown.map((p) => (
               <div key={p.id} className="project-row" {...item(p)}>
-                <span className="project-row-thumb">{p.thumbnail ? <img src={p.thumbnail} alt="" /> : <Clapperboard size={16} strokeWidth={1.3} />}</span>
+                <span className="project-row-thumb">{selectProject(p)}{p.thumbnail ? <img src={p.thumbnail} alt="" /> : <Clapperboard size={16} strokeWidth={1.3} />}</span>
                 {nameOf(p)}
                 <span className="project-meta num">
                   {p.width}×{p.height}
@@ -245,6 +251,7 @@ export function Home() {
           <div className="project-grid">
             {shown.map((p) => (
               <div key={p.id} className="project-card" {...item(p)}>
+                {selectProject(p)}
                 <div className="project-thumb">
                   {p.thumbnail ? <img src={p.thumbnail} alt="" /> : <Clapperboard size={24} strokeWidth={1.3} />}
                   {p.duration > 0 && <span className="chip num">{formatDuration(p.duration)}</span>}

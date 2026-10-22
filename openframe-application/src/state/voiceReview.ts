@@ -18,7 +18,7 @@ import { clipEnd, findClip, getAsset, sourceTimeAt } from "../lib/project/ops";
 import type { Id } from "../lib/project/types";
 import { framesToSeconds } from "../lib/time";
 import { voiceClips, type VoiceClip } from "../lib/voiceLines";
-import { advise, bandOf, compareScript, judgeHearings, matchShare, scriptPace, verdict, type LineMeasure } from "../lib/voiceReview";
+import { advise, bandOf, isSignoff, paceOnTarget, compareScript, judgeHearings, matchShare, scriptPace, verdict, type LineMeasure } from "../lib/voiceReview";
 import { bandSource, paceOf } from "../lib/voicePace";
 import { parseLine } from "../lib/voiceScript";
 import { currentScreen } from "./project";
@@ -45,8 +45,9 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
       })
     : voiceClips(p);
   if (!lines.length) throw new Error("No voiceover lines to review: add_voiceover first, or name clip_ids.");
-  const signal = projectWork.signal();
-  const tid = toast(`Listening to ${lines.length === 1 ? "the line" : `${lines.length} lines`}`, "progress");
+  const cancel = new AbortController();
+  const signal = AbortSignal.any([cancel.signal, projectWork.capture()]);
+  const tid = toast(`Listening to ${lines.length === 1 ? "the line" : `${lines.length} lines`}`, "progress", undefined, { label: "Cancel", run: () => cancel.abort() });
   const fps = p.fps;
   try {
     const measured: (LineMeasure & { heard: string; matched: number; words: number; pitchHz: number | null; diffAt: (number | null)[]; clipRate: ReturnType<typeof paceOf>["clip"]; marksOut: number; recheck?: { heard: string; match: number | null } })[] = [];
@@ -58,7 +59,7 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
       const from = c.in, to = sourceTimeAt(c, clipEnd(c), fps);
       const speed = c.speed || 1;
       const pcm = await decodeMono(asset, from, to, RATE, undefined, signal);
-      const heardWords = await transcribePcm(pcm, 0, { model: TRANSCRIPT_MODEL, language: null }, () => undefined, signal);
+      const heardWords = await transcribePcm(pcm, 0, { model: TRANSCRIPT_MODEL, language: null }, s => updateToast(tid, { progress: (k + s.progress) / lines.length, text: `${s.stage}: line ${k + 1} of ${lines.length}` }), signal);
       const heard = heardWords.map((w) => w.text.trim()).join(" ");
       heardPcm.push(pcm);
       const act = speechActivity(pcm, RATE);
@@ -173,10 +174,11 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
         // Over the speech (what the band is held to) and over the clip.
         pace: {
           ...(m.pace && m.pace !== "normal" ? { meant: m.pace } : {}),
-          target_words_per_second: band,
+          target_words_per_second: isSignoff(m) ? null : band,
+          ...(isSignoff(m) ? { note: "A sign-off of up to three words is not paced." } : {}),
           over_speech: m.wps === null ? null : { words_per_second: m.wps, syllables_per_second: m.sps, ...(m.marksOut ? { pause_marks_out: m.marksOut } : {}) },
           over_clip: m.clipRate ? { words_per_second: m.clipRate.words_per_second, syllables_per_second: m.clipRate.syllables_per_second } : null,
-          on_target: m.wps !== null && m.wps >= band[0] && m.wps <= band[1],
+          on_target: paceOnTarget(m),
         },
         lead_silence: m.lead,
         tail_silence: m.tail,

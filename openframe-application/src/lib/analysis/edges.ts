@@ -13,6 +13,8 @@ export interface AudioEdge {
   clips: string[];
   /** Seconds of fade (or crossfade) at the edge; 0 is a cut. */
   faded: number;
+  /** The track heard at this boundary. */
+  role?: "dialog" | "music" | "effects" | "ambience";
   /** The clip that stops here: how loud its file goes on past the cut,
    * against its last 300 ms, dB (decoded from the file; absent when the
    * file ends there). */
@@ -31,6 +33,27 @@ export interface AudioEdge {
   /** Where the join could move instead (timeline seconds, roll_edit): a
    * bar later or earlier, where the incoming file sounds before it. */
   rollTo?: number;
+  /** Without a grid, the target is quiet in both source files. */
+  rollIntoSilence?: boolean;
+}
+
+/** A frame within half a second of `at` with 20 ms of digital silence
+ * on both sides in both files. The arrays start at timeline second `from`
+ * and cover the legal roll range; frame snapping is part of the search. */
+export function silentJoinTarget(a: Float32Array, b: Float32Array, rate: number, from: number, at: number, fps: number): number | undefined {
+  const side = Math.ceil(rate * 0.02), n = Math.min(a.length, b.length);
+  const powers = [a, b].map(x => {
+    const sum = new Float64Array(n + 1);
+    for (let i = 0; i < n; i++) sum[i + 1] = sum[i] + x[i] ** 2;
+    return sum;
+  });
+  let best: number | undefined;
+  for (let f = Math.ceil(Math.max(from + side / rate, at - 0.5) * fps); f <= Math.floor(Math.min(from + (n - side) / rate, at + 0.5) * fps); f++) {
+    const to = f / fps, i = Math.round((to - from) * rate);
+    if (Math.abs(to - at) < 0.5 / fps || powers.some(s => (s[i + side] - s[i - side]) / (2 * side) > 1e-6)) continue;
+    if (best === undefined || Math.abs(to - at) < Math.abs(best - at)) best = to;
+  }
+  return best === undefined ? undefined : +best.toFixed(3);
 }
 
 /** A file's own attack at a point: its steepest sample step within 2 ms
@@ -66,7 +89,7 @@ export interface EdgeReport {
   /** How loud the sound that starts here already was before it, against
    * what played before the edge, dB: a clip cut in mid-sound. */
   cut_in_db?: number;
-  /** At a join that steps 6 dB or more: what the music does there
+  /** At a join that steps 6 dB or more: what the source does there
    * itself, so a step it makes anyway reads as the music's (ADR-114). */
   step_note?: string;
   /** Seconds the incoming file is silent right before its in-point, when
@@ -129,6 +152,8 @@ export function edgeReport(L: Float32Array, R: Float32Array, rate: number, t0: n
   };
   const out: EdgeReport[] = [];
   for (const e of edges) {
+    const material = e.role === "dialog" ? "speech" : e.role === "effects" ? "sound effect" : e.role === "ambience" ? "ambience" : "music";
+    const ownChange = e.role === "dialog" ? "a speech onset or pause" : e.role && e.role !== "music" ? "a change in the source" : "a new bar or hit";
     const n = Math.round((e.at - t0) * rate);
     if (n - ms(160) < 0 || n + ms(160) > m.length) continue;
     const before = rms(m, n - ms(300), n - ms(10)), after = rms(m, n + ms(10), n + ms(300));
@@ -157,7 +182,7 @@ export function edgeReport(L: Float32Array, R: Float32Array, rate: number, t0: n
         const quiet = e.silentBefore && r.dip_db <= DIP_DB ? e.silentBefore : undefined;
         if (quiet) {
           r.silent_before = quiet.seconds;
-          const where = e.rollTo !== undefined ? `, e.g. a bar ${e.rollTo > e.at ? "later" : "earlier"} (roll_edit to ${e.rollTo} s)` : " (roll_edit it to a bar line where the incoming file sounds)";
+          const where = e.rollIntoSilence ? `, or into the nearby silent stretch (roll_edit to ${e.rollTo} s)` : e.rollTo !== undefined ? `, e.g. a bar ${e.rollTo > e.at ? "later" : "earlier"} (roll_edit to ${e.rollTo} s)` : " (roll_edit it to a bar line where the incoming file sounds)";
           problems.push(`a ${-r.dip_db} dB hole at the cut: ${e.clips[1]}'s file is silent for ${quiet.seconds} s just before its in-point (${+(quiet.in - quiet.seconds).toFixed(3)}-${+quiet.in.toFixed(3)} s of the file), so ${e.faded ? "the crossfade fades" : "a crossfade would fade"} into that silence and a longer one deepens the hole: move the join where both files sound${where}`);
         } else if (r.dip_db <= -40) problems.push("silence for a few milliseconds at the cut, heard as a dropout");
         else if (r.dip_db <= DIP_DB) problems.push(`a ${-r.dip_db} dB hole for a few milliseconds at the cut (${e.faded ? `under the ${e.faded} s crossfade` : "a butt cut's click guard"}), heard as a tick`);
@@ -192,19 +217,19 @@ export function edgeReport(L: Float32Array, R: Float32Array, rate: number, t0: n
     const moved = e.kind === "join" && e.cameIn !== undefined ? r.step_db + e.cameIn : r.step_db;
     // And against what the outgoing file would have done uncut (goesOn).
     const uncut = e.kind === "join" && e.goesOn !== undefined ? r.step_db - e.goesOn : r.step_db;
-    // How far the step is off what the music does there itself, either file.
+    // How far the step is off what the source does there itself, either file.
     const offMusic = Math.min(Math.abs(moved), Math.abs(uncut));
     // Inside a ring-out (the sound fell 6 dB or more over the second before
     // the cut) a step stands out at half the size: the second film test cut
     // a bar out of its outro and read a 6.9 dB step, called clean without a
     // word; the file steps 6.0 dB on that bar itself, so it was the music's.
     const fell = n - ms(1300) >= 0 ? db(rms(m, n - ms(1300), n - ms(1000))) - db(before) : 0;
-    const ringing = e.kind === "join" && fell >= TAIL_DB;
+    const ringing = e.role !== "dialog" && e.kind === "join" && fell >= TAIL_DB;
     const told = problems.some((x) => /still rings/.test(x));
     const ringStep = ringing && !told && Math.abs(r.step_db) >= TAIL_DB && offMusic >= TAIL_DB;
-    if (ringStep) problems.push(`the level ${r.step_db > 0 ? "jumps up" : "drops"} ${Math.abs(r.step_db)} dB inside a ring-out (the sound fell ${r1(fell)} dB over the second before), ${r1(offMusic)} dB more than the music does there: heard as a jump in its tail; cut before the tail, or crossfade longer`);
-    else if (e.kind === "join" && Math.abs(r.step_db) >= TAIL_DB && offMusic < TAIL_DB) r.step_note = `the music steps ${r1(Math.abs(moved) <= Math.abs(uncut) ? -(e.cameIn ?? 0) : (e.goesOn ?? 0))} dB there itself (a new bar or hit), so the join keeps its shape`;
-    if (e.kind === "join" && !ringing && Math.abs(moved) >= STEP_DB) problems.push(`the level ${r.step_db > 0 ? "jumps up" : "drops"} ${Math.abs(r.step_db)} dB at the cut${moved !== r.step_db ? `, ${r1(Math.abs(moved))} dB more than the music does there` : ""} (fine if the music changes there)`);
+    if (ringStep) problems.push(`the level ${r.step_db > 0 ? "jumps up" : "drops"} ${Math.abs(r.step_db)} dB inside a ring-out (the sound fell ${r1(fell)} dB over the second before), ${r1(offMusic)} dB more than the ${material} does there: heard as a jump in its tail; cut before the tail, or crossfade longer`);
+    else if (e.kind === "join" && Math.abs(r.step_db) >= TAIL_DB && offMusic < TAIL_DB) r.step_note = `the ${material} steps ${r1(Math.abs(moved) <= Math.abs(uncut) ? -(e.cameIn ?? 0) : (e.goesOn ?? 0))} dB there itself (${ownChange}), so the join keeps its shape`;
+    if (e.kind === "join" && !ringing && Math.abs(moved) >= STEP_DB) problems.push(`the level ${r.step_db > 0 ? "jumps up" : "drops"} ${Math.abs(r.step_db)} dB at the cut${moved !== r.step_db ? `, ${r1(Math.abs(moved))} dB more than the ${material} does there` : ""} (fine if the ${material} changes there)`);
     if (problems.length) {
       r.verdict = problems.join("; ");
       const real = problems.some((x) => !/fine if/.test(x));

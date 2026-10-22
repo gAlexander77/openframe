@@ -7,7 +7,7 @@ import { assetRole, roleTrack } from "./audioRoles";
 import { clipForAsset, createTrack } from "./project/defaults";
 import * as ops from "./project/ops";
 import type { Asset, Clip, Id, Project, Track } from "./project/types";
-import { withSourceRange, type SourceRange } from "./sourceMonitor";
+import { resolveSourceEdit, withSourceRange, type SourceMarks, type SourceRange } from "./sourceMonitor";
 import { FPS_PRESETS, fpsValue } from "./time";
 
 /** The cut nearest `frame` on a track (0 or a clip's end), earlier on a
@@ -168,4 +168,17 @@ export function landing(before: Project, after: Project, clipId: Id): Landing | 
     }
   }
   return { row, newTrack, frame: clip.start, duration: clip.duration, shifts };
+}
+
+/** Marked source duration and speed are applied before placement displaces clips. */
+export function placeSourceEdit(p: Project, asset: Asset, playhead: number, marks: SourceMarks, mode: ops.PlaceMode, trackId?: Id) {
+  const target = trackId ? ops.findTrack(p, trackId) : asset.kind === "audio" ? p.tracks.find((t) => t.kind === "audio" && !t.locked) : ops.mainTrack(p);
+  if (trackId && !target) throw new Error("No destination track with that id.");
+  if (target?.locked) throw new Error("The destination track is locked.");
+  if (target && target.kind !== (asset.kind === "audio" ? "audio" : "video")) throw new Error("The destination track has the wrong kind.");
+  const beforeFps = fpsValue(p.fps);
+  p = adoptSettings(p, asset);
+  const resolved = resolveSourceEdit(asset, p.fps, Math.round(playhead * fpsValue(p.fps) / beforeFps), marks);
+  const r = placeAsset(p, asset, resolved.start, trackId, false, resolved, mode);
+  return { ...r, speed: resolved.speed };
 }

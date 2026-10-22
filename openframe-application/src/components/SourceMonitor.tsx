@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { audibleTime, audioContext, scheduleAudio, type Schedule } from "../engine/audio";
+import { audibleTime, audioContext, masterBus, scheduleAudio, type Schedule } from "../engine/audio";
 import { player } from "../engine/player";
 import { AudioLines, ChevronLeft, ChevronRight, Pause, Play } from "../icons";
 import { sourceFrames, sourceProject } from "../lib/sourceMonitor";
 import type { Asset } from "../lib/project/types";
 import { formatTimecode, fpsValue, framesToSeconds } from "../lib/time";
-import { addToTimeline } from "../state/media";
+import { addToTimeline, editFromSource } from "../state/media";
 import { actionFor, provide } from "../state/actions";
 import { toast } from "../state/toast";
 import { tipFor } from "../state/actions";
 import type { PlaceMode } from "../lib/project/ops";
 import { projectWork } from "../state/projectWork";
-import { store } from "../state/store";
+import { store, useEditor } from "../state/store";
 import { Dialog } from "./Dialog";
 import { FramePreview } from "./FramePreview";
 import "./sourceMonitor.css";
@@ -20,6 +20,9 @@ export function SourceMonitor({ asset, onClose }: { asset: Asset; onClose: () =>
   const project = useMemo(() => sourceProject(asset), [asset]);
   const total = sourceFrames(asset, project.fps), rate = fpsValue(project.fps);
   const [frame, setFrame] = useState(0), [markIn, setIn] = useState(0), [markOut, setOut] = useState(total);
+  const timelineIn = useEditor((s) => s.inPoint), timelineOut = useEditor((s) => s.outPoint);
+  const [hasIn, setHasIn] = useState(false), [hasOut, setHasOut] = useState(false);
+  const [prompt, setPrompt] = useState<PlaceMode | null>(null);
   const [playing, setPlaying] = useState(false), [error, setError] = useState("");
   const [signal] = useState(() => projectWork.signal());
   const transport = useRef<{ schedule?: Schedule; raf?: number; generation: number }>({ generation: 0 });
@@ -41,7 +44,7 @@ export function SourceMonitor({ asset, onClose }: { asset: Asset; onClose: () =>
       if (generation !== transport.current.generation || signal.aborted) return;
       const start = frame >= markOut - 1 || frame < markIn ? markIn : frame;
       const at = ctx.currentTime + 0.05;
-      const schedule = scheduleAudio(ctx, ctx.destination, project, start / rate, markOut / rate, at);
+      const schedule = scheduleAudio(ctx, masterBus().input, project, start / rate, markOut / rate, at);
       transport.current.schedule = schedule;
       void schedule.done.catch((e) => { if (generation === transport.current.generation) { stop(); setError(String(e)); } });
       setPlaying(true);
@@ -56,29 +59,36 @@ export function SourceMonitor({ asset, onClose }: { asset: Asset; onClose: () =>
   };
   const still = asset.kind === "image" && !asset.animated;
   // Add follows the timeline's own placement (CapCut); Insert and Overwrite
-  // land exactly at the playhead (Premiere's).
-  const place = (mode?: PlaceMode) => {
+  // honor explicit timeline marks, falling back to the playhead.
+  const place = (mode?: PlaceMode, fit?: "fill" | "trim") => {
     stop();
     try {
+      if (fit === "fill" && (timelineIn === null || timelineOut === null)) throw new Error("Mark timeline In and Out to fit the source.");
       const current = store.get().project.assets.find((a) => a.id === asset.id);
       if (signal.aborted || !current || current.src !== asset.src || current.proxy !== asset.proxy) throw new Error("The source changed. Reopen its preview.");
-      addToTimeline(current, undefined, undefined, still ? undefined : { in: framesToSeconds(markIn, project.fps), out: framesToSeconds(markOut, project.fps) }, mode);
+      if (mode) {
+        editFromSource(current, mode, { sourceIn: hasIn || fit === "fill" ? markIn / rate : undefined, sourceOut: hasOut || fit === "fill" ? markOut / rate : undefined, timelineIn: timelineIn === null ? undefined : framesToSeconds(timelineIn, store.get().project.fps), timelineOut: timelineOut === null ? undefined : framesToSeconds(timelineOut, store.get().project.fps), fit });
+      } else addToTimeline(current, undefined, undefined, still ? undefined : { in: framesToSeconds(markIn, project.fps), out: framesToSeconds(markOut, project.fps) }, mode);
       onClose();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (mode && message === "Choose Fit to fill or Trim source to fit.") { setPrompt(mode); setError(""); }
+      else setError(message);
+    }
   };
   const placeRef = useRef(place);
   placeRef.current = place;
   useEffect(() => {
-    provide({ insertSource: () => placeRef.current("insert"), overwriteSource: () => placeRef.current("overwrite") });
+    provide({ insertSource: () => placeRef.current("insert"), overwriteSource: () => placeRef.current("overwrite"), fitSource: () => placeRef.current("overwrite", "fill") });
     const none = () => toast("Open a clip in the source monitor first (double-click it in the library)");
-    return () => provide({ insertSource: none, overwriteSource: none });
+    return () => provide({ insertSource: none, overwriteSource: none, fitSource: none });
   }, []);
   // The dialog keeps the editor's shortcuts out; Insert and Overwrite are its own.
   const onKey = (e: React.KeyboardEvent) => {
     const id = actionFor(e.nativeEvent);
-    if (id !== "insertSource" && id !== "overwriteSource") return;
+    if (id !== "insertSource" && id !== "overwriteSource" && id !== "fitSource") return;
     e.preventDefault();
-    place(id === "insertSource" ? "insert" : "overwrite");
+    place(id === "insertSource" ? "insert" : "overwrite", id === "fitSource" ? "fill" : undefined);
   };
   return <Dialog title={`Source: ${asset.name}`} onClose={onClose} className="source-monitor" onKeyDown={onKey}>
     {asset.kind === "audio" ? <div className="source-audio"><AudioLines size={40} /><span>Audio source</span></div> : <FramePreview project={project} frame={frame} label="Source preview" />}
@@ -86,17 +96,19 @@ export function SourceMonitor({ asset, onClose }: { asset: Asset; onClose: () =>
       <input className="source-scrub" type="range" aria-label="Source position" min={0} max={total - 1} step={1} value={frame} onChange={(e) => seek(+e.target.value)} />
       <div className="source-transport"><button className="icon-btn" aria-label="Previous source frame" onClick={() => seek(frame - 1)}><ChevronLeft size={18} /></button><button className="icon-btn" aria-label={playing ? "Pause source" : "Play source"} onClick={() => void play()}>{playing ? <Pause size={18} /> : <Play size={18} />}</button><button className="icon-btn" aria-label="Next source frame" onClick={() => seek(frame + 1)}><ChevronRight size={18} /></button><output className="num">{formatTimecode(frame, project.fps)}</output><span className="media-details">{Number(rate.toFixed(3))} fps</span></div>
       <div className="source-marks">
-        <div><button className="btn" onClick={() => { stop(); setIn(frame); if (markOut <= frame) setOut(frame + 1); }}>Mark In</button><output className="num" aria-label="Source In">{formatTimecode(markIn, project.fps)}</output></div>
-        <div><button className="btn" onClick={() => { stop(); setOut(frame + 1); if (markIn > frame) setIn(frame); }}>Mark Out</button><output className="num" aria-label="Source Out">{formatTimecode(markOut - 1, project.fps)}</output></div>
-        <button className="btn ghost" onClick={() => { stop(); setIn(0); setOut(total); }}>Clear marks</button>
+        <div><button className="btn" aria-pressed={hasIn} onClick={() => { stop(); setHasIn(true); setPrompt(null); setIn(frame); if (markOut <= frame) setOut(frame + 1); }}>Mark In</button><output className="num" aria-label="Source In">{formatTimecode(markIn, project.fps)}</output></div>
+        <div><button className="btn" aria-pressed={hasOut} onClick={() => { stop(); setHasOut(true); setPrompt(null); setOut(frame + 1); if (markIn > frame) setIn(frame); }}>Mark Out</button><output className="num" aria-label="Source Out">{formatTimecode(markOut - 1, project.fps)}</output></div>
+        <button className="btn ghost" onClick={() => { stop(); setHasIn(false); setHasOut(false); setPrompt(null); setIn(0); setOut(total); }}>Clear marks</button>
       </div>
       <p className="lib-hint">{((markOut - markIn) / rate).toFixed(3)} seconds selected. Out includes the displayed frame. Add range places it at the playhead as the timeline would; Insert pushes what follows; Overwrite covers it.</p>
     </>}
+    {prompt && <div className="source-fit" role="group" aria-label="Resolve four-point edit"><p>The source and timeline ranges have different lengths.</p><button className="btn" onClick={() => place(prompt, "fill")}>Fit to fill</button><button className="btn" onClick={() => place(prompt, "trim")}>Trim source to fit</button></div>}
     {error && <p className="dialog-error" role="alert">{error}</p>}
     <footer>
       <button className="btn ghost" onClick={onClose}>Cancel</button>
-      <button className="btn" data-tip={tipFor("overwriteSource", "Cover what is under the playhead")} onClick={() => place("overwrite")}>Overwrite</button>
-      <button className="btn" data-tip={tipFor("insertSource", "Split at the playhead and push what follows")} onClick={() => place("insert")}>Insert</button>
+      {!still && <button className="btn" disabled={timelineIn === null || timelineOut === null} data-tip={tipFor("fitSource")} onClick={() => place("overwrite", "fill")}>Fit to fill</button>}
+      <button className="btn" data-tip={tipFor("overwriteSource", "Overwrite at timeline In or the playhead")} onClick={() => place("overwrite")}>Overwrite</button>
+      <button className="btn" data-tip={tipFor("insertSource", "Insert at timeline In or the playhead and push what follows")} onClick={() => place("insert")}>Insert</button>
       <button className="btn primary" onClick={() => place()}>{still ? "Add image" : "Add range"}</button>
     </footer>
   </Dialog>;

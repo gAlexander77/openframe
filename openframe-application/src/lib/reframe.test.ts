@@ -10,7 +10,7 @@ import { paramAt } from "./keyframes";
 import { createProject } from "./project/defaults";
 import { findClip } from "./project/ops";
 import type { Project, VideoClip } from "./project/types";
-import { relOf, type Looks, type SubjectNote } from "./reframe";
+import { relOf, type OptionNote, type Looks, type SubjectNote } from "./reframe";
 import type { Layer } from "./render/plan";
 import { reshape, versionProject } from "./versions";
 
@@ -221,4 +221,29 @@ describe("versions keep the subject", () => {
     expect(relOf(c, 3.5, p.fps)).toBe(45);
     expect(relOf(c, 9, p.fps)).toBeNull();
   });
+});
+
+
+it("reports center framing when the texture has no distinct subject, while an explicit focus still wins", () => {
+  const { p, id } = film();
+  const map = { w: 64, h: 36, v: Float32Array.from({ length: 64 * 36 }, (_, i) => i % 8 < 3 && Math.floor(i / 64) % 8 < 3 ? 1 : 0.05) };
+  const looks = { [id]: { assetId: "a", times: [2, 4, 6], maps: [map, map, map] } };
+  const says = { options: [] as OptionNote[], coverage: [] };
+  const notes: SubjectNote[] = [];
+  const q = versionProject(p, { ratio: "9:16" }, undefined, looks, notes, [], [], says);
+  expect(landing(q, id, 0.5).x).toBeCloseTo(540, 0);
+  expect(notes).toEqual([]);
+  expect(says.options).toEqual(expect.arrayContaining([expect.objectContaining({ option: "reframe", note: expect.stringMatching(/no distinct subject.*center/i) })]));
+  const focused = versionProject(p, { ratio: "9:16", focus: [{ clip_id: id, x: 0.73 }] }, undefined, looks);
+  expect(landing(focused, id, 0.73).x).toBeCloseTo(540, 0);
+});
+
+it("film 5: labels saliency framing uncertain and does not overrule explicit speaker focus", () => {
+  const { p, id } = film(), looks = looking(id, () => 0.3);
+  const says = { options: [] as OptionNote[], coverage: [] };
+  versionProject(p, { ratio: "9:16" }, undefined, looks, [], [], [], says);
+  expect(says.options.some(x => /low.confidence/i.test(x.note) && /focus/.test(x.note))).toBe(true);
+  const notes: SubjectNote[] = [];
+  versionProject(p, { ratio: "9:16", reframe: "center", focus: [{ clip_id: id, x: 0.68, y: 0.5 }] }, undefined, looks, notes);
+  expect(notes).toEqual([]);
 });

@@ -165,6 +165,9 @@ export function cutToBeats(p: Project, o: CutToBeats): Project {
   const start = secondsToFrames(o.start ?? 0, fps);
   const end = o.end === undefined ? Infinity : secondsToFrames(o.end, fps);
   const q = grid.filter((g) => g >= start - 1 && g <= end);
+  // An explicit ending is a boundary too: a score's last beat is before
+  // its ring-out ends. Never invent intermediate beats past the grid.
+  if (Number.isFinite(end) && end > start && (q.at(-1) ?? -1) < end) q.push(end);
   const track = o.track_id === undefined ? ops.mainTrack(p) : ops.findTrack(p, o.track_id);
   if (!track) throw new EpicError(`no track with id ${o.track_id}`);
   if (track.kind !== "video") throw new EpicError("shots go on a video track");

@@ -367,3 +367,21 @@ it("counts a cut only where it shows: not under a full-frame card above it (ADR-
   expect(rules(runCommand(black, "set_param", { clip_ids: [id], path: "transform.scale", value: 0.5 }), "epic_edit")).toContain("cuts_off_beat");
   expect(rules(runCommand(black, "set_param", { clip_ids: [id], path: "opacity", value: 0.5 }), "epic_edit")).toContain("cuts_off_beat");
 });
+
+
+it("accepts a portrait hook at size 100 without a size warning", () => {
+  const p = runCommand(createProject({ width: 1080, height: 1920 }), "add_text", { text: "Go now", start: 0, duration: 3, style: { size: 100 } });
+  expect(checkProject(p, "social_short").findings.filter((f) => /size|small|large/.test(f.rule))).toEqual([]);
+});
+
+it("film 5: a one-frame dialog fade cannot exempt a measured cutoff", () => {
+  let p = runCommand(base(), "add_track", { kind: "audio", name: "Dialog" });
+  p = { ...p, assets: [{ id: "a", kind: "audio", name: "Interview", src: "a.wav", duration: 60, hasAudio: true, hasVideo: false }] };
+  p = runCommand(p, "add_media_clip", { asset_id: "a", start: 0, duration: 4, track_id: p.tracks.find(t => t.kind === "audio")!.id });
+  const c = p.tracks.find(t => t.kind === "audio")!.clips[0];
+  p = runCommand(p, "set_fades", { clip_ids: [c.id], fade_out: 1 / 30 });
+  expect(tailTargets(p).map(t => t.clipId)).toContain(c.id);
+  expect(checkProject(p, "social_short", { tails: { [c.id]: { bodyDb: -20, endDb: -20 } } }).findings.map(f => f.rule)).toContain("sound_cut_off");
+  p = runCommand(p, "set_fades", { clip_ids: [c.id], fade_out: 0.2 });
+  expect(tailTargets(p).map(t => t.clipId)).not.toContain(c.id);
+});

@@ -217,10 +217,11 @@ export function splitParts(c: Clip, at: number, fps: Rational): [Clip, Clip] {
   const r = at - c.start;
   // A tape stop and a crossfade into the next clip belong to the clip's
   // end, so only the right part keeps them.
-  const left = omit({ ...c, duration: r } as Clip, ["transitionOut", "animOut", "tapeStop", "crossfade"]);
+  const left = omit({ ...c, duration: r } as Clip, ["transitionOut", "animOut", "tapeStop", "crossfade", "crossfadeCurve"]);
   const right = omit(moveLeftEdge({ ...c, id: uid("c") } as Clip, r, fps), ["animIn"]);
   if ("fadeOut" in left) (left as AudioClip).fadeOut = 0;
   if ("fadeIn" in right) (right as AudioClip).fadeIn = 0;
+  if ("inserts" in right && right.inserts) right.inserts = right.inserts.map(i => ({ ...structuredClone(i), id: uid("insert") }));
   return [left, right];
 }
 
@@ -251,7 +252,23 @@ export function splitCaption(p: Project, clipId: Id, caret: number): { project: 
   return { project: out, second };
 }
 
+function streamMates(p: Project, id: Id): ClipLoc[] {
+  const c = findClip(p, id)?.clip;
+  if (!c?.streamLayout || !c.group) return [];
+  return p.tracks.flatMap(t => t.clips.filter(x => x.group === c.group && x.start === c.start && x.duration === c.duration).map(x => findClip(p, x.id)!));
+}
+
 export function splitClip(p: Project, clipId: Id, at: number): Project {
+  const mates = streamMates(p, clipId);
+  if (mates.length > 1) {
+    if (mates.some(l => l.track.locked) || at <= mates[0].clip.start || at >= clipEnd(mates[0].clip)) return p;
+    const rightGroup = uid("g");
+    for (const l of mates) {
+      const [left, right] = splitParts(l.clip, at, p.fps);
+      p = withTrack(p, l.track.id, t => setClips(t, [...t.clips.filter(c => c.id !== l.clip.id), left, { ...right, group: rightGroup }]));
+    }
+    return p;
+  }
   const loc = findClip(p, clipId);
   if (!loc || at <= loc.clip.start || at >= clipEnd(loc.clip)) return p;
   const [l, r] = splitParts(loc.clip, at, p.fps);
@@ -501,6 +518,18 @@ export type Edge = "start" | "end";
  *   so no gap opens and nothing is covered (Premiere's ripple edit tool).
  */
 export function trimClip(p: Project, clipId: Id, edge: Edge, frame: number, ripple = false): Project {
+  const mates = streamMates(p, clipId);
+  if (mates.length > 1) {
+    if (mates.some(l => l.track.locked)) return p;
+    const bounds = mates.map(l => trimBounds(p, l, edge, ripple));
+    const to = Math.max(Math.max(...bounds.map(b => b.lo)), Math.min(Math.round(frame), ...bounds.map(b => b.hi)));
+    for (const l of mates) p = trimOneClip(p, l.clip.id, edge, to, ripple);
+    return p;
+  }
+  return trimOneClip(p, clipId, edge, frame, ripple);
+}
+
+function trimOneClip(p: Project, clipId: Id, edge: Edge, frame: number, ripple = false): Project {
   const loc = findClip(p, clipId);
   if (!loc || loc.track.locked) return p;
   const { clip: c, track } = loc;
@@ -796,7 +825,9 @@ export function detachAudio(p: Project, clipId: Id): Project {
     pan: v.pan,
     fadeIn: v.fadeIn,
     fadeOut: v.fadeOut,
+    ...Object.fromEntries((["pitch", "fadeInCurve", "fadeOutCurve", "voice", "saturation", "ringMod", "mono", "eq", "compressor", "fill", "highpass", "lowpass", "echo", "reverb", "tapeStop"] as const).filter((key) => v[key] !== undefined).map((key) => [key, structuredClone(v[key])])),
     muted: false,
+    ...(v.inserts ? { inserts: v.inserts.map(i => ({ ...structuredClone(i), id: uid("insert") })) } : {}),
     group: v.group ?? uid("g"),
   };
   let q = updateClip(p, clipId, (c) => ({ ...c, muted: true, group: audio.group }) as Clip);
@@ -1060,6 +1091,20 @@ function pieceMoves(oldMain: Track, newMain: Track, fps: Rational): { start: num
  */
 export function settle(before: Project, after: Project, o: SettleOptions): Project {
   let p = o.magnet ? closeOpenedGaps(before, after, mainTrack(after).id) : after;
+  for (const t of before.tracks) for (const c of t.clips) {
+    if (!c.streamLayout || !c.group) continue;
+    const now = findClip(p, c.id)?.clip;
+    if (!now || now.duration !== c.duration || now.start === c.start) continue;
+    const delta = now.start - c.start;
+    for (const mate of streamMates(before, c.id)) {
+      const live = findClip(p, mate.clip.id);
+      if (!live || live.clip.start !== mate.clip.start) continue;
+      if (live.track.locked) throw new Error("Unlock every stream layout track before moving its bands");
+      const start = live.clip.start + delta;
+      if (!rangeFree(live.track, start, live.clip.duration, live.clip.id)) throw new Error("The stream layout's destination is occupied");
+      p = updateClip(p, live.clip.id, x => ({ ...x, start }));
+    }
+  }
   if (!o.linkage) return p;
   const oldMain = mainTrack(before);
   const newMain = mainTrack(p);

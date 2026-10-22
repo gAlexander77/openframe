@@ -1,3 +1,5 @@
+import { memoryOwners } from "../engine/memory";
+import { retainedBytes } from "../lib/memory";
 // The one app store. The project document plus the editor state around it
 // (selection, playhead, tools, panels) and undo history. Components subscribe
 // to a slice with `useEditor(selector)`; React re-renders only when that
@@ -18,12 +20,14 @@ import type { KeyRef } from "../lib/keyframeEdit";
 import type { Guides } from "../lib/align";
 import type { CropRatio } from "../lib/crop";
 import type { Crop, Id, Project } from "../lib/project/types";
+import type { EditPoint } from "../lib/editPoints";
 import type { TrimPreviewState } from "../lib/trimPreview";
 
 /** select and blade are CapCut's; ripple, roll, slip and slide are the
  * Premiere/VEGAS trim tools CapCut lacks. */
 export type Tool = "select" | "blade" | "ripple" | "roll" | "slip" | "slide" | "stretch";
 export type LeftTab =
+  | "layouts"
   | "media"
   | "audio"
   | "text"
@@ -34,6 +38,7 @@ export type LeftTab =
   | "adjustment"
   | "captions"
   | "markers"
+  | "timeline"
   | "ai"
   | "check";
 
@@ -56,6 +61,8 @@ export interface EditorState {
    * project's own timeline. */
   nest: NestEntry[];
   selection: Id[];
+  /** Selected timeline edges, never serialized into the project. */
+  selectedEdits: EditPoint[];
   /** Explicit request to open transition settings; cleared by normal selection. */
   transitionEdit: Id | null;
   /** Current frame. */
@@ -78,7 +85,13 @@ export interface EditorState {
   previewScale: 1 | 0.5 | 0.25;
   /** The Scopes panel is showing (in the media library's place). */
   scopes: boolean;
+  compare: { mode: "off" | "beforeAfter" | "reference"; split: number; orientation: "vertical" | "horizontal" };
+  colorMatchReference: Id | null;
+  colorMatchPicking: boolean;
+  colorMatchBusy: boolean;
   mixer: boolean;
+  /** Preview output only; remembered for this app session, never exported. */
+  monitorMuted: boolean;
   /** Viewer overlays only: never saved into the project or rendered. */
   viewerGuides: Guides;
   leftTab: LeftTab;
@@ -120,6 +133,7 @@ export interface EditorState {
 }
 
 export interface CropSession {
+  purpose?: "stream";
   id: Id;
   crop: Crop;
   /** The shape the handles keep. */
@@ -139,6 +153,7 @@ let state: EditorState = {
   project: createProject(),
   nest: [],
   selection: [],
+  selectedEdits: [],
   transitionEdit: null,
   playhead: 0,
   playing: false,
@@ -152,7 +167,12 @@ let state: EditorState = {
   trimPreview: null,
   previewScale: 1,
   scopes: false,
+  compare: { mode: "off", split: 0.5, orientation: "vertical" },
+  colorMatchReference: null,
+  colorMatchPicking: false,
+  colorMatchBusy: false,
   mixer: false,
+  monitorMuted: false,
   viewerGuides: "off",
   leftTab: "media",
   mediaBrowser: { ...DEFAULT_MEDIA_BROWSER },
@@ -243,6 +263,7 @@ function setProject(project: Project, extra: Partial<EditorState> = {}) {
   set({
     project,
     selection: liveSelection(project, extra.selection ?? state.selection),
+    selectedEdits: state.selectedEdits.filter((e) => !!findClip(project, e.clipId)),
     revision: state.revision + 1,
     ...labels(),
     ...extra,
@@ -390,6 +411,12 @@ export const store = {
     });
   },
 
+  /** The saved document is on disk. Home keeps no project or undo graph. */
+  unload() {
+    gestureBase = gestureDoc = null; run = null; past = []; future = []; docCache = null;
+    set({ project: createProject(), nest: [], selection: [], selectedEdits: [], playing: false, playhead: 0, ...labels() });
+  },
+
   /** Replace the document wholesale (open, new). History starts over. */
   load(project: Project) {
     projectWork.open();
@@ -399,8 +426,13 @@ export const store = {
     future = [];
     set({
       project,
+      compare: { mode: "off", split: 0.5, orientation: "vertical" },
+      colorMatchReference: null,
+      colorMatchPicking: false,
+      colorMatchBusy: false,
       nest: [],
       selection: [],
+      selectedEdits: [],
       transitionEdit: null,
       playhead: 0,
       playing: false,
@@ -424,7 +456,7 @@ export const store = {
   },
 
   select(ids: Id[]) {
-    set({ selection: ids, keySel: null, transitionEdit: null });
+    set({ selection: ids, selectedEdits: [], keySel: null, transitionEdit: null });
   },
 };
 
@@ -434,7 +466,7 @@ export const rootInPoint = (s: EditorState) => (s.nest.length ? s.nest[0].inPoin
 export const rootOutPoint = (s: EditorState) => (s.nest.length ? s.nest[0].outPoint : s.outPoint);
 
 /** Editor state that belongs to one timeline: moving between levels drops it. */
-const away: Partial<EditorState> = { keySel: null, textEdit: null, trimPreview: null, markerEdit: null, hoverFrame: null, inPoint: null, outPoint: null };
+const away: Partial<EditorState> = { selectedEdits: [], keySel: null, textEdit: null, trimPreview: null, markerEdit: null, hoverFrame: null, inPoint: null, outPoint: null };
 
 /** Put a document from history back, staying as deep in compound clips as
  * it still allows (an undone Create compound clip takes you out). */
@@ -449,3 +481,5 @@ function restore(doc: Project) {
 export function useEditor<T>(selector: (s: EditorState) => T): T {
   return useSyncExternalStore(store.subscribe, () => selector(state));
 }
+
+memoryOwners.register("undo_documents", () => ({ bytes: retainedBytes([past, future, gestureDoc]), count: past.length + future.length, estimated: true, detail: "Structurally shared document payload, no media bytes; at most 200 undo steps" }), () => { past = []; future = []; gestureBase = gestureDoc = null; run = null; docCache = null; });

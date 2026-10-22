@@ -1,3 +1,8 @@
+import { BorrowCache } from "../lib/memory";
+import { animatedFrameAt } from "../lib/animatedImage";
+import { memoryOwners, MiB, trackCache } from "./memory";
+import { checkPlaybackProxy, originalFingerprint } from "./playbackProxies";
+import { proxySource } from "../lib/proxyPolicy";
 // Media files: one mediabunny Input per asset, opened lazily and shared by
 // every clip of that asset, plus probing at import. Bytes come from the
 // platform (a File on the web, a range-capable URL on the desktop); this
@@ -15,12 +20,14 @@ import {
   type Source,
 } from "mediabunny";
 import type { Asset, AssetKind } from "../lib/project/types";
-import { animationFor, animatedBitmap, closeAnimation } from "./animatedImage";
+import { borrowAnimation, closeAnimation } from "./animatedImage";
 import { platform } from "../platform";
 import { AUDIO_EXT, IMAGE_EXT, SNIFF_BYTES, sniffFormat, sourceName } from "../lib/mediaKind";
 import { id3v2Size, mp3Trim, MP3_TRIM_BYTES } from "../lib/gapless";
 
 export interface MediaFile {
+  /** Release this borrow after every sink/iterator using it has stopped. */
+  release(): void;
   input: Input;
   video: InputVideoTrack | null;
   audio: InputAudioTrack | null;
@@ -126,74 +133,106 @@ export async function soundOrigin(input: Input, src: string): Promise<number> {
   return (await mediaOrigin(video, audio)) + ((await gaplessTrim(input, src))?.start ?? 0);
 }
 
-async function openInput(source: Source, src: string): Promise<MediaFile> {
+async function openInput(source: Source, src: string): Promise<Omit<MediaFile, "release">> {
   const input = new Input({ source, formats: ALL_FORMATS });
-  const video = await input.getPrimaryVideoTrack();
-  const audio = await input.getPrimaryAudioTrack();
-  const videoOk = video ? await video.canDecode() : false;
-  const audioOk = audio ? await audio.canDecode() : false;
-  const rotation = video ? await video.getRotation() : 0;
-  const origin = await mediaOrigin(video, audio);
-  const delay = (await gaplessTrim(input, src))?.start ?? 0;
-  return {
-    input,
-    video: videoOk ? video : null,
-    audio: audioOk ? audio : null,
-    videoSink: videoOk && video ? new VideoSampleSink(video) : null,
-    keySink: videoOk && video ? new EncodedPacketSink(video) : null,
-    audioSink: audioOk && audio ? new AudioBufferSink(audio) : null,
-    videoStart: origin,
-    audioStart: origin + delay,
-    quarterTurns: ((rotation / 90) % 4) as 0 | 1 | 2 | 3,
-    width: video ? await video.getDisplayWidth() : 0,
-    height: video ? await video.getDisplayHeight() : 0,
-  };
+  try {
+    const video = await input.getPrimaryVideoTrack();
+    const audio = await input.getPrimaryAudioTrack();
+    const videoOk = video ? await video.canDecode() : false;
+    const audioOk = audio ? await audio.canDecode() : false;
+    const rotation = video ? await video.getRotation() : 0;
+    const origin = await mediaOrigin(video, audio);
+    const delay = (await gaplessTrim(input, src))?.start ?? 0;
+    return {
+      input,
+      video: videoOk ? video : null,
+      audio: audioOk ? audio : null,
+      videoSink: videoOk && video ? new VideoSampleSink(video) : null,
+      keySink: videoOk && video ? new EncodedPacketSink(video) : null,
+      audioSink: audioOk && audio ? new AudioBufferSink(audio) : null,
+      videoStart: origin,
+      audioStart: origin + delay,
+      quarterTurns: ((rotation / 90) % 4) as 0 | 1 | 2 | 3,
+      width: video ? await video.getDisplayWidth() : 0,
+      height: video ? await video.getDisplayHeight() : 0,
+    };
+  } catch (e) { input.dispose(); throw e; }
 }
 
-const files = new Map<string, Promise<MediaFile>>();
+const INPUT_CACHE_BUDGET = 32 * MiB, INPUT_RESERVE = 8 * MiB;
+interface InputEntry { pending: Promise<Omit<MediaFile, "release">>; users: number; cached: boolean }
+const files = new Map<string, InputEntry>();
+// A retired session may still have cursors finishing an asynchronous read.
+// Keep their inputs alive until the last cursor gives back its borrow.
+const liveInputs = new Set<InputEntry>();
+function disposeIdle(entry: InputEntry) {
+  if (entry.cached || entry.users || !liveInputs.delete(entry)) return;
+  void entry.pending.then(f => f.input.dispose(), () => {});
+}
+const drop = (key: string) => {
+  const entry = files.get(key); files.delete(key);
+  if (entry) { entry.cached = false; disposeIdle(entry); }
+};
+function trimInputs() {
+  const idle = [...files].filter(([, e]) => !e.users);
+  while (idle.length * INPUT_RESERVE > INPUT_CACHE_BUDGET) drop(idle.shift()![0]);
+}
+memoryOwners.register("idle_media_inputs", () => ({ bytes: [...files.values()].filter(e => !e.users).length * INPUT_RESERVE, count: [...files.values()].filter(e => !e.users).length, budget: INPUT_CACHE_BUDGET, estimated: true }), () => {
+  for (const key of files.keys()) drop(key);
+  trims.clear();
+});
+memoryOwners.register("active_media_inputs", () => ({ bytes: [...liveInputs].filter(e => e.users).length * INPUT_RESERVE, count: [...liveInputs].filter(e => e.users).length, estimated: true }));
 
 /** The open media for an asset, preferring its proxy when it has one. */
-export const mediaFor = (asset: Asset): Promise<MediaFile> => mediaForSrc(asset.proxy ?? asset.src);
+export const mediaFor = async (asset: Asset): Promise<MediaFile> => {
+  await checkPlaybackProxy(asset);
+  const src = proxySource(asset, "analysis", false);
+  return mediaForSrc(src, src === asset.src ? originalFingerprint(asset) : undefined);
+};
 
 /** The open media at a platform location (an asset's file, or a
  * background matte, which is stored like media). */
-export function mediaForSrc(src: string): Promise<MediaFile> {
-  let m = files.get(src);
-  if (!m) {
-    m = platform.sourceFor(src).then((source) => openInput(source, src));
-    files.set(src, m);
-    m.catch(() => files.delete(src));
+export async function mediaForSrc(src: string, fingerprint?: string): Promise<MediaFile> {
+  const key = fingerprint ? `${src}\0${fingerprint}` : src;
+  let entry = files.get(key);
+  if (!entry) {
+    entry = { pending: platform.sourceFor(src).then(source => openInput(source, src)), users: 0, cached: true };
+    files.set(key, entry);
+    liveInputs.add(entry);
+    entry.pending.catch(() => { if (files.get(key) === entry) drop(key); });
   }
-  return m;
+  files.delete(key); files.set(key, entry);
+  entry.users++;
+  try {
+    const file = await entry.pending;
+    let released = false;
+    return { ...file, release() { if (!released) { released = true; entry.users--; disposeIdle(entry); trimInputs(); } } };
+  } catch (e) { entry.users--; disposeIdle(entry); throw e; }
 }
 
-/** Close an asset's decoders and file handle (asset removed or relinked). */
+/** Retire an asset's cached resources (removed or relinked). Active
+ * cursors keep their file handle until they return their last borrow. */
 export async function closeMedia(src: string) {
   await closeAnimation(src);
-  const m = files.get(src);
-  files.delete(src);
   trims.delete(src);
-  (await m?.catch(() => null))?.input.dispose();
+  images.delete(src);
+  for (const key of files.keys()) if (key === src || key.startsWith(`${src}\0`)) drop(key);
 }
 
 // ---- images --------------------------------------------------------------------
 
-const images = new Map<string, Promise<ImageBitmap>>();
+const images = new BorrowCache<string, ImageBitmap>(128 * MiB, b => b.width * b.height * 4, b => b.close());
+trackCache("image_bitmaps", images);
+memoryOwners.register("image_borrows", () => ({ bytes: images.borrowedBytes, count: 0 }));
 
-/** Decoded still for an image asset, cached for the session. */
-export async function imageFor(asset: Asset, time = 0): Promise<ImageBitmap> {
+/** The caller borrows the image until rendering or copying it completes. */
+export async function borrowImage(asset: Asset, time = 0): Promise<{ value: ImageBitmap; release: () => void }> {
   if (asset.animated) {
-    // The source names the format; the library's name is only a label.
-    const frame = await animatedBitmap(asset.src, sourceName(asset.src), time);
-    if (frame) return frame;
+    const borrowed = await borrowAnimation(asset.src, sourceName(asset.src));
+    if (borrowed.value) return { value: borrowed.value.frames[animatedFrameAt(borrowed.value.durations, time)], release: borrowed.release };
+    borrowed.release();
   }
-  let img = images.get(asset.src);
-  if (!img) {
-    img = platform.blobFor(asset.src).then(decodable).then((b) => createImageBitmap(b, { imageOrientation: "from-image" }));
-    images.set(asset.src, img);
-    img.catch(() => images.delete(asset.src));
-  }
-  return img;
+  return images.acquire(asset.src, () => platform.blobFor(asset.src).then(decodable).then(b => createImageBitmap(b, { imageOrientation: "from-image" })));
 }
 
 // ---- probing ----------------------------------------------------------------------
@@ -204,8 +243,11 @@ export async function imageFor(asset: Asset, time = 0): Promise<ImageBitmap> {
  * the library shows. */
 export async function probe(src: string, name: string): Promise<Probe> {
   if (IMAGE_EXT.test(name)) {
-    const animation = await animationFor(src, name);
-    if (animation) return { kind: "image", animated: true, duration: animation.durations.reduce((a, b) => a + b, 0), width: animation.frames[0].width, height: animation.frames[0].height, hasVideo: true, hasAudio: false, decodable: true };
+    const borrowed = await borrowAnimation(src, name);
+    try {
+      const animation = borrowed.value;
+      if (animation) return { kind: "image", animated: true, duration: animation.durations.reduce((a, b) => a + b, 0), width: animation.frames[0].width, height: animation.frames[0].height, hasVideo: true, hasAudio: false, decodable: true };
+    } finally { borrowed.release(); }
     const bmp = await createImageBitmap(await decodable(await platform.blobFor(src)));
     const out: Probe = { kind: "image", duration: 0, width: bmp.width, height: bmp.height, hasVideo: true, hasAudio: false, decodable: true };
     bmp.close();

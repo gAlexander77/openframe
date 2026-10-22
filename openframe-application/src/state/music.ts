@@ -1,3 +1,5 @@
+import { memoryOwners } from "../engine/memory";
+import { dismiss, toast, updateToast } from "./toast";
 // Generate music (ADR-085): an original score rendered on this computer in
 // a worker, imported like a dropped file (the mix, and the four stems when
 // asked), then placed on an audio track and marked as analyze_music marks a
@@ -6,7 +8,7 @@
 // through the app's own audio output before adding it.
 
 import { renderMusicFiles, renderMusicPcm, type Measured } from "../engine/music";
-import { audioContext } from "../engine/audio";
+import { audioContext, masterBus } from "../engine/audio";
 import { planMusic, type MusicPlan } from "../lib/music/arrange";
 import { cueSheet, musicName, readMusicArgs, type CueSheet, type MusicOptions } from "../lib/music/cues";
 import { STEMS, STYLES, type Stem } from "../lib/music/styles";
@@ -85,50 +87,55 @@ function placeMusic(p: Project, o: MusicOptions, mix: Asset, stems: Partial<Reco
 export async function generateMusic(args: Record<string, unknown>, onProgress?: (p: number) => void): Promise<MusicAnswer> {
   const o = readMusicArgs(args);
   const plan: MusicPlan = planMusic(o.request);
-  const signal = projectWork.signal();
-  const files = await renderMusicFiles(o.request, { stems: o.stems, loudness: o.loudness }, onProgress, signal);
-  signal.throwIfAborted();
-  const base = musicName(plan, STYLES[plan.style].label, o.name);
-  const list = [new File([files.mix], `${base}.wav`, { type: "audio/wav" })];
-  if (files.stems) for (const s of STEMS) list.push(new File([files.stems[s]], `${base} - ${s}.wav`, { type: "audio/wav" }));
-  const assets = await adoptAndImport(list);
-  signal.throwIfAborted();
-  if (assets.length !== list.length) throw new Error("The music was made but could not be imported; the app shows why.");
-  // A score is music (ADR-098): its track is the music stem, never a gap on the voiceover.
-  const made = new Set(assets.map((a) => a.id));
-  const [mix, ...rest] = assets.map((a) => ({ ...a, role: "music" as const }));
-  const stemAssets: Partial<Record<Stem, Asset>> = files.stems ? Object.fromEntries(STEMS.map((s, i) => [s, rest[i]])) : {};
-  const placed = o.place !== "none";
-  const cue = cueSheet(plan, placed ? o.start : 0);
-  let clipId: Id | undefined;
-  let stemClips: Partial<Record<Stem, Id>> = {};
-  let markers = 0;
-  // The score's grid is known exactly: kept with its files, so analyze_music,
-  // mark_beats and check_project read it instead of guessing (ADR-101).
-  const grid: MusicGrid = { bpm: +(60 / plan.beat).toFixed(4), firstDownbeat: 0, sections: cue.sections.map((x) => ({ at: +(x.start - cue.start).toFixed(4), label: x.role })) };
-  if (placed || o.markers.length) {
-    edit(`Generate music`, (p0) => {
-      let p = { ...p0, assets: p0.assets.map((a) => (made.has(a.id) ? { ...a, role: "music" as const, musicGrid: grid } : a)) };
-      if (placed) ({ project: p, clipId, stemClips } = placeMusic(p, o, mix, stemAssets));
-      const before = p.markers.length;
-      p = markMusic(p, cue, o.markers, clipId ?? Object.values(stemClips)[0]);
-      markers = p.markers.length - before;
-      return p;
-    });
-  } else edit(`Generate music`, (p0) => ({ ...p0, assets: p0.assets.map((a) => (made.has(a.id) ? { ...a, role: "music" as const, musicGrid: grid } : a)) }));
-  const stems = files.stems ? Object.fromEntries(STEMS.map((s) => [s, { asset_id: stemAssets[s]!.id, ...(stemClips[s] ? { clip_id: stemClips[s] } : {}) }])) : undefined;
-  const note = [
-    placed ? `Placed at ${o.start} s; every time is timeline seconds.` : "Not placed: times are seconds into the music.",
-    plan.fit.targets.length ? plan.fit.note : "",
-    plan.ending === "ring" ? `The final hit is at ${cue.final_hit} s and rings out to the end.` : `It stops on the final hit at ${cue.final_hit} s.`,
-  ].filter(Boolean).join(" ");
-  const brightness = o.request.brightness ?? STYLES[plan.style].brightness ?? 0;
-  return { asset_id: mix.id, ...(clipId ? { clip_id: clipId } : {}), ...(stems ? { stems } : {}), ...cue, measured: { ...files.measured, brightness }, markers, note };
+  const cancel = new AbortController();
+  const signal = AbortSignal.any([cancel.signal, projectWork.capture()]);
+  const tid = toast("Composing and rendering music\u2026", "progress", undefined, { label: "Cancel", run: () => cancel.abort() });
+  try {
+    const files = await renderMusicFiles(o.request, { stems: o.stems, loudness: o.loudness }, x => { onProgress?.(x); updateToast(tid, { progress: x }); }, signal);
+    signal.throwIfAborted();
+    const base = musicName(plan, STYLES[plan.style].label, o.name);
+    const list = [new File([files.mix], `${base}.wav`, { type: "audio/wav" })];
+    if (files.stems) for (const s of STEMS) list.push(new File([files.stems[s]], `${base} - ${s}.wav`, { type: "audio/wav" }));
+    const assets = await adoptAndImport(list, signal);
+    signal.throwIfAborted();
+    if (assets.length !== list.length) throw new Error("The music was made but could not be imported; the app shows why.");
+    // A score is music (ADR-098): its track is the music stem, never a gap on the voiceover.
+    const made = new Set(assets.map((a) => a.id));
+    const [mix, ...rest] = assets.map((a) => ({ ...a, role: "music" as const }));
+    const stemAssets: Partial<Record<Stem, Asset>> = files.stems ? Object.fromEntries(STEMS.map((s, i) => [s, rest[i]])) : {};
+    const placed = o.place !== "none";
+    const cue = cueSheet(plan, placed ? o.start : 0);
+    let clipId: Id | undefined;
+    let stemClips: Partial<Record<Stem, Id>> = {};
+    let markers = 0;
+    // The score's grid is known exactly: kept with its files, so analyze_music,
+    // mark_beats and check_project read it instead of guessing (ADR-101).
+    const grid: MusicGrid = { bpm: +(60 / plan.beat).toFixed(4), firstDownbeat: 0, sections: cue.sections.map((x) => ({ at: +(x.start - cue.start).toFixed(4), label: x.role })) };
+    if (placed || o.markers.length) {
+      edit(`Generate music`, (p0) => {
+        let p = { ...p0, assets: p0.assets.map((a) => (made.has(a.id) ? { ...a, role: "music" as const, musicGrid: grid } : a)) };
+        if (placed) ({ project: p, clipId, stemClips } = placeMusic(p, o, mix, stemAssets));
+        const before = p.markers.length;
+        p = markMusic(p, cue, o.markers, clipId ?? Object.values(stemClips)[0]);
+        markers = p.markers.length - before;
+        return p;
+      });
+    } else edit(`Generate music`, (p0) => ({ ...p0, assets: p0.assets.map((a) => (made.has(a.id) ? { ...a, role: "music" as const, musicGrid: grid } : a)) }));
+    const stems = files.stems ? Object.fromEntries(STEMS.map((s) => [s, { asset_id: stemAssets[s]!.id, ...(stemClips[s] ? { clip_id: stemClips[s] } : {}) }])) : undefined;
+    const note = [
+      placed ? `Placed at ${o.start} s; every time is timeline seconds.` : "Not placed: times are seconds into the music.",
+      plan.fit.targets.length ? plan.fit.note : "",
+      plan.ending === "ring" ? `The final hit is at ${cue.final_hit} s and rings out to the end.` : `It stops on the final hit at ${cue.final_hit} s.`,
+    ].filter(Boolean).join(" ");
+    const brightness = o.request.brightness ?? STYLES[plan.style].brightness ?? 0;
+    return { asset_id: mix.id, ...(clipId ? { clip_id: clipId } : {}), ...(stems ? { stems } : {}), ...cue, measured: { ...files.measured, brightness }, markers, note };
+  } finally { dismiss(tid); }
 }
 
 // ---- preview (the Generate music card) -------------------------------------------------
 
 let playing: AudioBufferSourceNode | null = null;
+memoryOwners.register("music_preview_pcm", () => ({ bytes: playing?.buffer ? playing.buffer.length * playing.buffer.numberOfChannels * 4 : 0, count: playing ? 1 : 0 }), stopPreview);
 
 /** Stop a preview that is playing. */
 export function stopPreview() {
@@ -137,6 +144,8 @@ export function stopPreview() {
   } catch {
     /* already stopped */
   }
+  playing?.disconnect();
+  if (playing) playing.buffer = null;
   playing = null;
 }
 
@@ -151,8 +160,9 @@ export async function previewMusic(args: Record<string, unknown>, onProgress?: (
   buf.copyToChannel(r.right, 1);
   const src = ctx.createBufferSource();
   src.buffer = buf;
-  src.connect(ctx.destination);
+  src.connect(masterBus().input);
   src.onended = () => {
+    src.disconnect(); src.buffer = null;
     if (playing === src) playing = null;
     onEnded?.();
   };

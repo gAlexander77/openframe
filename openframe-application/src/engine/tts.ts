@@ -1,3 +1,5 @@
+import { modelWorker } from "./modelWorker";
+import { MiB } from "./memory";
 // Text to speech on this machine (CapCut's Text to speech, ADR-050): the
 // Kokoro worker turns words into a voice; the caller saves it as WAV and
 // places it. Only the model weights are downloaded, once.
@@ -7,7 +9,7 @@ import type { Quality } from "./tts.worker";
 
 export type { Quality };
 
-let worker: Worker | null = null;
+const ttsWorker = modelWorker("model_kokoro", () => new Worker(new URL("./tts.worker.ts", import.meta.url), { type: "module" }));
 let nextId = 1;
 
 export interface Spoken {
@@ -28,14 +30,6 @@ export async function speak(
   signal?: AbortSignal,
   quality: Quality = "best",
 ): Promise<Spoken> {
-  worker ??= new Worker(new URL("./tts.worker.ts", import.meta.url), { type: "module" });
-  const w = worker;
-  try {
-    return await workerRequest(w, { id: nextId++, type: "speak", text, voice, speed, quality }, { onDownload, signal });
-  } catch (e) {
-    // A failed load or a canceled generation cannot keep a reusable worker.
-    w.terminate();
-    if (worker === w) worker = null;
-    throw e;
-  }
+  return ttsWorker.run(quality, (quality === "best" ? 512 : 128) * MiB, (worker, active) =>
+    workerRequest(worker, { id: nextId++, type: "speak", text, voice, speed, quality }, { onDownload, signal: active }), signal);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blurPlan, blurSigma, BLUR_MAX, simulate1d, usesPyramid } from "./blur";
+import { blurPlan, blurSigma, BLUR_MAX, glowSigma, simulate1d, usesGlowPyramid, usesPyramid } from "./blur";
 
 /** An impulse at `at` in a row of n, blurred; its spread as a sigma. */
 function spread(sigma: number, at = 2048.3, n = 4096) {
@@ -22,6 +22,23 @@ function spread(sigma: number, at = 2048.3, n = 4096) {
 }
 
 describe("blurPlan", () => {
+  it("spreads a tiny highlight without separate peaks at glow radius 48", () => {
+    const row = new Float64Array(513);
+    row[256] = 1;
+    // Simulate the selected GPU path; the old seven-tap path had copies
+    // at every 16 pixels, with completely dark gaps between them.
+    const radius = 48;
+    const result = usesGlowPyramid(radius) ? simulate1d(row, glowSigma(radius)) : row.map((_, x) => {
+      let sum = 0;
+      for (let i = -3; i <= 3; i++) sum += row[x + i * radius / 3] ?? 0;
+      return sum / 7;
+    });
+    for (let x = 258; x < 304; x++) {
+      expect(result[x]).toBeGreaterThan(0);
+      expect(result[x]).toBeLessThanOrEqual(result[x - 1] + 1e-9);
+    }
+    expect(usesGlowPyramid(18)).toBe(false);
+  });
   it("halves until the Gaussian is 3 to 6 texels wide, taps under a texel apart", () => {
     expect(blurPlan(3).levels).toBe(0);
     expect(blurPlan(5.9).levels).toBe(0);

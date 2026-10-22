@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 167 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 192 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -21,6 +21,7 @@ You are editing a video in the user's video editor (OpenFrame); every edit shows
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they share once, in added_clips_common or changed_clips_common (or per track, in *_clips_common_by_track), markers that moved with their clip are counted in moved_markers, and quiet: true on batch or any command it takes answers the ids alone; describe_project has the whole timeline, and its fields option only the parts asked for.
 The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
+Long tools answer their result or a running job_id within 45 s (wait: 0 returns immediately). Poll job_status with job_id until done, then read result; cancel_job stops it. Text results stay up to 30 minutes within a 32 MiB budget; delivered image/audio payloads are released; export_status also follows the latest export.
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
@@ -29,7 +30,7 @@ To make a video:
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
-8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (an MP3 and its measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
+8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (MP3 with M4A or WAV fallback, its format and measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
 9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video.
 Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
@@ -40,19 +41,20 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 
 ## Contents
 
-- **Start here**: `help`, `describe_project`, `list_catalog`
-- **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `set_project`
-- **Media**: `import_media`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
-- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
+- **Start here**: `help`, `describe_project`, `find_clips`, `list_catalog`
+- **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `import_timeline`, `export_timeline`, `set_project`
+- **Clips**: `find_highlights`, `add_highlight_markers`, `apply_stream_layout`, `create_clips`, `export_projects`
+- **Media**: `import_media`, `create_proxies`, `delete_proxies`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
+- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `extend_edit`, `trim_edits`, `edit_from_source`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `move_motion_point`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `apply_layout`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
 - **Graphics and compositing**: `add_shape`, `set_shape`, `add_callout`, `set_anchor`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
-- **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
+- **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `auto_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
-- **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, `set_colorize`
-- **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `set_crossfade`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
-- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`
+- **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `apply_default_transitions`, `match_color`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, `set_colorize`
+- **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_pitch`, `apply_voice_preset`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `add_audio_insert`, `update_audio_insert`, `move_audio_insert`, `remove_audio_insert`, `set_dynamics`, `set_channel_fill`, `set_crossfade`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
+- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`, `job_status`, `cancel_job`
 
 ## Start here
 
@@ -64,7 +66,7 @@ The guide to these tools. topic: overview (the tools by step; start here), ad, e
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `topic` | string |  | overview (default), design, ad, epic_edit, voiceover, social_short, catalog, params, or a tool's name |
+| `topic` | string |  | overview (default), design, stream_clips, ad, epic_edit, voiceover, social_short, catalog, params, or a tool's name |
 
 Example:
 
@@ -89,9 +91,28 @@ Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and 
 | `brand` | boolean |  | The brand kit (set_brand): given with the whole timeline, left out of a narrowed answer unless true; false leaves it out of the whole one |
 | `fields` | string[] |  | Each clip's id, type, start and end, and only these of its fields, e.g. ["text"] for captions as words and times, ["transform", "keyframes"] for where things sit |
 
+### find_clips
+
+Find clips by name, media name, text or kind, including inside compound clips. Answers compact rows sorted by start, total and shown. Nested times and stretch filters are local to that compound timeline; compound_clip_id names the containing clip instance. A point (start equals end) finds clips playing then; a stretch is end-exclusive.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `query` | string |  | Case-insensitive text in the clip name, media name, title/caption text or kind |
+| `kind` | "video" \| "audio" \| "text" \| "caption" \| "image" \| "color" \| "adjustment" \| "compound" |  | Only this kind; text means titles, caption means captions |
+| `track_id` | string |  | Only clips on this track |
+| `start` | number |  | Clips still playing after this second (local time inside compounds) (0..) |
+| `end` | number |  | Clips starting before this second (same as start finds a point) (0..) |
+| `limit` | integer |  | Maximum rows returned (default 50) (1..1000) |
+
+Example:
+
+```json
+{"name":"find_clips","arguments":{"query":"Sale","kind":"text","limit":10}}
+```
+
 ### list_catalog
 
-Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, ambience, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.
+Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, voice_presets, ambience, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -167,6 +188,23 @@ Copy the project JSON and its local media (proxies, LUTs and cutouts too) into a
 |---|---|---|---|
 | `folder` | string |  | Absolute folder the collected project's new folder goes in, created if missing (desktop only); default: ask in the native dialog |
 
+### import_timeline
+
+Import an OpenTimelineIO (.otio) or FCPXML (.fcpxml/.xml) timeline as a new project, preserving the open project. Desktop resolves media paths beside the timeline; missing media stays as relinkable placeholders. Answers what was imported and warnings for unsupported items. The web picker accepts a file and resolves HTTP(S) media URLs only.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `file` | string |  | Absolute desktop path to the timeline file; omit to choose a file in the desktop or web picker |
+
+### export_timeline
+
+Save the timeline as OpenTimelineIO, FCPXML 1.10 or CMX 3600 EDL through the platform save path. Desktop writes into folder (or its usual exports folder), with numbered names when taken. Web uses a save dialog or download. EDL writes the main video track plus one file per audio track. Answers file paths and format limitations; does not copy media.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `format` | "otio" \| "fcpxml" \| "edl" | yes | Timeline interchange format |
+| `folder` | string |  | Absolute destination folder, created if missing (desktop only); omit for the usual exports folder |
+
 ### set_project
 
 Change project settings: name, canvas size (pixels), frame rate, background color, master volume.
@@ -186,25 +224,180 @@ Example:
 {"name":"set_project","arguments":{"width":1080,"height":1920,"fps":"30"}}
 ```
 
+## Clips
+
+Find the best moments in a long stream, then turn them into finished clip projects and export the batch.
+
+### find_highlights
+
+Rank exciting moments in a long VOD using local audio excitement and speech, optional chat replay, scene activity and given viewer-clip times. Results are SOURCE seconds, with score 0-1, numeric reasons, signals used and elapsed_seconds. Read-only unless markers is true (one undoable edit). Only candidate windows are transcribed when requested; keywords then refine ranking and quotes. Defaults: count 10, length 15-60 s, lead-in 4 s, lead-out 3 s, minimum peak gap 20 s. Audio uses a surrounding 3-minute median, 3 s short-term and 400 ms momentary BS.1770 loudness; vocal excitement is heuristic, not laughter recognition. Audio is streamed at 16 kHz and compact features cached per asset. Preview candidates with preview_media before making clips.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string |  | Imported source asset id; give exactly one asset_id or clip_id |
+| `clip_id` | string |  | Timeline video or audio clip; rank inside its source range. Asset requests can infer a covering timeline clip for markers |
+| `count` | integer |  | Maximum candidates to return (default 10); weak moments are omitted (1..100) |
+| `min_length` | number |  | Minimum window seconds (default 15); must not exceed max_length (1..300) |
+| `max_length` | number |  | Maximum window seconds (default 60) (1..300) |
+| `lead_in` | number |  | Seconds before the build-up (default 4), adjusted toward speech pauses (0..60) |
+| `lead_out` | number |  | Seconds after the payoff (default 3), adjusted toward speech pauses (0..60) |
+| `min_gap` | number |  | Minimum seconds between highlight peaks (default max of 20 and min_length) (1..600) |
+| `chat_file` | string |  | Chat replay absolute path on desktop; URL on web. Twitch/TwitchDownloader JSON, chat-downloader JSON/JSONL or timestamped text; at most 32 MiB |
+| `times` | number[] |  | Viewer clips or streamer markers in source seconds; strong moment hints |
+| `keywords` | string[] |  | Phrases such as no way or clip that; scored in candidate transcripts when transcribe is true |
+| `transcribe` | boolean |  | Hear candidate windows plus 5 s margin with local Whisper, snap sentences, add snippet/title and keyword scores (default false) |
+| `scenes` | true \| false \| "auto" |  | Sample 96 px frames every 1 s, or every 4 s past 20 minutes, coarse to fine over the whole file; at most 75 s spent sampling. scene_sampling reports interval, samples, covered_seconds (seconds' worth at the interval), even_interval_seconds (the spacing reached across the whole file) and elapsed time. auto enables video up to 2 hours |
+| `weights` | { audio, speech, chat, scenes, times, keywords } |  | Relative signal weights; only present signals contribute, score clamped to 0-1 |
+| `weights.audio` | number |  | Audio excitement weight (default 0.5) (0..10) |
+| `weights.speech` | number |  | Voice activity preference (default 0.1) (0..10) |
+| `weights.chat` | number |  | Chat rate spikes and emotes/clip mentions (default 0.25) (0..10) |
+| `weights.scenes` | number |  | Scene changes per minute (default 0.05) (0..10) |
+| `weights.times` | number |  | Given viewer-clip hints (default 0.8) (0..10) |
+| `weights.keywords` | number |  | Candidate transcript keyword bonus (default 0.3) (0..1) |
+| `markers` | boolean |  | Add Highlight N range markers following clip_id (or a covering clip of asset_id), replacing its earlier highlight markers as one undo step (default false) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
+
+Example:
+
+```json
+{"name":"find_highlights","arguments":{"asset_id":"a_vod","count":10,"transcribe":false,"scenes":"auto"}}
+```
+
+### add_highlight_markers
+
+Add reviewed highlight ranges in SOURCE seconds as Highlight N range markers following a timeline clip. Replaces that clip's previous Highlight N markers, in one undo step. Ranges must be entirely inside the clip.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Source video or audio clip on the timeline |
+| `ranges` | { start, end }[] | yes | Ranked highlight windows in source seconds |
+| `ranges[].start` | number | yes | Source start in seconds (0..) |
+| `ranges[].end` | number | yes | Source end in seconds (0..) |
+
+Example:
+
+```json
+{"name":"add_highlight_markers","arguments":{"clip_id":"c_vod","ranges":[{"start":120,"end":150}]}}
+```
+
+### apply_stream_layout
+
+Frame one VOD as ordinary grouped facecam and gameplay bands, with sound on gameplay alone. Omit facecam for a full-height gameplay crop. Changes a non-tall canvas to 1080x1920 and reports it. Regions are fractions of the source picture. The Stream layout group moves, trims and splits together; ungroup to edit timing separately.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video clip of the VOD |
+| `facecam` | { x, y, w, h } |  | Source region in fractions; x/y its top-left corner, positive w/h inside the picture |
+| `facecam.x` | number | yes | Left edge as a fraction of source width (0..1) |
+| `facecam.y` | number | yes | Top edge as a fraction of source height (0..1) |
+| `facecam.w` | number | yes | Fraction of source width (0.0001..1) |
+| `facecam.h` | number | yes | Fraction of source height (0.0001..1) |
+| `gameplay` | { x, y, w, h } |  | Gameplay source region; default the full source picture |
+| `gameplay.x` | number | yes | Left edge as a fraction of source width (0..1) |
+| `gameplay.y` | number | yes | Top edge as a fraction of source height (0..1) |
+| `gameplay.w` | number | yes | Fraction of source width (0.0001..1) |
+| `gameplay.h` | number | yes | Fraction of source height (0.0001..1) |
+| `split` | number |  | Facecam share of the height excluding the gap; default 0.35 (0.1..0.9) |
+| `facecam_fit` | "fill" \| "fit" |  | Facecam fill (default) crops to its band; fit shows the whole region |
+| `gap` | number |  | Pixels between the bands; default 0 (0..1000) |
+| `border` | "none" \| { color, width } |  | Facecam band border, or none (default) |
+| `border.color` | string | yes | CSS border color |
+| `border.width` | number | yes | Border width in canvas pixels (0..100) |
+| `order` | "facecam_top" \| "gameplay_top" |  | Band order; default facecam_top |
+
+### create_clips
+
+Make and save one edited project per source moment, sharing the VOD and its playback proxy. Defaults: vertical stream framing, two-word pop captions, title hook for 2.5 seconds and -14 LUFS dialog. Give credit for an opening credit and appended 2-second Follow card. No facecam fills the canvas with gameplay. Source start/end are seconds; ranked find_highlights moments can be passed directly, including peak. The original stays open and unchanged. Hooks clear the facecam or detected subject; text stays inside the apps' safe column with opaque boxes. Captions default to two words, merging when reading time needs it. Runs the measured social_short check before saving and answers IDs, names, total lengths (end card included), caption counts, notes and remaining findings. End cards extend when their words need more reading time. Up to 100 moments; long batches return a job to poll.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string | yes | Imported video VOD asset ID |
+| `clips` | { start, end, title, name, peak }[] | yes | Moments in source seconds, in desired project order |
+| `clips[].start` | number | yes | Source start seconds (0..) |
+| `clips[].end` | number | yes | Source end seconds, after start (0..) |
+| `clips[].title` | string |  | Hook words and default project name |
+| `clips[].name` | string |  | Project name override |
+| `clips[].peak` | number |  | Optional find_highlights peak; accepted unchanged (0..) |
+| `template` | { layout, facecam, gameplay, split, captions, hook, credit, loudness, lead_in, lead_out } |  | Editing template shared by every moment; defaults add framing, captions and a hook. Credit the streamer when publishing. |
+| `template.layout` | "stream" \| "full" \| "vertical_fill" |  | stream (default): facecam over gameplay; full: 16:9; vertical_fill: whole source cropped to 9:16 |
+| `template.facecam` | { x, y, w, h } |  | Source region in fractions; x/y its top-left corner, positive w/h inside the picture |
+| `template.facecam.x` | number | yes | Left edge as a fraction of source width (0..1) |
+| `template.facecam.y` | number | yes | Top edge as a fraction of source height (0..1) |
+| `template.facecam.w` | number | yes | Fraction of source width (0.0001..1) |
+| `template.facecam.h` | number | yes | Fraction of source height (0.0001..1) |
+| `template.gameplay` | { x, y, w, h } |  | Gameplay source region; default full source |
+| `template.gameplay.x` | number | yes | Left edge as a fraction of source width (0..1) |
+| `template.gameplay.y` | number | yes | Top edge as a fraction of source height (0..1) |
+| `template.gameplay.w` | number | yes | Fraction of source width (0.0001..1) |
+| `template.gameplay.h` | number | yes | Fraction of source height (0.0001..1) |
+| `template.split` | number |  | Facecam share of height; default 0.35 (0.1..0.9) |
+| `template.captions` | false \| { words, look, y } |  | Default two words at a time in pop look; false disables captions |
+| `template.captions.words` | integer |  | Words per caption; default 2 (1..3) |
+| `template.captions.look` | "classic" \| "yellow" \| "boxed" \| "pop" \| "neon" \| "minimal" |  | Caption look; default pop |
+| `template.captions.y` | number |  | Caption vertical offset from canvas center; default the look's safe position (-0.5..0.5) |
+| `template.hook` | boolean |  | Default true: title as a brand headline for the opening 2.5 seconds |
+| `template.credit` | { name, handle, platform } |  | When given, a small opening credit for 3 seconds and an appended 2-second Follow end card |
+| `template.credit.name` | string | yes | Streamer display name |
+| `template.credit.handle` | string |  | Streamer handle |
+| `template.credit.platform` | "twitch" \| "youtube" \| "kick" | yes | Where to follow the streamer |
+| `template.loudness` | number |  | Dialog normalization target LUFS; default -14 (-40..-5) |
+| `template.lead_in` | number |  | Extra source seconds before each moment, clamped to source start; default 0 (0..60) |
+| `template.lead_out` | number |  | Extra source seconds after each moment, clamped to source end; default 0 (0..60) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
+
+### export_projects
+
+Export saved projects sequentially, plus optional other shapes through the versions path. Default IDs are the projects create_clips made in this session. Default loudness -14 LUFS. Reports each file's path, seconds, measured loudness and quick social_short check findings (including errors). The open project and undo stay unchanged. Long batches answer state running; poll job_status or export_status. Desktop writes into folder or Videos; the web uses one save dialog per file.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `project_ids` | string[] |  | Saved project IDs in order; default all projects create_clips made in this session |
+| `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
+| `loudness` | number |  | Integrated LUFS target; default -14 (-40..-5) |
+| `resolution` | "480p" \| "720p" \| "1080p" \| "2k" \| "4k" |  | Output short side; default project resolution |
+| `ratios` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original"[] |  | Additional shapes; the original is always exported |
+| `replace` | boolean |  | true: replace a file of the same name in folder (folder is required) when the export finishes, instead of taking a numbered name; nothing outside folder is touched |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
+
 ## Media
 
 Bring files in and keep the library tidy.
 
 ### import_media
 
-Import media files into the project by absolute path (desktop) or URL. What a file is comes from the file (its path's or address's extension, else its contents), never from name, which is only the label the library shows. Answers one entry per file, in the order given: the new asset (id, name, kind, duration, width, height) for add_media_clip, a .cube LUT as {lut_id, name, kind: lut} for apply_lut, or {src, name, error} saying why that file failed; when every file fails, the call is an error naming each reason.
+Import media files into the project by absolute path (desktop) or URL. What a file is comes from the file (its path's or address's extension, else its contents), never from name, which is only the label the library shows. Answers one entry per file, in the order given: the new asset (id, name, kind, duration, width, height) for add_media_clip; audio also answers role (dialog, music, or null) and audio_role with the first-minute energy analysis and reason, leaving uncertain audio unset, a .cube LUT as {lut_id, name, kind: lut} for apply_lut, or {src, name, error} saying why that file failed; when every file fails, the call is an error naming each reason.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `files` | { src, name }[] | yes | Files to import |
 | `files[].src` | string | yes | Absolute path or URL |
 | `files[].name` | string |  | The name the library shows (default the file's name); any text, it does not decide the format |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
 ```json
 {"name":"import_media","arguments":{"files":[{"src":"C:/Footage/product.mp4","name":"Product hero"},{"src":"C:/Music/track.mp3"}]}}
 ```
+
+### create_proxies
+
+Desktop only: make smaller playback copies, one asset at a time, as one undoable metadata edit. Agents rarely need proxies: exports, review stills and analysis always use the originals or full-resolution decode fallback. Answers each asset's proxy state, size and seconds taken. Unavailable in the browser build.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_ids` | string[] | yes | Video asset IDs to make playback proxies for |
+| `size` | "half" \| "quarter" \| "720p" |  | Half or quarter of each dimension, or 720 pixels on the short side; default half |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
+
+### delete_proxies
+
+Desktop only: remove playback proxy references and their cached files. Agents rarely need this; export never uses playback proxies. Undo restores references, which become missing until recreated. Answers each asset's state, size and seconds taken. Unavailable in the browser build.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_ids` | string[] | yes | Video asset IDs whose playback proxies to delete |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### remove_media
 
@@ -269,13 +462,14 @@ Place, cut, move and arrange clips. batch runs many edits as one undo step.
 
 ### add_media_clip
 
-Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.
+Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Default fit shows the whole source with transparent bands; use fit fill for cutaways that cover an interview, or blur for a covering blurred background.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `asset_id` | string | yes | Asset id, from import_media or describe_project |
 | `start` | number | yes | Timeline position in seconds (0..) |
 | `duration` | number |  | Length in seconds; defaults to the whole source (one loop for animated images, 5 s for stills) (0.001..) |
+| `fit` | "fit" \| "fill" \| "blur" |  | Picture fitting: fit (default) shows the whole image, fill covers the canvas by cropping edges, blur fits over a covering blurred copy |
 | `in` | number |  | Seconds into the source where the clip begins (0..) |
 | `track_id` | string |  | Track id |
 | `mode` | "overwrite" \| "insert" |  | overwrite replaces what is under the clip; insert pushes later clips right |
@@ -387,6 +581,64 @@ Move a clip's start or end edge to a time. Limited by the source media and neigh
 | `edge` | "start" \| "end" | yes | Which edge |
 | `to` | number | yes | Seconds (0..) |
 | `ripple` | boolean |  | Shift later clips |
+
+### extend_edit
+
+Move selected start/end edges to timeline seconds. Both touching sides roll; single sides trim, leaving gaps unless ripple is true. Answers every landed frame and any source, neighbor, length or locked-track limit.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `edits` | { clip_id, edge }[] | yes | Edit points; select both sides of a touching cut for a roll |
+| `edits[].clip_id` | string | yes | Clip id |
+| `edits[].edge` | "start" \| "end" | yes | Selected edge |
+| `to` | number | yes | Timeline seconds to extend to (0..) |
+| `ripple` | boolean |  | Shift later clips for single-edge trims; default false |
+
+Example:
+
+```json
+{"name":"extend_edit","arguments":{"edits":[{"clip_id":"c_123","edge":"end"}],"to":4.5}}
+```
+
+### trim_edits
+
+Nudge selected edit edges together; touching opposite sides roll. by is integer frames by default; unit seconds converts by to timeline frames. Answers each landed edge and stop reason.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `edits` | { clip_id, edge }[] | yes | Edit points; select both sides of a touching cut for a roll |
+| `edits[].clip_id` | string | yes | Clip id |
+| `edits[].edge` | "start" \| "end" | yes | Selected edge |
+| `by` | number | yes | Signed movement in frames (default) or seconds with unit seconds |
+| `unit` | "frames" \| "seconds" |  | Unit of by; default frames |
+| `ripple` | boolean |  | Shift later clips for single-edge trims; default false |
+
+Example:
+
+```json
+{"name":"trim_edits","arguments":{"edits":[{"clip_id":"c_123","edge":"end"}],"by":-1,"unit":"frames"}}
+```
+
+### edit_from_source
+
+Insert or overwrite source media using three/four-point marks (exclusive Outs). Source In/Out plus timeline In places that source range. A timeline range plus source In reads forward, or plus source Out backtimes. Four different-length marks require fit fill (constant speed) or trim (speed 1). Insufficient media rejects the whole edit. Returns sourceEdit with the made clip id and speed.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string | yes | Source asset id |
+| `source_in` | number |  | Source In seconds (0..) |
+| `source_out` | number |  | Exclusive source Out seconds (0..) |
+| `timeline_in` | number |  | Timeline In seconds; defaults to the playhead when neither timeline mark is given (0..) |
+| `timeline_out` | number |  | Exclusive timeline Out seconds (0..) |
+| `mode` | "insert" \| "overwrite" | yes | Placement operation |
+| `fit` | "fill" \| "trim" |  | Resolve four-point duration mismatch |
+| `track_id` | string |  | Destination track id; default main video or first unlocked audio track |
+
+Example:
+
+```json
+{"name":"edit_from_source","arguments":{"asset_id":"a_123","source_in":2,"source_out":8,"timeline_in":10,"timeline_out":13,"mode":"overwrite","fit":"fill"}}
+```
 
 ### roll_edit
 
@@ -503,6 +755,7 @@ Find every shot change in a video clip and split there (or drop markers). Return
 | `clip_id` | string | yes | Video or audio clip id |
 | `sensitivity` | number |  | 0..1, default 0.5 (0..1) |
 | `output` | "split" \| "markers" |  | Default split |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### group_clips
 
@@ -642,7 +895,7 @@ Run several commands in order as one edit (one undo step), all or nothing: set_a
 | `commands` | { command, args }[] | yes | The steps, in order |
 | `commands[].command` | string | yes | Command name, e.g. set_animation |
 | `commands[].args` | object |  | That command's arguments |
-| `quiet` | boolean |  | Answer only the ids of the clips added, changed and removed, with any notes (every command a batch takes accepts it on its own too) |
+| `quiet` | boolean |  | Answer only the ids of the clips added, changed and removed, with any notes; additions follow step order and added_by_step maps adding step numbers to their ids (every command a batch takes accepts it on its own too) |
 
 Example:
 
@@ -705,6 +958,7 @@ Compose and render an original, royalty-free score on this computer (no samples,
 | `place` | "mix" \| "stems" \| "none" |  | mix (default): the mix on an audio track at start; stems: the four stems on four grouped tracks; none: import only |
 | `markers` | "beats" \| "bars" \| "phrases" \| "sections" \| "drop"[] |  | Markers to add, as analyze_music names them: beats (Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (Drop) |
 | `name` | string |  | The media's name (default style, tempo, key and seed) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -759,6 +1013,7 @@ Read a music clip's structure on this computer, as Final Cut's beat grid shows i
 | `cues[].at` | number | yes | Source seconds the part starts (0..) |
 | `cues[].label` | "intro" \| "verse" \| "build" \| "drop" \| "breakdown" \| "outro" | yes | What the part is |
 | `detail` | "summary" \| "full" |  | summary (default): the grid, bars, phrases, parts and drops with counts; full: also every beat, hit and beat's energy |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -808,7 +1063,7 @@ Example:
 
 ### cut_to_beats
 
-Cut a montage to the music in one call: lay shots end to end on the main track so every cut lands on the beat grid. The grid is the Beat markers (mark_beats or analyze_music), Bar or Phrase markers (grid bars or phrases, from analyze_music with markers ["bars"] or ["phrases"]), or beats: your own timeline seconds. Each shot lasts `every` grid steps (default 2 beats, or 1 bar or phrase), or the steps in `pattern` in turn ([4, 4, 2, 2, 1, 1] speeds up), or its own `beats`. The first shot starts at `start`; when no grid point is there, the first one after it counts as beat one, so an intro stays inside the first shot. A shot reads its media from `in` (default: where the last shot of the same file ended, so one long clip gives many different shots), slid back inside the file if it would run past the end; media too short for its slot ends on an earlier grid point. Stops when the shots or the grid run out, or at `end`; clips already there are overwritten. Video shots are muted (mute false keeps their sound). Example: {"media": [{"asset_id": "a_1"}, {"asset_id": "a_2", "in": 3}, {"asset_id": "a_1", "beats": 4}], "pattern": [2, 2, 1, 1]}.
+Cut a montage to the music in one call: lay shots end to end on the main track so every cut lands on the beat grid. The grid is the Beat markers (mark_beats or analyze_music), Bar or Phrase markers (grid bars or phrases, from analyze_music with markers ["bars"] or ["phrases"]), or beats: your own timeline seconds. Each shot lasts `every` grid steps (default 2 beats, or 1 bar or phrase), or the steps in `pattern` in turn ([4, 4, 2, 2, 1, 1] speeds up), or its own `beats`. The first shot starts at `start`; when no grid point is there, the first one after it counts as beat one, so an intro stays inside the first shot. A shot reads its media from `in` (default: where the last shot of the same file ended, so one long clip gives many different shots), slid back inside the file if it would run past the end; media too short for its slot ends on an earlier grid point. Stops when the shots or the grid run out, or at `end` (an explicit end is also the final boundary, so the last shot can cover the score's ring-out); clips already there are overwritten. Video shots are muted (mute false keeps their sound). Example: {"media": [{"asset_id": "a_1"}, {"asset_id": "a_2", "in": 3}, {"asset_id": "a_1", "beats": 4}], "pattern": [2, 2, 1, 1]}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -822,7 +1077,7 @@ Cut a montage to the music in one call: lay shots end to end on the main track s
 | `every` | integer |  | Grid steps per shot (default 2 for beats, 1 for bars or phrases) (1..64) |
 | `pattern` | integer[] |  | Grid steps per shot, cycling: [4, 4, 2, 2, 1, 1] |
 | `start` | number |  | Timeline seconds the first shot starts (default 0) (0..) |
-| `end` | number |  | Timeline seconds to stop by: no cut after it (0..) |
+| `end` | number |  | Timeline seconds to stop by; also the final boundary when the beat grid ends before the score's ring-out (0..) |
 | `track_id` | string |  | A video track instead of the main track |
 | `mute` | boolean |  | Mute the shots' own sound (default true: the music carries a montage) |
 
@@ -884,6 +1139,7 @@ Mark a music clip's beats (every Nth) with Beat markers, from the whole song's r
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
 | `every` | 1 \| 2 \| 4 |  | Marker on every Nth beat (default 1) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -900,6 +1156,8 @@ Drop a marker at a time (chapters, beats, notes).
 | `at` | number | yes | Seconds (0..) |
 | `label` | string |  | Text |
 | `color` | string |  | CSS color |
+| `duration` | number |  | Range duration in seconds; zero is a point (0..) |
+| `chapter` | boolean |  | Include this marker in chapter-enabled MP4 exports |
 
 ### add_markers
 
@@ -921,6 +1179,8 @@ Edit a timeline marker's position, label or color without moving clips. Times ar
 | `at` | number |  | Timeline seconds (0..) |
 | `label` | string |  | Text |
 | `color` | string |  | CSS color |
+| `duration` | number |  | Range duration in seconds; zero restores a point (0..) |
+| `chapter` | boolean |  | Include this marker in chapter-enabled MP4 exports |
 | `detach` | boolean |  | Stop following its clip, staying where it is |
 
 ### delete_markers
@@ -1136,7 +1396,7 @@ Mirror pictures: horizontal flips left-right, vertical flips upside down. A dire
 
 ### set_crop
 
-Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions of the source trimmed from each edge (0 keeps the edge; each pair must leave at least 5% of the picture); edges left out keep their value. Or give ratio instead for the largest centered crop of that shape on each clip's source (original: uncropped). The crop is cut from the source before flips, scale and rotation, and the part kept stays where it was.
+Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions of the source trimmed from each edge (0 keeps the edge; each pair must leave at least 5% of the picture); edges left out keep their value. Or give ratio instead for the largest centered crop of that shape on each clip's source (original: uncropped). feather softens inward in pixels at a 1080-tall render (0 is hard). The crop is cut from the source before flips, scale and rotation, and the part kept stays where it was.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1145,16 +1405,17 @@ Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions 
 | `top` | number |  | Fraction trimmed from the top (0..0.95) |
 | `right` | number |  | Fraction trimmed from the right (0..0.95) |
 | `bottom` | number |  | Fraction trimmed from the bottom (0..0.95) |
+| `feather` | number |  | Inward edge softness, pixels at a 1080-tall render (0..1080) |
 | `ratio` | "original" \| "16:9" \| "9:16" \| "1:1" \| "4:3" \| "3:4" \| "4:5" \| "21:9" |  | Crop to this shape, centered |
 
 ### set_mask
 
-CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs. With at (timeline seconds), the values given are keyed there: one with no keys yet first gets a key at the clip's start holding what it was, so two calls (the same values at the moment it leaves, the new ones where it lands) move the mask; on a mask this call makes, at is not used (the answer says so). A spotlight that follows a screen recording's zooms is add_callout.
+Masks on pictures and adjustment layers (canvas fractions on an adjustment): shape linear (keeps above a line), mirror (a band), circle, rectangle, heart, star or path; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square); a path starts at unit width and height. A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs. With at (timeline seconds), the values given are keyed there: one with no keys yet first gets a key at the clip's start holding what it was, so two calls (the same values at the moment it leaves, the new ones where it lands) move the mask; on a mask this call makes, at is not used (the answer says so). For path, points are anchors in the mask's own frame as layer fractions; width/height multiply them before rotation and position. in/out are two-number bezier handle offsets; closed defaults true (false leaves an unfilled draft). Points do not animate; at keys only the mask transform. A spotlight that follows a screen recording's zooms is add_callout.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `clip_ids` | string[] | yes | Visual clips |
-| `shape` | "none" \| "linear" \| "mirror" \| "circle" \| "rectangle" \| "heart" \| "star" |  | Mask shape |
+| `clip_ids` | string[] | yes | Visual or adjustment clips |
+| `shape` | "none" \| "linear" \| "mirror" \| "circle" \| "rectangle" \| "heart" \| "star" \| "path" |  | Mask shape |
 | `x` | number |  | Center offset, fraction of the picture's width (-1..1) |
 | `y` | number |  | Center offset, fraction of the picture's height (-1..1) |
 | `width` | number |  | Fraction of the picture's width (0.01..2) |
@@ -1162,6 +1423,12 @@ CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), c
 | `rotation` | number |  | Degrees, clockwise (-360..360) |
 | `feather` | number |  | Edge softness (0..1) |
 | `radius` | number |  | Rectangle corner roundness (0..1) |
+| `points` | { x, y, in, out }[] |  | Path anchors (maximum 256), local layer fractions; absent handles are straight corners |
+| `points[].x` | number | yes | Anchor X, fraction of the layer width (-4..4) |
+| `points[].y` | number | yes | Anchor Y, fraction of the layer height (-4..4) |
+| `points[].in` | number[] |  | Incoming bezier handle offset [x,y] |
+| `points[].out` | number[] |  | Outgoing bezier handle offset [x,y] |
+| `closed` | boolean |  | Close the path (default true); false keeps an unfilled draft |
 | `invert` | boolean |  | Keep the outside instead |
 | `aspect` | number |  | The mask's width over its height in pixels (1: a round circle, a square); its height follows from width, or its width from a height given alone (0.05..20) |
 | `at` | number |  | Timeline seconds, for animated values |
@@ -1227,6 +1494,7 @@ Remove the background of a video clip of a person or object (CapCut's Remove BG)
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video clip id |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### set_animation
 
@@ -1280,6 +1548,7 @@ Pin a title, sticker or picture to a moving subject in the video under it (CapCu
 | `box.w` | number | yes | Width, a fraction of the picture's width |
 | `box.h` | number | yes | Height, a fraction of its height |
 | `video_clip_id` | string |  | The video to follow; default the one under the layer (main track first) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### auto_reframe
 
@@ -1294,6 +1563,7 @@ Reframe a wide video into another shape on this computer (CapCut's and Premiere'
 | `box.y` | number | yes | Top edge, a fraction of its height |
 | `box.w` | number | yes | Width, a fraction of the picture's width |
 | `box.h` | number | yes | Height, a fraction of its height |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -1309,6 +1579,7 @@ Smooth a shaky video clip on this computer (CapCut's Stabilize): measures the ca
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
 | `level` | "least-crop" \| "recommended" \| "most-stable" \| "off" |  | How strongly to smooth |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ## Graphics and compositing
 
@@ -1832,6 +2103,25 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 | `y` | number |  | Vertical offset from center as a canvas fraction; default 0.36 near the bottom, or 0.05 on a tall canvas, above the apps' captions and buttons |
 | `replace` | boolean |  | Remove existing captions first |
 
+### auto_captions
+
+Caption what the people on the timeline say, using local Whisper and the shared source transcript. Cut clips map their words onto the cut timeline. Spoken voiceovers keep their script spelling. One undo step; refuses when no project or no speech is present. Hears only played source windows plus 3 s context per edge. Answers count, track_id, first and last captions, seconds covered, words heard, audio_seconds actually heard, hearing elapsed_seconds and model (default base.en); detail full includes every caption. Reversed and speed-curved speech is currently excluded; flatten it first.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `replace` | boolean |  | Remove existing captions first (default true) |
+| `words_per_caption` | integer |  | Words per caption, with spoken-word times for highlight; omitted makes whole readable lines (1..3) |
+| `start` | number |  | Start of the timeline stretch in seconds (default 0) (0..) |
+| `end` | number |  | End of the timeline stretch in seconds (default timeline end) (0..) |
+| `style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text); its fields are add_text's style (help add_text) |
+| `y` | number |  | Vertical offset from canvas center, as add_captions takes it |
+| `look` | "classic" \| "yellow" \| "boxed" \| "pop" \| "neon" \| "minimal" |  | Caption look, as set_caption_look takes it; style and y override it |
+| `language` | string |  | Speech language (default en, English); choose a multilingual model for other languages |
+| `model` | "onnx-community/whisper-tiny.en_timestamped" \| "onnx-community/whisper-base.en_timestamped" \| "onnx-community/whisper-small.en_timestamped" \| "onnx-community/whisper-base_timestamped" \| "onnx-community/whisper-small_timestamped" |  | Whisper model offered by the Captions panel; default balanced English (base.en). Accurate English (small.en) is available for consequential word errors; review names and technical vocabulary |
+| `track_ids` | string[] |  | Only speech on these tracks; default audible tracks except music and effects roles |
+| `detail` | "summary" \| "full" |  | full answers every caption's text, start and end; default summary |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
+
 ### set_caption_look
 
 Restyle every caption at once (CapCut's caption templates, and its caption panel's position and size). look gives them one of the built-in looks: classic, yellow (bold yellow capitals), boxed, pop (capitals with the spoken word highlighted), neon or minimal, which sets the whole caption style and its height. y and x move every caption, size and maxWidth size and narrow them, and style sets any other field of their style (add_text's: color, highlight, font, stroke...), over the look when both are given. Words and timings stay. Example: {y: -0.2, size: 52, maxWidth: 0.6} puts a tall video's captions in its upper band, smaller and narrower.
@@ -1864,11 +2154,12 @@ Find and replace in every caption's text (CapCut's caption Find and replace), e.
 
 ### get_transcript
 
-Hear a video or audio clip's speech on this machine (Whisper) and return its words with source-second times. Delete words by passing their spans to cut_ranges (Premiere's text-based editing).
+Hear a video or audio clip's speech on this machine (Whisper) and return its words with source-second times. Hears only the clip's source window plus 3 s context per edge, merging cached windows. Reports audio_seconds actually heard (0 when cached), hearing elapsed_seconds and model (default base.en). Delete words by passing their spans to cut_ranges (Premiere's text-based editing).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ## Brand and ad elements
 
@@ -1913,7 +2204,7 @@ Restyle clips with the brand kit, keeping their words, timing and place. Titles:
 
 ### add_ad_element
 
-Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions) and clear of the captions showing then, animated in, its clips grouped on rows of their own above everything at that time and under the captions (no other clip shares them, so moving another track never reorders its parts). Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.
+Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions) and clear of the captions showing then, animated in, its clips grouped on rows of their own above everything at that time and under the captions (no other clip shares them, so moving another track never reorders its parts). Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo (or the brand name as a wordmark without a logo, unless logo none is asked), headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1938,12 +2229,13 @@ Example:
 
 ### text_behind_subject
 
-Put titles (or stickers) behind the person or product in a video or picture clip, the 'text behind the subject' look: the clip's background is removed on this computer (a video's matte as Remove background makes it; a picture is cut out once into a new picture; the first run downloads the model), and a copy showing only the subject goes on a new track right above the titles' track, silent and grouped with the original so they move together; an adjustment layer between the copy and the clip (a grade kept under the titles) would not reach the copy, so the copy takes its grade (look, sliders, LUT, effects) as its own. The answer says where the copy went (placed) and what grade it took (graded, note). Titles below the clip are lifted above it first. Works best when a large title overlaps the subject. One undoable edit; answers the copy's id (subjectClipId).
+Put titles (or stickers) behind the person or product in a video or picture clip, the 'text behind the subject' look: the clip's background is removed on this computer (a video's matte as Remove background makes it; a picture is cut out once into a new picture; the first run downloads the model), and a copy showing only the subject goes on a new track right above the titles' track, silent and grouped with the original so they move together; an adjustment layer between the copy and the clip (a grade kept under the titles) would not reach the copy, so the copy takes its grade (look, sliders, LUT, effects) as its own. The answer says where the copy went (placed) and what grade it took (graded, note). Titles below the clip are lifted above it first. Works best when a large title overlaps the subject. One undoable edit; answers the copy's id (subject_clip_id).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | The video or picture clip with the person or product |
 | `text_clip_ids` | string[] | yes | The titles (or stickers) to put behind the subject; they must play while the video does |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2026,6 +2318,36 @@ Example:
 {"name":"set_transition","arguments":{"clip_id":"c_123","type":"dissolve","duration":0.5}}
 ```
 
+### apply_default_transitions
+
+Apply default transitions to touching cuts after clip_ids (omit for every cut on main). Video defaults to the preferred type and duration (initially dissolve, 0.5 s); audio to the preferred crossfade length (initially 0.5 s). kind both handles each clip by its kind. Existing transitions stay unless replace is true; locked tracks and gaps are skipped. Durations shorten to each join's limits. One edit, with applied and skipped cuts and reasons.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] |  | Clips before the cuts; omitted means every cut on the main track |
+| `kind` | "video" \| "audio" \| "both" |  | Which cuts (default video) |
+| `type` | "dissolve" \| "dipBlack" \| "dipWhite" \| "wipeLeft" \| "wipeRight" \| "wipeUp" \| "wipeDown" \| "circleOpen" \| "clockWipe" \| "slideLeft" \| "slideRight" \| "pushLeft" \| "pushUp" \| "zoomIn" \| "zoomOut" \| "spin" \| "blur" \| "pixelate" \| "glitch" \| "flash" \| "whipLeft" \| "whipRight" \| "zoomPunch" \| "spinBlur" |  | Override the preferred video transition |
+| `duration` | number |  | Override the video/audio length in seconds; shortened to fit each join (0.05..) |
+| `replace` | boolean |  | Replace existing transitions or crossfades (default false) |
+
+Example:
+
+```json
+{"name":"apply_default_transitions","arguments":{"clip_ids":["c_1","c_2","c_3"],"kind":"video","type":"dissolve","duration":0.5}}
+```
+
+### match_color
+
+Match video or picture clips to a reference shot's rendered look. Samples five frames per clip, replaces the targets' look with editable RGB curves and saturation, preserves the master curve, and applies all targets in one undo step. Reports mean channel differences in levels before and after. Re-running samples targets without their look, so the match does not compound.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `reference_clip_id` | string | yes | Video or picture clip whose rendered look to match |
+| `clip_ids` | string[] | yes | One or more target video or picture clip IDs, excluding the reference |
+| `strength` | number |  | Mix the correction toward identity, 0..1 (default 1); zero leaves the project unchanged (0..1) |
+| `match_saturation` | boolean |  | Also match mean chroma using Basic saturation (default true) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
+
 ### set_filter
 
 Apply a color look (filter) to a visual or adjustment clip at an intensity 0..1. type 'none' removes it.
@@ -2049,6 +2371,7 @@ Correct a video or picture clip's exposure, white balance and levels from its fr
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video or image clip |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### set_hsl
 
@@ -2123,7 +2446,7 @@ Voice, music, effects and the mix.
 
 ### add_voiceover
 
-Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice (or, with caption_words 1-3, captions a few words at a time, each word timed to the voice for the spoken-word highlight: caption_clips per line), as one undo step with its speech files. Pace: each line lands on its words a second over its speech (first word to last; the reader's pauses at commas and sentence ends in, its pause marks out, so a beat written into a line never makes its words faster): read_as narration (2.3-2.8, the default), ad (2.6-3.1) or social (2.8-3.4), moved half a word down by pace slow (and then never read faster than speed 1) or up by fast, or words_per_second [lowest, highest], per call or per line, held as given whatever the pace, except that a band never rushes long words: one whose top would say the line faster than 5 syllables a second moves down until it does not (seven syllables in three words read 1.64-2.14, not 2.3-2.8), and pace_note says so; with no speed given, each line is read, measured and read again at the speed that lands it (up to three reads; the audio is never stretched). A speed given is kept as given. Direct each line: a voice of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph), pace slow or fast. Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. A word cannot be marked for emphasis (the voice model has no such control; *word* stars are dropped, with a note): write it last in its phrase, where English puts the main stress, or [pause 0.2] before it. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start, end, seconds, voice, speed, words_per_second (over its speech) and target_words_per_second, and clip ids: cut the footage to them, then review_voiceover to hear it back. Voices: af_heart, af_bella, af_nicole, bf_emma, am_michael, am_fenrir, am_puck, af_aoede, af_kore, af_sarah, bm_george, bm_fable, bf_isabella. The first use downloads the speech model (about 325 MB at quality best); a read takes about a second with WebGPU, several on a CPU.
+Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice (or, with caption_words 1-3, captions a few words at a time, each word timed to the voice for the spoken-word highlight: caption_clips per line), as one undo step with its speech files. Pace: each line lands on its words a second over its speech (first word to last; the reader's pauses at commas and sentence ends in, its pause marks out, so a beat written into a line never makes its words faster): read_as narration (2.3-2.8, the default), ad (2.6-3.1) or social (2.8-3.4), moved half a word down by pace slow (and then never read faster than speed 1) or up by fast, or words_per_second [lowest, highest], per call or per line, held as given whatever the pace, except that a band never rushes long words: one whose top would say the line faster than 5 syllables a second moves down until it does not (seven syllables in three words read 1.64-2.14, not 2.3-2.8), and pace_note says so; with no speed given, each line is read, measured and read again at the speed that lands it (up to three reads; the audio is never stretched). A speed given is kept as given. Direct each line: a voice of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph), pace slow or fast. Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. A word cannot be marked for emphasis (the voice model has no such control; *word* stars are dropped, with a note): write it last in its phrase, where English puts the main stress, or [pause 0.2] before it. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start and end (placed frame bounds), seconds (the speech file's length), voice, speed, words_per_second (over its speech) and target_words_per_second, and clip ids: cut the footage to them, then review_voiceover to hear it back. Voices: af_heart, af_bella, af_nicole, bf_emma, am_michael, am_fenrir, am_puck, af_aoede, af_kore, af_sarah, bm_george, bm_fable, bf_isabella. The first use downloads the speech model (about 325 MB at quality best); a read takes about a second with WebGPU, several on a CPU.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2152,6 +2475,7 @@ Narrate a script, directed: every line is read on this computer (Kokoro), whole,
 | `enhance` | boolean |  | Even out each voice with the Enhance voice compressor (default true; finish raw has none) |
 | `caption_style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The captions' look, as a title's style takes it; its fields are add_text's style (help add_text) |
 | `caption_y` | number |  | Captions' vertical offset from center, canvas fraction (default 0.36, or 0.05 on a tall canvas, above the apps' captions and buttons) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2161,7 +2485,7 @@ Example:
 
 ### review_voiceover
 
-Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: its pace (words and syllables a second over its speech, first word to last with its pause marks out, as it was read: pause_marks_out says how many seconds; and over its clip) against the words a second it was read to (narration 2.3-2.8 unless add_voiceover was given read_as or words_per_second; pace slow or fast moves a kind's band, never a words_per_second given; any band moves down for long words, as the speed was chosen, so its top says at most 5 syllables a second), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it in the line window (this line alone, its first word to its last; at least 8, 10-15 for a promo). Each line ends with a verdict: ok when nothing fails, otherwise what to fix, with fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or words_per_second, set_param volume, duck_under_speech min_line_lu, trim_clip). advice holds notes that do not fail the line: a pace within a tenth of its band, a speed already chosen that the voice could not bring nearer, short words drawn out. A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed, a word heard that is not in the script too (Whisper hears "you" in a breath): each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard; minor marks a short word a letter off, which passes. match is the share of words heard as written, a word heard that is not in the script counting against it, so it is under 1 whenever a difference is listed. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. The summary counts lines ok, to fix and with advice; gives the lines' words a second (lowest, median, highest), the script's words a second with the gaps between lines in (lower than the lines'), the lines' margins over the music and the loudness spread across lines. Lines short of their margin over a music track get one fix in summary.fixes: duck_under_speech on that track (track_id, every piece of the song as one bed), each line pointing at it. detail summary (the default) gives each line its verdict (ok, or to fix: the problems are in its fixes), fixes, advice, words a second against its band, loudness and margin over the music, and what was heard only where it differs from the script; detail full adds every measure (syllables, the clip window, silences, true peak, pitch). Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.
+Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: its pace (sign-offs of up to three words are not paced; otherwise words and syllables a second over its speech, first word to last with its pause marks out, as it was read: pause_marks_out says how many seconds; and over its clip) against the words a second it was read to (narration 2.3-2.8 unless add_voiceover was given read_as or words_per_second; pace slow or fast moves a kind's band, never a words_per_second given; any band moves down for long words, as the speed was chosen, so its top says at most 5 syllables a second), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it in the line window (this line alone, its first word to its last; at least 8, 10-15 for a promo). Each line ends with a verdict: ok when nothing fails, otherwise what to fix, with fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or words_per_second, set_param volume, duck_under_speech min_line_lu, trim_clip). advice holds notes that do not fail the line: a pace within a tenth of its band, a speed already chosen that the voice could not bring nearer, short words drawn out. A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed, a word heard that is not in the script too (Whisper hears "you" in a breath): each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard; minor marks a short word a letter off, which passes. match is the share of words heard as written, a word heard that is not in the script counting against it, so it is under 1 whenever a difference is listed. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. The summary counts lines ok, to fix and with advice; gives the lines' words a second (lowest, median, highest), the script's words a second with the gaps between lines in (lower than the lines'), the lines' margins over the music and the loudness spread across lines. Lines short of their margin over a music track get one fix in summary.fixes: duck_under_speech on that track (track_id, every piece of the song as one bed), each line pointing at it. detail summary (the default) gives each line its verdict (ok, or to fix: the problems are in its fixes), fixes, advice, words a second against its band, loudness and margin over the music, and what was heard only where it differs from the script; detail full adds every measure (syllables, the clip window, silences, true peak, pitch). Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2169,6 +2493,7 @@ Listen back to voiceover lines on this computer: Whisper hears each voice clip a
 | `music` | boolean |  | Measure each line's margin over the music tracks under it (default true) |
 | `recheck` | boolean |  | Hear a line with a difference again with a larger Whisper model (small, 249 MB downloaded once), to say whether the recognizer or the voice is wrong (default true) |
 | `detail` | "summary" \| "full" |  | summary (default): each line's verdict and what decides it; full: every measure of every line |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2195,6 +2520,7 @@ Read one voiceover line again and put it in the line's place, as one undo step: 
 | `pace` | "slow" \| "normal" \| "fast" |  | The pace the line is meant to have; default the line's own |
 | `ripple` | boolean |  | Move the lines and captions after it by the change in length (default false) |
 | `caption_words` | integer |  | Caption the line this many words at a time (1-3), each word timed to the new take, or 0 for one caption for the line; default as the line was captioned (0..3) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2215,6 +2541,7 @@ Read a title aloud in a voice made on this computer (Kokoro), placing the voice 
 | `pronounce` | object |  | Words respelled for the voice only (whole words, case as written), each to the text the voice reads: {"MCP": "M C P", "OpenFrame": "Open Frame"} |
 | `quality` | "best" \| "draft" |  | best: full-precision weights (default; on WebGPU, or on the CPU about as fast as draft); draft: 8-bit weights, a quarter of the download |
 | `finish` | "natural" \| "clean" \| "raw" |  | natural (default): a recorded read's pauses, EQ, one loudness, room tone, the voice compressor and a touch of room; clean: one loudness and faded edges, nothing added; raw: the model's read, trimmed |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### add_sound_effect
 
@@ -2233,6 +2560,7 @@ Add built-in sound effects, made on this computer: whoosh (Whoosh, 0.8 s), swish
 | `sounds[].end_at` | number |  | Timeline seconds it ends instead (0..) |
 | `sounds[].volume` | number |  | Gain, default 1 (0..4) |
 | `sounds[].track_id` | string |  | Its audio track; default the call's track_id, else the SFX track |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2255,6 +2583,7 @@ Lay continuous natural sound under the pictures, made on this computer (no recor
 | `volume` | number |  | Gain, 1 as made (0.5 is about -6 dB); default 1 (0..4) |
 | `seed` | integer |  | Another take of the same bed (default 1) (1..) |
 | `track_id` | string |  | An audio track to put it on; default the Ambience track |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2264,18 +2593,51 @@ Example:
 
 ### set_fades
 
-Fade a clip's sound in and out, in SECONDS (a music bed: fade_in 1, fade_out 2). Works on audio clips and on video clips' own sound; a value left out keeps its fade, 0 removes it. Each fade is at most half the clip. Pictures fade with set_animation (slot in or out, type fade).
+Fade a clip's sound in and out, in SECONDS (a music bed: fade_in 1, fade_out 2). Works on audio clips and on video clips' own sound; a value left out keeps its fade, 0 removes it. curve sets both shapes, curve_in and curve_out override each side. Each fade is at most half the clip. Pictures fade with set_animation (slot in or out, type fade).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_ids` | string[] | yes | Audio or video clips |
 | `fade_in` | number |  | Seconds (0..) |
 | `fade_out` | number |  | Seconds (0..) |
+| `curve` | "linear" \| "equalPower" \| "logarithmic" \| "exponential" \| "sCurve" |  | Fade shape: linear (steady amplitude), equalPower (sine, steady combined power), logarithmic (fast rise), exponential (slow rise), sCurve (smooth at both ends). Omitted keeps today's shape: linear fades, equalPower crossfades. |
+| `curve_in` | "linear" \| "equalPower" \| "logarithmic" \| "exponential" \| "sCurve" |  | Fade shape: linear (steady amplitude), equalPower (sine, steady combined power), logarithmic (fast rise), exponential (slow rise), sCurve (smooth at both ends). Omitted keeps today's shape: linear fades, equalPower crossfades. |
+| `curve_out` | "linear" \| "equalPower" \| "logarithmic" \| "exponential" \| "sCurve" |  | Fade shape: linear (steady amplitude), equalPower (sine, steady combined power), logarithmic (fast rise), exponential (slow rise), sCurve (smooth at both ends). Omitted keeps today's shape: linear fades, equalPower crossfades. |
 
 Example:
 
 ```json
-{"name":"set_fades","arguments":{"clip_ids":["c_123"],"fade_in":1,"fade_out":2}}
+{"name":"set_fades","arguments":{"clip_ids":["c_123"],"fade_in":1,"fade_out":2,"curve_out":"sCurve"}}
+```
+
+### set_pitch
+
+Shift sound by -12..12 semitones without changing speed, duration or timing. Works with reverse and speed curves. 0 resets it. Pitch is not keyframeable; use set_pitch or set_param pitch without at.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Audio or video clips |
+| `semitones` | number | yes | Semitones relative to the original pitch; 12 is an octave up (-12..12) |
+
+Example:
+
+```json
+{"name":"set_pitch","arguments":{"clip_ids":["c_123"],"semitones":5}}
+```
+
+### apply_voice_preset
+
+Apply a voice changer as ordinary editable settings (pitch, EQ, compressor, filters, saturation, ring modulation, mono, echo and reverb). Replaces those settings and their keyframes; none clears them to defaults. Keeps volume, fades, timing and tape stop. The voice label is descriptive only. Fine-tune pitch with set_pitch and processor numbers with set_param (not keyframeable).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Audio or video clips |
+| `preset` | "none" \| "chipmunk" \| "deep" \| "robot" \| "radio" \| "telephone" \| "megaphone" \| "cave" \| "monster" | yes | Voice character, or none to restore the preset's settings to defaults |
+
+Example:
+
+```json
+{"name":"apply_voice_preset","arguments":{"clip_ids":["c_123"],"preset":"radio"}}
 ```
 
 ### set_audio_filter
@@ -2371,6 +2733,156 @@ Even out a clip's sound with a compressor after its EQ (CapCut's Enhance voice, 
 | `release` | number |  | Seconds (0..1) |
 | `makeup` | number |  | Extra dB after the compressor's own makeup gain (presets: 0) (0..24) |
 
+### add_audio_insert
+
+Add an ordered audio insert to an audio track or a sounding clip. Track clips sum before inserts, then volume and pan; detectors keep state across cuts. Give exactly one track_id or clip_id. type eq is up to eight parametric bands, after the legacy three-band EQ. With preset, adds that complete chain (dialog_cleanup, podcast_voice, music_bed, broadcast_limiter); type is then omitted. Example: {track_id: 't_dialog', preset: 'dialog_cleanup'}. index is zero-based; omitted appends. A limiter holds sample peaks before subsequent inserts/faders, with 5 ms lookahead; the export master limiter is separate.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `track_id` | string |  | Audio track id |
+| `clip_id` | string |  | Audio, video or compound clip id |
+| `type` | "eq" \| "compressor" \| "gate" \| "deesser" \| "limiter" \| "reverb" \| "echo" |  | Processor type; required without preset |
+| `params` | { threshold, ratio, attack, hold, release, range, amount, low, high, ceiling, knee, makeup, time, feedback, mix, size, decay, bands } |  | Processor settings; omitted numbers retain their values, or use defaults on add. attack, hold, release, time and decay are seconds; frequencies Hz; threshold dBFS; range, amount, gain, makeup and ceiling dB; ratio/Q dimensionless; mix/feedback/size 0..1 |
+| `params.threshold` | number |  | threshold, dBFS; processor-specific range (use its controls or defaults) |
+| `params.ratio` | number |  | ratio, :1; processor-specific range (use its controls or defaults) |
+| `params.attack` | number |  | attack, s; processor-specific range (use its controls or defaults) |
+| `params.hold` | number |  | hold, s; processor-specific range (use its controls or defaults) |
+| `params.release` | number |  | release, s; processor-specific range (use its controls or defaults) |
+| `params.range` | number |  | range, dB; processor-specific range (use its controls or defaults) |
+| `params.amount` | number |  | amount, dB; processor-specific range (use its controls or defaults) |
+| `params.low` | number |  | low, Hz; processor-specific range (use its controls or defaults) |
+| `params.high` | number |  | high, Hz; processor-specific range (use its controls or defaults) |
+| `params.ceiling` | number |  | ceiling, dBFS; processor-specific range (use its controls or defaults) |
+| `params.knee` | number |  | knee, dB; processor-specific range (use its controls or defaults) |
+| `params.makeup` | number |  | makeup, dB; processor-specific range (use its controls or defaults) |
+| `params.time` | number |  | time, s; processor-specific range (use its controls or defaults) |
+| `params.feedback` | number |  | feedback, ratio; processor-specific range (use its controls or defaults) |
+| `params.mix` | number |  | mix, ratio; processor-specific range (use its controls or defaults) |
+| `params.size` | number |  | size, ratio; processor-specific range (use its controls or defaults) |
+| `params.decay` | number |  | decay, s; processor-specific range (use its controls or defaults) |
+| `params.bands` | { type, freq, gain, q, on }[] |  | Parametric EQ bands in order, up to eight |
+| `params.bands[].type` | "peaking" \| "lowshelf" \| "highshelf" \| "highpass" \| "lowpass" \| "notch" |  | Biquad shape |
+| `params.bands[].freq` | number |  | Center or cutoff, Hz, 20..20000 |
+| `params.bands[].gain` | number |  | Boost or cut, dB, -24..24 (peaking and shelves) |
+| `params.bands[].q` | number |  | Q ratio, 0.1..30 (shelves use slope 1) |
+| `params.bands[].on` | boolean |  | Enable this band; default true |
+| `index` | number |  | Zero-based insertion position; omitted appends (0..) |
+| `preset` | "dialog_cleanup" \| "podcast_voice" \| "music_bed" \| "broadcast_limiter" |  | Add a complete cleanup chain |
+
+Example:
+
+```json
+{"name":"add_audio_insert","arguments":{"track_id":"t_dialog","preset":"dialog_cleanup"}}
+```
+
+### update_audio_insert
+
+Change settings or bypass an audio insert by its id from describe_project. Omitted numbers retain their setting; bands replaces the EQ band list. Settings are clamped to each processor's safe ranges.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `insert_id` | string | yes | Insert id |
+| `params` | { threshold, ratio, attack, hold, release, range, amount, low, high, ceiling, knee, makeup, time, feedback, mix, size, decay, bands } |  | Processor settings; omitted numbers retain their values, or use defaults on add. attack, hold, release, time and decay are seconds; frequencies Hz; threshold dBFS; range, amount, gain, makeup and ceiling dB; ratio/Q dimensionless; mix/feedback/size 0..1 |
+| `params.threshold` | number |  | threshold, dBFS; processor-specific range (use its controls or defaults) |
+| `params.ratio` | number |  | ratio, :1; processor-specific range (use its controls or defaults) |
+| `params.attack` | number |  | attack, s; processor-specific range (use its controls or defaults) |
+| `params.hold` | number |  | hold, s; processor-specific range (use its controls or defaults) |
+| `params.release` | number |  | release, s; processor-specific range (use its controls or defaults) |
+| `params.range` | number |  | range, dB; processor-specific range (use its controls or defaults) |
+| `params.amount` | number |  | amount, dB; processor-specific range (use its controls or defaults) |
+| `params.low` | number |  | low, Hz; processor-specific range (use its controls or defaults) |
+| `params.high` | number |  | high, Hz; processor-specific range (use its controls or defaults) |
+| `params.ceiling` | number |  | ceiling, dBFS; processor-specific range (use its controls or defaults) |
+| `params.knee` | number |  | knee, dB; processor-specific range (use its controls or defaults) |
+| `params.makeup` | number |  | makeup, dB; processor-specific range (use its controls or defaults) |
+| `params.time` | number |  | time, s; processor-specific range (use its controls or defaults) |
+| `params.feedback` | number |  | feedback, ratio; processor-specific range (use its controls or defaults) |
+| `params.mix` | number |  | mix, ratio; processor-specific range (use its controls or defaults) |
+| `params.size` | number |  | size, ratio; processor-specific range (use its controls or defaults) |
+| `params.decay` | number |  | decay, s; processor-specific range (use its controls or defaults) |
+| `params.bands` | { type, freq, gain, q, on }[] |  | Parametric EQ bands in order, up to eight |
+| `params.bands[].type` | "peaking" \| "lowshelf" \| "highshelf" \| "highpass" \| "lowpass" \| "notch" |  | Biquad shape |
+| `params.bands[].freq` | number |  | Center or cutoff, Hz, 20..20000 |
+| `params.bands[].gain` | number |  | Boost or cut, dB, -24..24 (peaking and shelves) |
+| `params.bands[].q` | number |  | Q ratio, 0.1..30 (shelves use slope 1) |
+| `params.bands[].on` | boolean |  | Enable this band; default true |
+| `on` | boolean |  | Enable the insert; false bypasses it without losing settings |
+
+Example:
+
+```json
+{"name":"update_audio_insert","arguments":{"insert_id":"insert_gate","params":{"threshold":-48},"on":true}}
+```
+
+### move_audio_insert
+
+Move an insert within its track or clip's ordered chain. One move is one undo step; order changes the sound.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `insert_id` | string | yes | Insert id |
+| `index` | number | yes | New zero-based position in this chain (0..) |
+
+Example:
+
+```json
+{"name":"move_audio_insert","arguments":{"insert_id":"insert_gate","index":0}}
+```
+
+### remove_audio_insert
+
+Remove an audio insert and its settings from its track or clip. Undo restores it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `insert_id` | string | yes | Insert id |
+
+Example:
+
+```json
+{"name":"remove_audio_insert","arguments":{"insert_id":"insert_echo"}}
+```
+
+### set_dynamics
+
+Set a clip's gate, split-band de-esser, lookahead limiter and parametric EQ in one undo step. Each object updates the first matching insert or adds one; on false bypasses it. preset replaces the clip's insert chain with editable settings, then supplied objects override it. eq bands replaces up to eight bands. Existing legacy EQ/compressor remain. Tracks use add_audio_insert preset dialog_cleanup so one cleanup chain runs across every dialog cut.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Audio, video or compound clip id |
+| `preset` | "dialog_cleanup" \| "podcast_voice" \| "music_bed" \| "broadcast_limiter" |  | Starting chain |
+| `gate` | { threshold, ratio, attack, hold, release, range, on } |  | Gate settings; omitted values retain their setting |
+| `gate.threshold` | number |  | threshold, dBFS, -90..0 |
+| `gate.ratio` | number |  | ratio, :1, 1..100 |
+| `gate.attack` | number |  | attack, s, 0.0001..0.2 |
+| `gate.hold` | number |  | hold, s, 0..1 |
+| `gate.release` | number |  | release, s, 0.005..2 |
+| `gate.range` | number |  | range, dB, 0..96 |
+| `gate.on` | boolean |  | Enable this processor; false bypasses it |
+| `deesser` | { amount, low, high, on } |  | De-esser settings; omitted values retain their setting |
+| `deesser.amount` | number |  | amount, dB, 0..24 |
+| `deesser.low` | number |  | low, Hz, 2000..16000 |
+| `deesser.high` | number |  | high, Hz, 2500..20000 |
+| `deesser.on` | boolean |  | Enable this processor; false bypasses it |
+| `limiter` | { ceiling, release, on } |  | Limiter settings; omitted values retain their setting |
+| `limiter.ceiling` | number |  | ceiling, dBFS, -24..0 |
+| `limiter.release` | number |  | release, s, 0.01..2 |
+| `limiter.on` | boolean |  | Enable this processor; false bypasses it |
+| `eq` | { bands, on } |  | Parametric EQ settings; omitted values retain their setting |
+| `eq.bands` | { type, freq, gain, q, on }[] |  | Parametric EQ bands in order, up to eight |
+| `eq.bands[].type` | "peaking" \| "lowshelf" \| "highshelf" \| "highpass" \| "lowpass" \| "notch" |  | Biquad shape |
+| `eq.bands[].freq` | number |  | Center or cutoff, Hz, 20..20000 |
+| `eq.bands[].gain` | number |  | Boost or cut, dB, -24..24 (peaking and shelves) |
+| `eq.bands[].q` | number |  | Q ratio, 0.1..30 (shelves use slope 1) |
+| `eq.bands[].on` | boolean |  | Enable this band; default true |
+| `eq.on` | boolean |  | Enable this processor; false bypasses it |
+
+Example:
+
+```json
+{"name":"set_dynamics","arguments":{"clip_id":"c_voice","gate":{"threshold":-50,"range":30},"deesser":{"amount":4},"limiter":{"ceiling":-1}}}
+```
+
 ### set_channel_fill
 
 Play one channel of a video's or audio clip's sound on both sides (Premiere's Fill Left / Fill Right), e.g. a lav mic recorded on one channel. both = as recorded.
@@ -2382,12 +2894,13 @@ Play one channel of a video's or audio clip's sound on both sides (Premiere's Fi
 
 ### set_crossfade
 
-Crossfade an audio clip into the next clip on its track, which starts where it ends (two pieces of a song, two songs, two takes of a bed): at equal power over seconds, ending at the cut, the next clip's sound rising over the seconds before its start from its file before its in-point (it needs that much), this one falling over its last. 0 makes it a butt cut again. A butt cut ramps each side over 4 ms to stop a click, which leaves a few milliseconds of near-silence at the join; preview_audio's edges measure it. Both clips play at their own speed. Example: {"clip_id": "c_3", "seconds": 0.03}.
+Crossfade an audio clip into the next clip on its track, which starts where it ends (two pieces of a song, two songs, two takes of a bed): with the chosen curve (default equalPower) over seconds, ending at the cut, the next clip's sound rising over the seconds before its start from its file before its in-point (it needs that much), this one falling over its last. 0 makes it a butt cut again. A butt cut ramps each side over 4 ms to stop a click, which leaves a few milliseconds of near-silence at the join; preview_audio's edges measure it. Both clips play at their own speed. Example: {"clip_id": "c_3", "seconds": 0.03}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | The audio clip before the join |
 | `seconds` | number | yes | Seconds of crossfade (0 removes it; at most 2) (0..2) |
+| `curve` | "linear" \| "equalPower" \| "logarithmic" \| "exponential" \| "sCurve" |  | Fade shape: linear (steady amplitude), equalPower (sine, steady combined power), logarithmic (fast rise), exponential (slow rise), sCurve (smooth at both ends). Omitted keeps today's shape: linear fades, equalPower crossfades. |
 
 Example:
 
@@ -2397,17 +2910,18 @@ Example:
 
 ### normalize_loudness
 
-Measure clips' loudness (EBU R128) and set their volume to reach a target without their true peak passing the ceiling (-1 dBTP; -2 for ATSC). -14 LUFS suits social video, -16 podcasts, -23 European broadcast, -24 US TV. spec names a delivery spec instead (its target and ceiling). A ducked clip keeps its duck: its volume keys scale so the loudest is the new level. Each clip is measured alone: measure_loudness checks the mix.
+Measure clips' loudness (EBU R128) and set their volume to reach a target without their true peak passing the ceiling (-1 dBTP; -2 for ATSC). -14 LUFS suits social video, -16 podcasts, -23 European broadcast, -24 US TV. spec names a delivery spec instead (its target and ceiling). A ducked clip keeps its duck: its volume keys scale so the loudest is the new level. Each clip is measured alone through its pitch, filters, saturation, ring modulation, compressor, fades and effect tails, using the export mixer at unit clip gain (track/master faders excluded). measure_loudness checks the mix.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_ids` | string[] | yes | Video or audio clip ids |
 | `target` | number |  | LUFS, default -14 (-40..-5) |
 | `spec` | "online" \| "ebu_r128" \| "atsc_a85" |  | online (-14 LUFS, -1 dBTP), ebu_r128 (-23 LUFS, -1 dBTP) or atsc_a85 (-24 LKFS, -2 dBTP); overrides target |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### duck_under_speech
 
-Lower music wherever the other clips with sound under it (inside compound clips too) have speech, as editable volume keyframes: one clip (clip_id), or every clip of a music track as one bed (track_id: a song cut into pieces is ducked in one call, a line across a cut dipping on both sides). A voice's balance over music depends on the window it is measured in, and the answer names it: speech (while the voice speaks, every line from its first word to its last, together) and line (each line alone); measure_loudness by_track also gives program (the whole stretch, music between lines included, which reads lower). voice_above_music_lu aims the voice that many LU over the music in the speech window; min_line_lu holds every line to at least that many LU over the music, each line's dip as deep as it needs (with voice_above_music_lu, or depth, as the usual dip); max_line_lu holds every line to at most that many, a line over a quiet passage dipping less (never raised over its volume), so a quiet intro or a last hit is not emptied: by default 15 LU (or 3 over voice_above_music_lu or min_line_lu, when higher) whenever any of the three is given, and never under voice_above_music_lu (lines each under it cannot sit over it together); a line held under the ceiling moves the others so the lines together stay on voice_above_music_lu. All are measured on the rendered stems and met by measuring again; balance answers the speech window's numbers, target and met, and per_line the lines' lowest, median and highest margins, the minimum and ceiling held to, and each line with its own dip. Plain depth lowers by that many dB without measuring. Between lines: a pause shorter than min_gap (default 1.1 s) stays down so the music does not pump, and so does the music before a first line or after a last one that close to its start or end (no blip); a longer pause comes back up over release (default 0.4 s) and dips again 0.1 s before the next line. open_at brings the music up on chosen moments whatever their pause: timeline seconds, or marker labels ("Drop": every marker so labeled, as analyze_music and set_music_grid mark a song's drops), so a drop between lines plays at the music's level; a moment inside a line stays down under the voice. The answer lists the pauses held down (held, seconds), each open_at moment with where the music is up around it (up) or the line it falls in (inside_line), and notes a drop marker the music stays down through. Volume keys made by hand (added or changed since the last duck: a lift on a drop, a hold before a hit) are kept wherever no line speaks, in place of the duck's own in that pause, the duck's level held at the lines either side; one under a line is replaced, and hand_keys lists both. The music keeps how it was ducked: a voice line that changes later (retake_voiceover) dips it again the same way, and an edit that moves a line under it, or moves the music and its dips (cut_music, move_clip), says so.
+Lower music wherever the other clips with sound under it (inside compound clips too) have speech, as editable volume keyframes: one clip (clip_id), or every clip of a music track as one bed (track_id: a song cut into pieces is ducked in one call, a line across a cut dipping on both sides). A voice's balance over music depends on the window it is measured in, and the answer names it: speech (while the voice speaks, every line from its first word to its last, together) and line (each line alone); measure_loudness by_track also gives program (the whole stretch, music between lines included, which reads lower). voice_above_music_lu aims the voice that many LU over the music in the speech window; min_line_lu holds every line to at least that many LU over the music, each line's dip as deep as it needs (with voice_above_music_lu, or depth, as the usual dip); max_line_lu holds every line to at most that many, a line over a quiet passage dipping less (never raised over its volume), so a quiet intro or a last hit is not emptied: by default 15 LU (or 3 over voice_above_music_lu or min_line_lu, when higher) whenever any of the three is given, and never under voice_above_music_lu (lines each under it cannot sit over it together); a line held under the ceiling moves the others so the lines together stay on voice_above_music_lu. All are measured again on the rendered stems; met is false for any measured line outside the requested bounds, including an infeasible ceiling when the bed is already too quiet at zero dip; balance answers the speech window's numbers, target and met, and per_line the lines' lowest, median and highest margins, the minimum and ceiling held to, and each line with its own dip. When the speech-window voice is under -23 LUFS or the dip exceeds 20 dB, a note names the quiet dialog clips and suggests normalize_loudness target -16 before ducking. Plain depth lowers by that many dB without measuring. Between lines: a pause shorter than min_gap (default 1.1 s) stays down so the music does not pump, and so does the music before a first line or after a last one that close to its start or end (no blip); a longer pause comes back up over release (default 0.4 s) and dips again 0.1 s before the next line. open_at brings the music up on chosen moments whatever their pause: timeline seconds, or marker labels ("Drop": every marker so labeled, as analyze_music and set_music_grid mark a song's drops), so a drop between lines plays at the music's level; a moment inside a line stays down under the voice. The answer lists the pauses held down (held, seconds), each open_at moment with where the music is up around it (up) or the line it falls in (inside_line), and notes a drop marker the music stays down through. Volume keys made by hand (added or changed since the last duck: a lift on a drop, a hold before a hit) are kept wherever no line speaks, in place of the duck's own in that pause, the duck's level held at the lines either side; one under a line is replaced, and hand_keys lists both. The music keeps how it was ducked: a voice line that changes later (retake_voiceover) dips it again the same way, and an edit that moves a line under it, or moves the music and its dips (cut_music, move_clip), says so.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2420,6 +2934,7 @@ Lower music wherever the other clips with sound under it (inside compound clips 
 | `open_at` | any[] |  | Moments the music comes up at between lines: timeline seconds, or marker labels ("Drop": every marker so labeled); default none |
 | `min_gap` | number |  | Seconds a pause between lines must last for the music to come up (default 1.1: shorter pauses stay down, so the music does not pump) (0.2..10) |
 | `release` | number |  | Seconds the music takes to come back up after a line (default 0.4) (0.05..3) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2435,6 +2950,7 @@ Take steady background noise (hiss, hum, fans, room tone) out of a clip's sound 
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
 | `strength` | number |  | 0.5 gentle, 0.75 default, 1 strong (0..1) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### sync_audio
 
@@ -2445,6 +2961,7 @@ Line up a separately recorded sound (a lav, a recorder) with the camera clip of 
 | `clip_id` | string | yes | The audio clip to move |
 | `video_clip_id` | string |  | The camera clip; default the video with sound that plays with it longest |
 | `mute_camera` | boolean |  | Set the video's volume to 0 (default false) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### remove_silences
 
@@ -2456,15 +2973,17 @@ Find the pauses in a clip's speech and cut them out, closing the gaps (one undo 
 | `sensitivity` | number |  | 0..1, default 0.5 (0..1) |
 | `min_silence` | number |  | Shortest pause to cut, seconds (default 0.4) (0..) |
 | `padding` | number |  | Kept around speech, seconds (default 0.1) (0..) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### remove_filler_words
 
-Transcribe a clip's speech on this machine (Whisper) and cut its filler words (um, hmm, ah) with the hesitation around each, closing the gaps (one undo step). Whisper does not transcribe "uh", so those stay. Returns the source ranges cut and the words heard.
+Transcribe a clip's speech on this machine (Whisper) and cut its filler words (um, hmm, ah) with the hesitation around each, closing the gaps (one undo step). Whisper does not transcribe "uh", so those stay. Returns the source ranges cut, filler words, and heard (all words heard in the clip); it shares get_transcript's clip-window hearing and cached words. Reports audio_seconds, elapsed_seconds and model.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
 | `model` | string |  | Whisper model id (default onnx-community/whisper-base.en_timestamped) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ## Check and deliver
 
@@ -2472,7 +2991,7 @@ Look at the media and the result, check it against the rules, then export.
 
 ### preview_media
 
-Look inside imported media before using it: a video's own frames at source seconds (times), or `count` frames spread over the whole file (default 12), as one contact sheet; a still picture whole, labeled with its size. Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action) and to see what a photo shows before framing it. file instead of asset_id looks inside a file without importing it: an exported video (the path export_video or export_versions answered) to see what was delivered, frame by frame as the file has it, not the timeline; the answer adds the file's length and size.
+Look inside imported media before using it: a video's own frames at source seconds (times), or `count` frames spread over the whole file (default 12), as one contact sheet; a still picture whole, labeled with its size. Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action) and to see what a photo shows before framing it. file instead of asset_id looks inside a file without importing it: an exported video (the path export_video or export_versions answered) to see what was delivered, frame by frame as the file has it, not the timeline; the answer adds the file's length, size and chapters (titles and seconds from Nero MP4/MOV chapter tables, as OpenFrame writes; other chapter formats are not inspected).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2482,6 +3001,7 @@ Look inside imported media before using it: a video's own frames at source secon
 | `count` | integer |  | Frames spread over the file when times is not given; default 12 (2..24) |
 | `columns` | integer |  | Tiles a row, at most 8; default 4 (1..8) |
 | `tile_width` | integer |  | Default 320 (120..640) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2495,9 +3015,12 @@ See several moments at once: one JPEG contact sheet of the frames at the given t
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
+| `before` | boolean |  | Bypass the look for an ungraded comparison, without editing the project (default false) |
+| `before_clip_ids` | string[] |  | Clip IDs whose look to bypass when before is true; default all visible clips, including adjustment layers |
 | `times` | number[] | yes | Seconds, up to 24 |
 | `columns` | integer |  | Tiles a row, at most 8; default 4 (1..8) |
 | `tile_width` | integer |  | Width of each frame, default 320 (120..640) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2516,6 +3039,7 @@ See movement and timing: consecutive frames of a stretch of the timeline (defaul
 | `fps` | number |  | Frames a second, default 8 (1..30) |
 | `columns` | integer |  | Tiles a row, at most 8; default 6 (1..8) |
 | `tile_width` | integer |  | Default 240 (120..640) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2529,12 +3053,15 @@ See the composited picture at a time: returns a PNG image of the frame exactly a
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
+| `before` | boolean |  | Bypass the look for an ungraded comparison, without editing the project (default false) |
+| `before_clip_ids` | string[] |  | Clip IDs whose look to bypass when before is true; default all visible clips, including adjustment layers |
 | `at` | number | yes | Seconds (0..) |
 | `max_width` | integer |  | Image width, default 640 (at most the canvas width) (64..1920) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### preview_audio
 
-Hear the sound: a stretch of the mix, or one stem, rendered offline through the mixer export uses (every clip's volume, fades, ducking keys, EQ, compressor, filters, reverb and echo tails), returned as a short MP3 (an audio content block, 96 kbps stereo, at most 30 s a call) for a model that can listen, and as text the measurements for one that cannot: integrated loudness, the loudest 3 s and 400 ms, every second's loudness, the true peak, silent stretches, where the energy sits (below 250 Hz, to 4 kHz, above, and the octave slope; speech and most mixes slope -3 to -6 dB an octave), the stereo correlation and clipped samples; with solo mix also each stem's loudness (dialog, music, effects, ambience, by each track's role, and picture: what the video tracks play, their footage's own sound and any compound clip's mix), each its own integrated loudness where it sounds, so they do not add up to the mix's. edges measures, sample by sample, every place in the stretch where an audio clip meets the next on its track (a song's splice) and any clip start or end that is not clean: dip_db (a hole of a few milliseconds at the cut, as a butt cut's click guard leaves: -10 or deeper is heard as a tick), click_db (a sample step steeper than any around it and than the incoming file's own attack there, so a kick on the downbeat a cut lands on is no click), step_db (the level after against before; a join stepping 6 dB or more that the music makes there itself, on a new bar or hit, says so in step_note, and one inside a ring-out (the sound falling 6 dB or more over the second before) that neither file makes there is flagged at 6 dB, not 12), tail_cut_db (the clip's own file rings on that much louder than what follows: a tail cut dead) and cut_in_db (a clip coming in mid-sound), each with a verdict (clean, or what is wrong) and the fix (set_crossfade, set_fades); dropouts lists anywhere the sound falls to nothing for 3-100 ms inside sound (a lost packet, a hole). solo: mix (default), voice (the dialog tracks alone), music, effects or ambience; the picture's own sound plays only in mix. loudness hears it as export_video with that loudness delivers it (the whole mix is measured first, so it takes longer). audio false answers the measurements alone. Nothing is changed.
+Hear the sound: a stretch of the mix, or one stem, rendered offline through the mixer export uses (every clip's volume, fades, ducking keys, EQ, compressor, filters, reverb and echo tails), returned as a short audio content block (at most 30 s): format mp3 (default, LAME in WebAssembly, 96 kbps stereo), m4a (AAC, audio/mp4), or wav (16-bit, 24 kHz mono). MP3 falls back to M4A, then WAV if encoding is unavailable; M4A falls back to WAV. The answer names the actual format for a model that can listen, and as text the measurements for one that cannot: integrated loudness, the loudest 3 s and 400 ms, every second's loudness, the true peak, silent stretches, where the energy sits (below 250 Hz, to 4 kHz, above, and the octave slope; speech and most mixes slope -3 to -6 dB an octave), the stereo correlation and clipped samples; with solo mix also each stem's loudness (dialog, music, effects, ambience, by each track's role, and picture: what the video tracks play, their footage's own sound and any compound clip's mix), each its own integrated loudness where it sounds, so they do not add up to the mix's. edges measures, sample by sample, every place in the stretch where an audio clip meets the next on its track (a song's splice) and any clip start or end that is not clean: dip_db (a hole of a few milliseconds at the cut, as a butt cut's click guard leaves: -10 or deeper is heard as a tick), click_db (a sample step steeper than any around it and than the incoming file's own attack there, so a kick on the downbeat a cut lands on is no click), step_db (the level after against before; a join stepping 6 dB or more that the music makes there itself, on a new bar or hit, says so in step_note, and one inside a ring-out (the sound falling 6 dB or more over the second before) that neither file makes there is flagged at 6 dB, not 12), tail_cut_db (the clip's own file rings on that much louder than what follows: a tail cut dead) and cut_in_db (a clip coming in mid-sound), each with a verdict (clean, or what is wrong) and the fix (set_crossfade, set_fades); dropouts lists anywhere the sound falls to nothing for 3-100 ms inside sound (a lost packet, a hole). solo: mix (default), voice (the dialog tracks alone), music, effects or ambience; the picture's own sound plays only in mix. loudness hears it as export_video with that loudness delivers it (the whole mix is measured first, so it takes longer). audio false answers the measurements alone. Nothing is changed.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2542,7 +3069,9 @@ Hear the sound: a stretch of the mix, or one stem, rendered offline through the 
 | `end` | number |  | Timeline seconds; default start + 10, at most start + 30 (0..) |
 | `solo` | "mix" \| "voice" \| "music" \| "effects" \| "ambience" |  | What to hear: the whole mix (default) or one stem by role |
 | `loudness` | number |  | Hear it as export_video with this loudness (LUFS) delivers it; default as mixed (-40..-5) |
-| `audio` | boolean |  | false: the measurements only, no MP3 (default true) |
+| `audio` | boolean |  | false: the measurements only, no audio file (default true) |
+| `format` | "mp3" \| "m4a" \| "wav" |  | Audio format; default mp3 with M4A then WAV fallback. M4A falls back to WAV; WAV is 16-bit 24 kHz mono. The answer names the actual format |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2558,6 +3087,7 @@ Check the edit against professional rules before exporting: text outside the 90%
 |---|---|---|---|
 | `kind` | "ad" \| "epic_edit" \| "social_short" \| "any" |  | What is being made; default any |
 | `detail` | "summary" \| "full" |  | summary (default): alike findings given once with every clip; full: every finding on its own |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2578,6 +3108,7 @@ Measure the mix the way export renders it (48 kHz stereo, every clip's effects, 
 | `loudness` | number |  | Measure as export_video with this loudness (LUFS) delivers it; default as mixed (-40..-5) |
 | `start` | number |  | Timeline seconds, default 0 (0..) |
 | `end` | number |  | Timeline seconds, default the end (0..) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2598,9 +3129,11 @@ Export the open project to a video file in the user's Videos folder (in a folder
 | `loudness` | number |  | Integrated LUFS for the mix; default as mixed (-40..-5) |
 | `start` | number |  | Export from this second (0..) |
 | `end` | number |  | Export to this second (0..) |
+| `chapters` | boolean |  | Include only chapter-marked timeline markers as real MP4 chapters; default false, MP4 only |
 | `captions` | "burn" \| "srt" \| "both" \| "none" |  | The captions: burn into the picture (default), srt file beside it, both, or none |
 | `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
 | `replace` | boolean |  | true: replace a file of the same name in folder (folder is required) when the export finishes, instead of taking a numbered name; nothing outside folder is touched |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2610,7 +3143,7 @@ Example:
 
 ### export_versions
 
-Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note) unless replace is true with folder, the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit), and so does a shot fitted with bands (one spanning the frame edge to edge one way and covering its middle: a widescreen recording in a 9:16 master, pushed in with frame_region fit), which keeps its pixels against the short side and grows where that would not cover the new frame; where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop keeps what the editor chose: what the callouts over the shot point at (rings, a spotlight's hole, add_callout or anything pinned with an anchor), else the region the master frames (frame_region, a zoom past 1.1x: centered on it), else the shot's subject (what stands out in its pictures, looked at every half second), following it as it moves, inside what the master showed (a version wider than the master, 16:9 from 9:16, holds all of it, centered on it), keyed pushes and pans kept (pushes relax or hold eases them; reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead, and several with at make a path: each point centered at its time, held, panned to the next over 0.4 s); rings and spotlights over footage (and anything pinned with an anchor) stay on what they point at, moved and sized with the picture under them, a spotlight's hole with them, and a ring around a title stays around it; titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it; an effect's pixel sizes (a blur's radius, a pixelate's blocks) and a position wiggle keep their size against the picture they are on. A compound clip that draws only part of the frame (a title card built as a compound: a box, a headline, a subhead) refits as one picture, its parts keeping their layout; when its smallest type would fall under the readable size the whole card grows to meet it, and a card that then does not fit is restacked, its rows in order with their spacing, type held at the readable size, a panel behind them keeping its margins, nothing overlapping. A shape that spans the frame (a gradient scrim, a band) keeps its share of the new frame, as footage does. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it; a split screen whose halves filled the frame edge to edge fills the new frame instead (stacked full width on a tall version, side by side full height on a square), its labels inside the safe area. Text never ends under the frame's readable size, and on 4:5 overlays keep clear of the apps' buttons as on 9:16; every title is kept inside the area check_project judges it by, measured as it measures it, with room for the outline it may suggest. overrides [{clip_id, x, y, scale, hidden}] place a clip by hand in a version after all that (a lower third raised, a headline larger, a logo hidden), kept in a saved version project; keyed motion moves with it, and the rings, spotlights and pinned clips pointing into a picture moved so move with it. Every answer's options says what became of focus, pushes and overrides where that was not plainly what was asked (a focus on a clip the version does not crop, and why; a point held back by the picture's edge; pushes that found no keyed zoom; what moved with an override), and coverage names footage covering much less of a version's frame than of the master's (a picture floating in black), with what enlarges it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). A tall short's captions on a 16:9 or 1:1 version move to that frame's caption place (centered near the bottom, all at one height), and on 16:9 come down to a landscape caption's size (the typical caption at most size 72, 6.7% of the height; one made larger, a countdown, stays as much larger), never under the readable size; overlays keep above them, and a picture-in-picture that would cross them where the master kept it clear is moved above them (caption_overlaps says so in done), unless overrides place it. Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it), and one the master's own push-in crops in a wider version (with pushes relax or hold, which show it); a title behind its subject (text_behind_subject) that the subject hides in a shape is outlined too and listed in titles, with the master's share to compare; a picture or graphic drawn across the burned captions in a shape (a picture-in-picture under them, measured by its mask) is outlined and listed in caption_overlaps, with the override that puts it above them; a ring, spotlight or pinned clip that runs off the frame or sits over other content than in the master is outlined and listed in callouts, with what keeps it (each exported version and saved project lists them too). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
+Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note) unless replace is true with folder, the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit), and so does a shot fitted with bands (one spanning the frame edge to edge one way and covering its middle: a widescreen recording in a 9:16 master, pushed in with frame_region fit), which keeps its pixels against the short side and grows where that would not cover the new frame; where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop keeps what the editor chose: what the callouts over the shot point at (rings, a spotlight's hole, add_callout or anything pinned with an anchor), else the region the master frames (frame_region, a zoom past 1.1x: centered on it), else the shot's subject (what stands out in its pictures, looked at every half second), following it as it moves, inside what the master showed (a version wider than the master, 16:9 from 9:16, holds all of it, centered on it), keyed pushes and pans kept (pushes relax or hold eases them; reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead, and several with at make a path: each point centered at its time, held, panned to the next over 0.4 s); rings and spotlights over footage (and anything pinned with an anchor) stay on what they point at, moved and sized with the picture under them, a spotlight's hole with them, and a ring around a title stays around it; titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it; nearby titles stacked under it retain their order and gap, moving apart when it wraps, and any remaining collision is answered in text_overlaps (text_overlaps_text); an effect's pixel sizes (a blur's radius, a pixelate's blocks) and a position wiggle keep their size against the picture they are on. A compound clip that draws only part of the frame (a title card built as a compound: a box, a headline, a subhead) refits as one picture, its parts keeping their layout; when its smallest type would fall under the readable size the whole card grows to meet it, and a card that then does not fit is restacked, its rows in order with their spacing, type held at the readable size, a panel behind them keeping its margins, nothing overlapping. A shape that spans the frame (a gradient scrim, a band) keeps its share of the new frame, as footage does. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it; a split screen whose halves filled the frame edge to edge fills the new frame instead (stacked full width on a tall version, side by side full height on a square), its labels inside the safe area. Text never ends under the frame's readable size, and on 4:5 overlays keep clear of the apps' buttons as on 9:16; every title is kept inside the area check_project judges it by, measured as it measures it, with room for the outline it may suggest. overrides [{clip_id, x, y, scale, hidden}] place a clip by hand in a version after all that (a lower third raised, a headline larger, a logo hidden), kept in a saved version project; keyed motion moves with it, and the rings, spotlights and pinned clips pointing into a picture moved so move with it. Every answer's options says what became of focus, pushes and overrides where that was not plainly what was asked (a focus on a clip the version does not crop, and why; a point held back by the picture's edge; pushes that found no keyed zoom; what moved with an override), and coverage names footage covering much less of a version's frame than of the master's (a picture floating in black), with what enlarges it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). A tall short's captions on a 16:9 or 1:1 version move to that frame's caption place (centered near the bottom, all at one height), and on 16:9 come down to a landscape caption's size (the typical caption at most size 72, 6.7% of the height; one made larger, a countdown, stays as much larger), never under the readable size; overlays keep above them, and a picture-in-picture that would cross them where the master kept it clear is moved above them (caption_overlaps says so in done), unless overrides place it. Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it), and one the master's own push-in crops in a wider version (with pushes relax or hold, which show it); explicit focus owns the subject choice, so subjects omits saliency candidates excluded by that focus; a title behind its subject (text_behind_subject) that the subject hides in a shape is outlined too and listed in titles, with the master's share to compare; a picture or graphic drawn across the burned captions in a shape (a picture-in-picture under them, measured by its mask) is outlined and listed in caption_overlaps, with the override that puts it above them; a ring, spotlight or pinned clip that runs off the frame or sits over other content than in the master is outlined and listed in callouts, with what keeps it (each exported version and saved project lists them too). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2655,7 +3188,8 @@ Export the deliverables of an ad in one call, each a separate file in the user's
 | `save_projects` | boolean |  | true: save each version as a project of its own to fine-tune (open_project it, edit, export_video), and export nothing |
 | `keep_end` | number |  | Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0 (0..) |
 | `check` | boolean |  | true: answer a contact sheet of every version and export nothing |
-| `check_at` | number[] |  | The moments the check sheet shows, as fractions of each version's length, up to 8; default [0.15, 0.5, 0.92]. A version's moments wrap into rows at 1600 px |
+| `check_times` | number[] |  | Moments in seconds of the master, up to 8, mutually exclusive with check_at. Removed moments in a cut-down are omitted; its retained end-card moments move with the card |
+| `check_at` | number[] |  | The moments the check sheet shows, as fractions of each version's length (0 to 1), mutually exclusive with check_times, up to 8; default [0.15, 0.5, 0.92]. A version's moments wrap into rows at 1600 px |
 | `tile_width` | integer |  | Width of each frame on the check sheet, its height following the version's shape; default frames 220 px tall (a 16:9 frame 391 px wide) (120..800) |
 | `format` | "mp4" \| "mov" \| "webm" \| "mkv" |  | Default mp4 (H.264 + AAC) |
 | `resolution` | "480p" \| "720p" \| "1080p" \| "2k" \| "4k" |  | Short side; default from the project |
@@ -2663,6 +3197,7 @@ Export the deliverables of an ad in one call, each a separate file in the user's
 | `loudness` | number |  | Integrated LUFS for every version's mix, e.g. -14; default as mixed (-40..-5) |
 | `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
 | `replace` | boolean |  | true: replace a file of the same name in folder (folder is required) when the export finishes, instead of taking a numbered name; nothing outside folder is touched |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2672,6 +3207,22 @@ Example:
 
 ### export_status
 
-The last export_video: running (fraction done, eta seconds), done (path, bytes, seconds) or failed (message).
+The last export_video, export_versions or export_projects: running (fraction done, eta seconds), done (path, bytes, seconds) or failed (message).
 
 No parameters.
+
+### job_status
+
+Progress, stage, elapsed seconds, quiet_seconds since the last progress callback and complete finished answer of a long tool. Without an ID lists every running and recent job. Text results stay up to 30 minutes within a 32 MiB budget (128 recent jobs); delivered image/audio payloads are released. Switching projects cancels running work and releases answers. Export jobs also remain visible through export_status.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `job_id` | string |  | Job ID returned by a long tool; omit to list running and recent jobs |
+
+### cancel_job
+
+Cancel a running job by ID. Stops its work; completed jobs keep their result. Partial files or completed projects in a batch remain available.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `job_id` | string | yes | Job ID to cancel, from a long tool or job_status |

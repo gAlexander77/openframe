@@ -28,7 +28,8 @@ async (page) => {
   const loading = page.waitForRequest("**/asr.worker.ts*");
   await page.locator(".cap-go").click();
   await loading;
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  // The panel's own Cancel: the progress toast has one too (ADR-142).
+  await page.locator(".cap-progress").getByRole("button", { name: "Cancel", exact: true }).click();
   details.cancel = { ok: await recovered() };
   await held?.abort().catch(() => {});
   await page.unroute("**/asr.worker.ts*");

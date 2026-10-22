@@ -2,9 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { chordText, type ActionId, ACTION_LABELS } from "../lib/keymap";
 import { isMac } from "../platform/env";
 import { chordFor, run } from "../state/actions";
-import { Check } from "../icons";
+import { Check, ChevronLeft, ChevronRight } from "../icons";
 
 export type MenuItem =
+  | { label: string; children: MenuItem[]; disabled?: boolean }
   | { action: ActionId; label?: string; disabled?: boolean; checked?: boolean }
   /** A row of color swatches (a clip's label); `null` is the "none" swatch. */
   | { swatches: { value: string | null; label: string; color?: string }[]; current?: string | null; title: string; onPick: (v: string | null) => void }
@@ -103,7 +104,15 @@ export function MenuList(props: {
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const opener = useRef<Element | null>(null);
+  const [submenus, setSubmenus] = useState<MenuItem[][]>([]);
+  const shown = submenus.at(-1) ?? props.items;
+  const back = () => setSubmenus((s) => s.slice(0, -1));
+  const previousDepth = useRef(0);
   const items = () => [...(ref.current?.querySelectorAll<HTMLButtonElement>(".menu-item:not(:disabled)") ?? [])];
+  useLayoutEffect(() => {
+    if (submenus.length || previousDepth.current) items()[submenus.length ? 1 : 0]?.focus();
+    previousDepth.current = submenus.length;
+  }, [submenus]);
   // Keep the menu inside the window. A right-click on the lowest track
   // opened it below the window's edge; open upward from the pointer when
   // there is room above, else slide it up just enough.
@@ -132,7 +141,8 @@ export function MenuList(props: {
     const list = items();
     const at = list.indexOf(document.activeElement as HTMLButtonElement);
     const go = (i: number) => list[(i + list.length) % list.length]?.focus();
-    if (e.key === "ArrowDown") go(at + 1);
+    if (e.key === "ArrowLeft" && submenus.length) back();
+    else if (e.key === "ArrowDown") go(at + 1);
     else if (e.key === "ArrowUp") go(at < 0 ? -1 : at - 1);
     else if (e.key === "Home") go(0);
     else if (e.key === "End") go(-1);
@@ -145,7 +155,8 @@ export function MenuList(props: {
   };
   return (
     <div className="menu" role="menu" style={props.style} ref={ref} onKeyDown={onKeyDown}>
-      {props.items.map((item, i) => {
+      {submenus.length > 0 && <button role="menuitem" className="menu-item" onClick={back}><ChevronLeft size={14} /><span className="menu-label">Back</span></button>}
+      {shown.map((item, i) => {
         if (item === "-") return <div key={i} className="menu-sep" role="separator" />;
         if ("swatches" in item)
           return (
@@ -168,6 +179,9 @@ export function MenuList(props: {
               ))}
             </div>
           );
+        if ("children" in item) return <button key={i} role="menuitem" className="menu-item" aria-haspopup="menu" disabled={item.disabled}
+          onKeyDown={(e) => { if (e.key === "ArrowRight") { e.preventDefault(); e.stopPropagation(); setSubmenus((s) => [...s, item.children]); } }}
+          onClick={() => setSubmenus((s) => [...s, item.children])}><span className="menu-check" /><span className="menu-label">{item.label}</span><ChevronRight size={14} /></button>;
         const label = "action" in item ? (item.label ?? ACTION_LABELS[item.action]) : item.label;
         const chord = "action" in item ? chordFor(item.action) : undefined;
         const hint = chord ? chordText(chord, isMac) : "hint" in item ? item.hint : undefined;

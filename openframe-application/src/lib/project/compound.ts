@@ -105,7 +105,7 @@ export function createCompound(p: Project, ids: Id[], name?: string): { project:
         return [inner];
       });
       const { main: _m, ...base } = t;
-      return { ...base, id: uid("t"), locked: false, clips, ...(t.main ? { main: true } : {}) };
+      return { ...base, id: uid("t"), locked: false, clips, ...(t.inserts ? { inserts: t.inserts.map(i => ({ ...structuredClone(i), id: uid("insert") })) } : {}), ...(t.main ? { main: true } : {}) };
     });
   // One main video track, as every timeline has: the one that came from
   // the main track, else the bottom video track (normalizeProject's rule).
@@ -151,8 +151,10 @@ export function copyCompound(p: Project, id: Id): { project: Project; compoundId
   const tracks = k.tracks.map((t) => ({
     ...t,
     id: uid("t"),
+    ...(t.inserts ? { inserts: t.inserts.map(i => ({ ...structuredClone(i), id: uid("insert") })) } : {}),
     clips: t.clips.map((c) => {
       const out = { ...c, id: ids.get(c.id)! } as Clip;
+      if ("inserts" in out && out.inserts) out.inserts = out.inserts.map(i => ({ ...structuredClone(i), id: uid("insert") }));
       if (c.group) {
         if (!groups.has(c.group)) groups.set(c.group, uid("g"));
         out.group = groups.get(c.group);

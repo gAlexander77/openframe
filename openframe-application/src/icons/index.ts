@@ -4,6 +4,8 @@
 // lets a custom-drawn icon replace one without touching its callers.
 export {
   Video,
+  Files,
+  Columns2,
   Focus,
   FoldHorizontal,
   ArrowLeftRight,
@@ -81,6 +83,7 @@ export {
   Link2,
   List,
   ListChecks,
+  ListVideo,
   Loader2,
   Lock,
   LockOpen,

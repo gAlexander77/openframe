@@ -1,20 +1,25 @@
+import { heavyMedia } from "../lib/proxyPolicy";
+import { createProxies, proxyAction } from "./proxies";
 // Getting media into the project: probe, add assets, place clips. Shared by
 // the media panel, OS drag and drop, and the automation API.
 
+import { decodeMono } from "../engine/analyze";
+import { classifyAudioRole, type AudioRoleGuess } from "../lib/analysis/audioRole";
+import { assetRole } from "../lib/audioRoles";
 import { probe } from "../engine/media";
-import { formatName, isImageName, SNIFF_BYTES, sourceName } from "../lib/mediaKind";
+import { formatName, isImageName, mediaName, SNIFF_BYTES, sourceName } from "../lib/mediaKind";
 import { prepare } from "../engine/thumbs";
 import { uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
 import type { Asset, Id, LutFile } from "../lib/project/types";
-import { placeAsset } from "../lib/drop";
+import { placeAsset, placeSourceEdit } from "../lib/drop";
 import { platform, type ImportedFile } from "../platform";
 import { edit, provide } from "./actions";
 import { importLuts, isLutName } from "./luts";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 import { projectWork } from "./projectWork";
-import type { SourceRange } from "../lib/sourceMonitor";
+import type { SourceMarks, SourceRange } from "../lib/sourceMonitor";
 import { formatLimit, URL_COPY_LIMIT } from "../lib/urlImport";
 
 /** Codecs as people say them in messages: "ProRes", not the parser's "prores". */
@@ -26,11 +31,11 @@ const codecName = (c: string | undefined) => (c ? (CODEC_NAMES[c] ?? c.toUpperCa
 
 /** What became of one file of an import, in the order given: its asset, or
  * the LUT it was, or why it failed (import_media answers every one). */
-export type ImportOutcome = { file: ImportedFile; asset: Asset } | { file: ImportedFile; lut: LutFile } | { file: ImportedFile; error: string };
+export type ImportOutcome = { file: ImportedFile; asset: Asset; audioRole?: AudioRoleGuess } | { file: ImportedFile; lut: LutFile } | { file: ImportedFile; error: string };
 
 /** Probe and add files as assets. Returns the ones that worked; each
  * failure gets a toast that names the file and the reason. */
-export async function importFiles(files: ImportedFile[], signal = projectWork.signal()): Promise<Asset[]> {
+export async function importFiles(files: ImportedFile[], signal = projectWork.capture()): Promise<Asset[]> {
   return (await importEach(files, signal)).flatMap((o) => ("asset" in o ? [o.asset] : []));
 }
 
@@ -40,7 +45,7 @@ export async function importFiles(files: ImportedFile[], signal = projectWork.si
  * file that fails says why (also in a toast). Empty when the project
  * closed meanwhile.
  */
-export async function importEach(files: ImportedFile[], signal = projectWork.signal()): Promise<ImportOutcome[]> {
+export async function importEach(files: ImportedFile[], signal = projectWork.capture()): Promise<ImportOutcome[]> {
   const out = await probeEach(files, signal);
   if (signal.aborted) return [];
   const added = out.flatMap((o) => ("asset" in o ? [o.asset] : []));
@@ -50,6 +55,10 @@ export async function importEach(files: ImportedFile[], signal = projectWork.sig
       assets: [...p.assets, ...added],
     }));
     added.forEach(prepare);
+    const heavy = added.filter(heavyMedia);
+    if (heavy.length) toast("This media may play slowly. Create proxies?", "info", 10000, { label: "Create proxies", run: () => {
+      if (!signal.aborted) proxyAction(Promise.resolve().then(() => createProxies(heavy.map((a) => a.id))));
+    } });
   }
   // A .cube is a LUT for the project, not media for the library.
   const cubes = out.flatMap((o) => ("lutFile" in o ? [o.file] : []));
@@ -68,11 +77,11 @@ export async function importEach(files: ImportedFile[], signal = projectWork.sig
  * media as part of an edit (a voiceover's speech) adds them inside that
  * edit, so one undo takes the clips and their media together. Call
  * `prepare` on each once they are in the project. */
-export async function probeFiles(files: ImportedFile[], signal = projectWork.signal()): Promise<Asset[]> {
+export async function probeFiles(files: ImportedFile[], signal = projectWork.capture()): Promise<Asset[]> {
   return (await probeEach(files, signal)).flatMap((o) => ("asset" in o ? [o.asset] : []));
 }
 
-type Probed = { file: ImportedFile; asset: Asset } | { file: ImportedFile; lutFile: true } | { file: ImportedFile; error: string };
+type Probed = { file: ImportedFile; asset: Asset; audioRole?: AudioRoleGuess } | { file: ImportedFile; lutFile: true } | { file: ImportedFile; error: string };
 
 /**
  * Each file probed, in order. The format is told by the file, never by the
@@ -82,8 +91,9 @@ type Probed = { file: ImportedFile; asset: Asset } | { file: ImportedFile; lutFi
  */
 async function probeEach(files: ImportedFile[], signal: AbortSignal): Promise<Probed[]> {
   const out: Probed[] = [];
-  for (const given of files) {
+  for (const file of files) {
     if (signal.aborted) return [];
+    const given = { ...file, name: mediaName(file) };
     // Answers name the file as it was given, whatever copy is made of it.
     const fail = (error: string) => {
       toast(`${given.name}: ${error}`, "error");
@@ -149,7 +159,19 @@ async function probeEach(files: ImportedFile[], signal: AbortSignal): Promise<Pr
         audioCodec: info.audioCodec,
         rotation: info.rotation,
       };
-      out.push({ file: given, asset });
+      let audioRole: AudioRoleGuess | undefined;
+      if (asset.kind === "audio" && !assetRole(asset)) {
+        try {
+          const pcm = await decodeMono(asset, 0, Math.min(60, asset.duration), 8000, undefined, signal);
+          audioRole = classifyAudioRole(pcm, 8000);
+          if (audioRole.role) asset.role = audioRole.role;
+        } catch {
+          signal.throwIfAborted();
+          audioRole = { reason: "Audio analysis unavailable; role left unset", seconds: 0, pauses: 0, modulation: 0, periodicity: 0 };
+        }
+        toast(`${asset.name}: ${audioRole.reason}`);
+      }
+      out.push({ file: given, asset, ...(audioRole ? { audioRole } : {}) });
     } catch (e) {
       if (signal.aborted) return [];
       fail(`couldn't be opened: ${e instanceof Error ? e.message : e}`);
@@ -216,23 +238,38 @@ export function addToTimeline(asset: Asset, at?: number, trackId?: Id | "overlay
   return id;
 }
 
+/** A marked source placement is one timing edit, with marks cleared only on success. */
+export function editFromSource(asset: Asset, mode: ops.PlaceMode, marks: SourceMarks): Id {
+  let id = "";
+  edit(mode === "insert" ? "Insert source" : "Overwrite source", (p) => {
+    const r = placeSourceEdit(p, asset, store.get().playhead, marks, mode);
+    id = r.clipId;
+    return r.project;
+  }, { magnet: false });
+  if (id) {
+    store.select([id]);
+    store.set({ inPoint: null, outPoint: null });
+    const c = ops.findClip(store.get().project, id)?.clip;
+    if (c) store.seek(ops.clipEnd(c));
+  }
+  return id;
+}
+
 /** Import files from the OS picker; returns the new assets. */
 export async function pickAndImport(): Promise<Asset[]> {
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const files = await platform.pickMedia();
   return files.length ? importFiles(files, signal) : [];
 }
 
 /** Capture ownership before copying/adopting browser files, too. */
-export async function adoptAndImport(files: File[]): Promise<Asset[]> {
-  const signal = projectWork.signal();
+export async function adoptAndImport(files: File[], signal = projectWork.capture()): Promise<Asset[]> {
   return importFiles(await platform.adoptFiles(files), signal);
 }
 
 /** Files made in the app (speech), saved where the project keeps media
  * and probed, for the caller's edit to add (probeFiles). */
-export async function adoptAndProbe(files: File[]): Promise<Asset[]> {
-  const signal = projectWork.signal();
+export async function adoptAndProbe(files: File[], signal = projectWork.capture()): Promise<Asset[]> {
   return probeFiles(await platform.adoptFiles(files), signal);
 }
 

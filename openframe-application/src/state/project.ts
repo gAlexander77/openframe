@@ -16,6 +16,10 @@ import { dismiss, updateToast, toast } from "./toast";
 import { projectWork } from "./projectWork";
 import { copyProject } from "../lib/project/copy";
 import { markDeleted, markRestored, splitTrash } from "../lib/projectTrash";
+import { fromOtio } from "../lib/interchange/fromOtio";
+import { fromFcpxml } from "../lib/interchange/fcpxml";
+import { resolveProjectPath } from "../lib/projectFiles";
+import { sourceName } from "../lib/mediaKind";
 
 export type Screen = "home" | "editor";
 
@@ -199,6 +203,7 @@ export function closeProject(focusSearch = false) {
     leave();
     clearTimeout(timer);
     projectWork.close();
+    store.unload();
     set({ screen: "home", ...(focusSearch ? { openRequest: session.openRequest + 1 } : {}) });
     return true;
   });
@@ -275,6 +280,39 @@ export function openProjectFile(path?: string) {
     enter(p);
     return true;
   });
+}
+
+/** Import owns the navigation lock, including the file picker and media check. */
+export async function importTimeline(file?: string): Promise<{ opened: boolean; project: Project; warnings: string[] } | null> {
+  let result: { opened: boolean; project: Project; warnings: string[] } | null = null;
+  await navigate(async () => {
+    const picked = await platform.openTimelineFile(file);
+    if (!picked) return false;
+    const imported = picked.text.trimStart().startsWith("<") ? fromFcpxml(picked.text) : fromOtio(picked.text);
+    const { project: p, warnings } = imported;
+    // Probing enriches the placeholders without changing any edit timing.
+    const { probe } = await import("../engine/media");
+    for (const a of p.assets) {
+      if (picked.path) a.src = resolveProjectPath(a.src, picked.path);
+      if (platform.kind === "web" && !/^https?:\/\//i.test(a.src)) {
+        warnings.push(`Missing media: ${a.name}. The web build resolves HTTP(S) URLs only; relink this file in Media.`);
+        continue;
+      }
+      try {
+        const info = await probe(a.src, sourceName(a.src));
+        Object.assign(a, { ...info, duration: Math.max(a.duration, info.duration) });
+        if (!info.decodable) warnings.push(`${a.name} is not decodable here; relink it to an edit-friendly file.`);
+      } catch { warnings.push(`Missing media: ${a.name} (${a.src}); relink it in Media.`); }
+    }
+    if (!await saveNow()) throw new Error("The current project could not be saved. Timeline import was canceled.");
+    await platform.saveProject(p, projectSummary(p));
+    // Delayed save may have allowed another edit of the original.
+    if (!await saveNow()) throw new Error("The current project's latest edits could not be saved, so it stays open.");
+    enter(p);
+    result = { opened: true, project: p, warnings };
+    return true;
+  });
+  return result;
 }
 export async function collectProject(desktopOnly = false, folder?: string) {
   if (desktopOnly && platform.kind !== "desktop") throw new Error(`collect_project${folder !== undefined ? " (and its folder)" : ""} is desktop only: a page cannot write into a folder of your choosing. File > Collect files downloads project JSON on the web; media stays in the browser.`);

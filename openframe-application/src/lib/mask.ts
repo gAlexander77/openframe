@@ -5,10 +5,11 @@
 // "Layer pixels" here are the layer's own, before its rotation and flips,
 // with the layer's center at 0,0 and y down.
 
+import { maskPathData, cleanMaskPoints, flattenPath } from "./maskPath";
 import type { Mask } from "./project/types";
 
 export type MaskShape = Mask["shape"];
-export const MASK_SHAPES: MaskShape[] = ["linear", "mirror", "circle", "rectangle", "heart", "star"];
+export const MASK_SHAPES: MaskShape[] = ["linear", "mirror", "circle", "rectangle", "heart", "star", "path"];
 
 export const MASK_LABELS: Record<MaskShape, string> = {
   linear: "Linear",
@@ -17,14 +18,30 @@ export const MASK_LABELS: Record<MaskShape, string> = {
   rectangle: "Rectangle",
   heart: "Heart",
   star: "Star",
+  path: "Pen",
 };
 
 /** A new mask, as the Mask tab adds it. Heart and star start square on
  * the layer (`aspect`: its width over height), as CapCut's do; the
  * others keep the layer's shape, as they always have. */
 export function newMask(shape: MaskShape, aspect: number): Mask {
+  if (shape === "path") return { shape, points: [], closed: false, x: 0, y: 0, width: 1, height: 1, rotation: 0, feather: 0, invert: false };
   const square = shape === "heart" || shape === "star";
   return { shape, x: 0, y: 0, width: square ? 0.6 / aspect : 0.6, height: 0.6, rotation: 0, feather: 0.05, invert: false };
+}
+
+/** Optional masks are repaired at the project boundary, never in shaders. */
+export function cleanMask(raw: unknown): Mask | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const m = raw as Record<string, unknown>;
+  if (!MASK_SHAPES.includes(m.shape as MaskShape)) return undefined;
+  const n = (key: string, fallback: number, lo: number, hi: number) => typeof m[key] === "number" && Number.isFinite(m[key]) ? Math.min(hi, Math.max(lo, m[key] as number)) : fallback;
+  const points = m.shape === "path" ? cleanMaskPoints(m.points ?? []) : undefined;
+  if (m.shape === "path" && !points) return undefined;
+  return { shape: m.shape as MaskShape, x: n("x", 0, -1, 1), y: n("y", 0, -1, 1), width: n("width", m.shape === "path" ? 1 : 0.6, 0.01, 2), height: n("height", m.shape === "path" ? 1 : 0.6, 0.01, 2), rotation: n("rotation", 0, -360, 360), feather: n("feather", 0.05, 0, 1), invert: m.invert === true,
+    ...(m.radius !== undefined ? { radius: n("radius", 0, 0, 1) } : {}),
+    ...(points ? { points, ...(m.closed === false ? { closed: false } : {}) } : {}),
+  };
 }
 
 export interface MaskFrame {
@@ -50,6 +67,14 @@ export function maskFrame(m: Mask, lw: number, lh: number): MaskFrame {
 export function maskReach(m: Mask, aspect: number): { left: number; right: number; top: number; bottom: number } | null {
   if (m.shape === "linear" || m.shape === "mirror") return null;
   const f = maskFrame(m, aspect, 1);
+  if (m.shape === "path") {
+    const points = flattenPath(m.points ?? []).map((p) => {
+      const x = p.x * m.width * aspect, y = p.y * m.height;
+      return { x: m.x + (Math.cos(f.rot) * x - Math.sin(f.rot) * y) / aspect, y: m.y + Math.sin(f.rot) * x + Math.cos(f.rot) * y };
+    });
+    if (!points.length) return null;
+    return points.reduce((b, p) => ({ left: Math.min(b.left, p.x), right: Math.max(b.right, p.x), top: Math.min(b.top, p.y), bottom: Math.max(b.bottom, p.y) }), { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity });
+  }
   const c = Math.abs(Math.cos(f.rot)), s = Math.abs(Math.sin(f.rot));
   // An ellipse's box turned with it; any other shape's box, turned.
   const hx = m.shape === "circle" ? Math.hypot(f.hw * c, f.hh * s) : f.hw * c + f.hh * s;
@@ -87,6 +112,7 @@ const n = (v: number) => +v.toFixed(2);
 export function maskOutline(m: Mask, f: MaskFrame, k: number, reach: number): string {
   const w = f.hw * k, h = f.hh * k, L = reach * k;
   switch (m.shape) {
+    case "path": return maskPathData(m.points ?? [], m.closed !== false, 2 * w, 2 * h);
     case "linear":
       return `M ${n(-L)} 0 H ${n(L)}`;
     case "mirror":

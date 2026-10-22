@@ -1,8 +1,11 @@
+import { fadeGain } from "../lib/audio";
+import type { Sound } from "../lib/project/types";
 import { memo, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { fromDb, toDb } from "../lib/audio";
 import { gridTicks } from "../lib/beatGrid";
 import { isTimed, setParam, sourceOffset } from "../lib/project/ops";
-import { store } from "../state/store";
+import { cutSides } from "../lib/editPoints";
+import { store, useEditor } from "../state/store";
 import { editOnCanvas } from "../state/textEdit";
 import { compoundHasSound, compoundPeaks, compoundStrip } from "../engine/compoundThumbs";
 import { useTimelineDisplay } from "../state/timelineDisplay";
@@ -144,7 +147,7 @@ const dbToY = (db: number, h: number) => {
 };
 
 function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number; fps: Project["fps"]; slim?: boolean }) {
-  const c = p.clip as Clip & { volume: number; fadeIn: number; fadeOut: number };
+  const c = p.clip as Clip & Sound;
   const [drag, setDrag] = useState<null | { kind: "vol" | "in" | "out"; label: string }>(null);
   const h = p.height;
   const w = c.duration * p.zoom;
@@ -152,6 +155,16 @@ function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number
   const lineY = dbToY(db, h);
   const fi = c.fadeIn * p.zoom;
   const fo = c.fadeOut * p.zoom;
+  const ramp = (out: boolean) => {
+    const length = out ? fo : fi;
+    const points = Array.from({ length: 25 }, (_, i) => {
+      const u = i / 24;
+      const x = out ? w - length + length * u : length * u;
+      const g = fadeGain(out ? 1 - u : u, out ? c.fadeOutCurve : c.fadeInCurve);
+      return `${x},${h - (h - lineY) * g}`;
+    });
+    return `M${out ? w - length : 0},${h} L${points.join(" L")} L${out ? w : length},${h} Z`;
+  };
   const start = (e: React.PointerEvent, kind: "vol" | "in" | "out") => {
     e.stopPropagation();
     e.preventDefault();
@@ -190,8 +203,8 @@ function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number
   return (
     <div className={`audio-handles${p.slim ? " slim" : ""}`} style={{ top: p.top, height: h }}>
       <svg className="fade-shade" width={w} height={h} aria-hidden>
-        {fi > 0 && <path d={`M0,0 L${fi},${lineY} L0,${h} Z`} />}
-        {fo > 0 && <path d={`M${w},0 L${w - fo},${lineY} L${w},${h} Z`} />}
+        {fi > 0 && <path d={ramp(false)} />}
+        {fo > 0 && <path d={ramp(true)} />}
       </svg>
       <div className={`vol-line${drag?.kind === "vol" ? " on" : ""}`} style={{ top: lineY, left: fi, right: fo }} data-tip="Drag to change volume (Shift for fine)" onPointerDown={(e) => start(e, "vol")} />
       <div className="fade-knob in" style={{ left: Math.max(8, fi - 5) }} data-tip="Drag to fade in" onPointerDown={(e) => start(e, "in")} />
@@ -203,6 +216,7 @@ function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number
 
 export const ClipView = memo(function ClipView(p: Props) {
   const { clip: c, zoom, height } = p;
+  const edges = useEditor((s) => s.selectedEdits);
   const display = useTimelineDisplay();
   const tint = c.labelColor ?? p.track.color;
   const v = useThumbVersion();
@@ -245,6 +259,12 @@ export const ClipView = memo(function ClipView(p: Props) {
       className={`clip clip-${c.type}${(c as { caption?: boolean }).caption ? " clip-caption" : ""}${p.selected ? " selected" : ""}${c.disabled ? " disabled" : ""}${p.track.locked ? " locked" : ""}`}
       style={{ transform: `translateX(${c.start * zoom + (p.shift ?? 0)}px)`, width: Math.max(2, w), height, ...(tint ? ({ "--label": c.labelColor ? CLIP_LABELS[tint].color : `color-mix(in srgb, ${CLIP_LABELS[tint].color} 38%, #20252b)` } as React.CSSProperties) : {}) }}
       data-label={tint}
+      onPointerDownCapture={(e) => {
+        if (!store.get().colorMatchPicking || e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (c.type === "video" || c.type === "image") store.set({ colorMatchReference: c.id, colorMatchPicking: false });
+      }}
       onPointerDown={(e) => p.onDown(e, c, "body")}
       // Keyboard reach (UX-33): Tab focuses one clip, arrows move between
       // them. A click must not focus it, or the arrows would stop stepping
@@ -329,10 +349,11 @@ export const ClipView = memo(function ClipView(p: Props) {
           strip (Premiere's audio handles), not only in the inspector. */}
       {c.type === "video" && showWave && p.selected && !tiny && <AudioHandles clip={c} zoom={zoom} height={WAVE_H} top={height - WAVE_H} fps={p.fps} slim />}
       {p.selected && <ClipKeys clip={c} zoom={zoom} locked={p.track.locked} />}
+      {edges.filter((e) => e.clipId === c.id).map((e) => <span key={e.edge} className={`edit-bracket ${e.edge}`} data-edit-edge={e.edge} aria-label={`Selected ${e.edge} edit point`} />)}
       {!tiny && !p.track.locked && (
         <>
-          <div className="trim trim-start" onPointerDown={(e) => { e.stopPropagation(); p.onDown(e, c, "start"); }} />
-          <div className="trim trim-end" onPointerDown={(e) => { e.stopPropagation(); p.onDown(e, c, "end"); }} />
+          <div className="trim trim-start" onDoubleClick={(e) => { e.stopPropagation(); if (store.get().tool === "select") store.set({ selectedEdits: cutSides(store.get().project, { clipId: c.id, edge: "start" }) }); }} onPointerDown={(e) => { e.stopPropagation(); p.onDown(e, c, "start"); }} />
+          <div className="trim trim-end" onDoubleClick={(e) => { e.stopPropagation(); if (store.get().tool === "select") store.set({ selectedEdits: cutSides(store.get().project, { clipId: c.id, edge: "end" }) }); }} onPointerDown={(e) => { e.stopPropagation(); p.onDown(e, c, "end"); }} />
         </>
       )}
     </div>

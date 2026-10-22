@@ -43,5 +43,6 @@ export function crossfadeJoin(p: Project, clipId: Id): CrossfadeJoin | null {
   return { next, most, plays: audioCrossfade(a, next, p.fps), ...(why ? { why } : {}) };
 }
 
-/** A new crossfade's length: the transitions preference, as far as the join allows. */
-export const newCrossfade = (join: CrossfadeJoin, preferred: number) => +Math.min(preferred, join.most).toFixed(4);
+/** A new crossfade's length, truncated to set_crossfade's precision so
+ * rounding cannot exceed a source handle (0.123456 must not become 0.1235). */
+export const newCrossfade = (join: CrossfadeJoin, preferred: number) => Math.floor(Math.min(preferred, join.most) * 1e4 + 1e-9) / 1e4;

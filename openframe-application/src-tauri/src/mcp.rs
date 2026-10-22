@@ -33,8 +33,24 @@ const MAX_BODY: usize = 8 * 1024 * 1024;
 #[derive(Default)]
 pub struct Mcp {
     running: Arc<AtomicBool>,
-    pending: Arc<Mutex<HashMap<u64, mpsc::Sender<Option<String>>>>>,
+    listening: Arc<AtomicBool>,
+    pending: Arc<Mutex<HashMap<u64, mpsc::Sender<Reply>>>>,
     next: Arc<AtomicU64>,
+}
+
+#[derive(Debug, PartialEq)]
+enum Reply {
+    Answer(Option<String>),
+    PageGone,
+}
+
+/// The old page can no longer answer, even if its replacement fails to mount.
+pub fn page_reloading(state: &Mcp) {
+    let mut pending = state.pending.lock().unwrap();
+    state.listening.store(false, Ordering::SeqCst);
+    for (_, tx) in pending.drain() {
+        let _ = tx.send(Reply::PageGone);
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -162,8 +178,9 @@ fn handle(
     app: &AppHandle,
     s: TcpStream,
     token: &str,
-    pending: &Mutex<HashMap<u64, mpsc::Sender<Option<String>>>>,
+    pending: &Mutex<HashMap<u64, mpsc::Sender<Reply>>>,
     next: &AtomicU64,
+    listening: &AtomicBool,
 ) {
     let _ = s.set_read_timeout(Some(Duration::from_secs(30)));
     let req = match read_request(&s) {
@@ -203,9 +220,27 @@ fn handle(
     let body = String::from_utf8_lossy(&req.body).to_string();
     let id = next.fetch_add(1, Ordering::Relaxed);
     let (tx, rx) = mpsc::channel();
-    pending.lock().unwrap().insert(id, tx);
+    {
+        // Register under the reload lock so a departing page cannot miss us.
+        let mut pending = pending.lock().unwrap();
+        if !listening.load(Ordering::SeqCst) {
+            drop(pending);
+            return match rpc_error_for(&body, "OpenFrame's editor is not ready for agents: it is starting, reloading, or stopped on an error. Try again in a few seconds; if this keeps happening, restart OpenFrame.") {
+                Some(reply) => respond(s, "200 OK", "application/json", &reply, ""),
+                None => respond(s, "202 Accepted", "text/plain", "", ""),
+            };
+        }
+        pending.insert(id, tx);
+    }
     if app
-        .emit_to("main", "mcp-request", McpRequest { id, body })
+        .emit_to(
+            "main",
+            "mcp-request",
+            McpRequest {
+                id,
+                body: body.clone(),
+            },
+        )
         .is_err()
     {
         pending.lock().unwrap().remove(&id);
@@ -217,13 +252,12 @@ fn handle(
             "",
         );
     }
-    match rx.recv_timeout(Duration::from_secs(300)) {
-        Ok(Some(reply)) => respond(s, "200 OK", "application/json", &reply, ""),
-        // A notification has no reply: 202 Accepted, per the transport spec.
-        Ok(None) => respond(s, "202 Accepted", "text/plain", "", ""),
+    let reply = match rx.recv_timeout(Duration::from_secs(300)) {
+        Ok(Reply::Answer(reply)) => reply,
+        Ok(Reply::PageGone) => rpc_error_for(&body, "OpenFrame's editor reloaded before it answered. Check the project (describe_project) before retrying an edit, since it may or may not have been applied."),
         Err(_) => {
             pending.lock().unwrap().remove(&id);
-            respond(
+            return respond(
                 s,
                 "504 Gateway Timeout",
                 "text/plain",
@@ -231,6 +265,11 @@ fn handle(
                 "",
             )
         }
+    };
+    match reply {
+        Some(reply) => respond(s, "200 OK", "application/json", &reply, ""),
+        // A notification has no reply: 202 Accepted, per the transport spec.
+        None => respond(s, "202 Accepted", "text/plain", "", ""),
     }
 }
 
@@ -241,6 +280,7 @@ pub fn mcp_enable(
     state: State<'_, Mcp>,
     on: bool,
 ) -> Result<Option<McpInfo>, String> {
+    state.listening.store(on, Ordering::SeqCst);
     let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     if !on {
         state.running.store(false, Ordering::SeqCst);
@@ -266,6 +306,7 @@ pub fn mcp_enable(
         format!("port {PORT} is in use ({e}); is another copy of the app serving agents?")
     })?;
     let running = state.running.clone();
+    let listening = state.listening.clone();
     let pending = state.pending.clone();
     let next = state.next.clone();
     std::thread::spawn(move || {
@@ -274,9 +315,14 @@ pub fn mcp_enable(
                 break;
             }
             let Ok(s) = conn else { continue };
-            let (app, token, pending, next) =
-                (app.clone(), token.clone(), pending.clone(), next.clone());
-            std::thread::spawn(move || handle(&app, s, &token, &pending, &next));
+            let (app, token, pending, next, listening) = (
+                app.clone(),
+                token.clone(),
+                pending.clone(),
+                next.clone(),
+                listening.clone(),
+            );
+            std::thread::spawn(move || handle(&app, s, &token, &pending, &next, &listening));
         }
     });
     Ok(Some(info))
@@ -286,7 +332,7 @@ pub fn mcp_enable(
 #[tauri::command]
 pub fn mcp_reply(state: State<'_, Mcp>, id: u64, response: Option<String>) {
     if let Some(tx) = state.pending.lock().unwrap().remove(&id) {
-        let _ = tx.send(response);
+        let _ = tx.send(Reply::Answer(response));
     }
 }
 
@@ -389,6 +435,12 @@ pub fn run_stdio_bridge() {
     }
 }
 
+/// Only the request id belongs to the transport; MCP stays in the webview.
+fn rpc_error_for(body: &str, message: &str) -> Option<String> {
+    let request: serde_json::Value = serde_json::from_str(body).ok()?;
+    request.get("id").map(|id| error(id.clone(), message))
+}
+
 fn error(id: serde_json::Value, message: &str) -> String {
     serde_json::json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32000, "message": message } }).to_string()
 }
@@ -396,6 +448,45 @@ fn error(id: serde_json::Value, message: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rpc_errors_keep_ids_and_escape_messages() {
+        let message = "OpenFrame's editor reloaded (check \"describe_project\").\nTry again.";
+        for id in [serde_json::json!(42), serde_json::json!("request-7")] {
+            let body = serde_json::json!({ "jsonrpc": "2.0", "id": id, "method": "tools/list" })
+                .to_string();
+            let reply: serde_json::Value =
+                serde_json::from_str(&rpc_error_for(&body, message).unwrap()).unwrap();
+            assert_eq!(
+                reply,
+                serde_json::json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32000, "message": message } })
+            );
+        }
+        assert_eq!(
+            rpc_error_for(
+                r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+                message
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn page_reload_wakes_all_pending_requests() {
+        let state = Mcp::default();
+        state.listening.store(true, Ordering::SeqCst);
+        let (tx_a, rx_a) = mpsc::channel();
+        let (tx_b, rx_b) = mpsc::channel();
+        state.pending.lock().unwrap().insert(1, tx_a);
+        state.pending.lock().unwrap().insert(2, tx_b);
+
+        page_reloading(&state);
+
+        assert_eq!(rx_a.try_recv(), Ok(Reply::PageGone));
+        assert_eq!(rx_b.try_recv(), Ok(Reply::PageGone));
+        assert!(state.pending.lock().unwrap().is_empty());
+        assert!(!state.listening.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn parses_a_post_with_body() {

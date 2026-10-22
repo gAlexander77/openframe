@@ -1,4 +1,5 @@
 import type { Asset, AssetKind, Compound, Track } from "./project/types";
+import { mediaName } from "./mediaKind";
 
 export interface MediaBrowser {
   query: string;
@@ -45,14 +46,14 @@ export function filterMedia(assets: Asset[], usage: Map<string, MediaUse[]>, opt
   const list = assets.filter((asset) => {
     const used = (usage.get(asset.id)?.length ?? 0) > 0;
     return !asset.sticker && (options.kind === "all" || asset.kind === options.kind)
-      && asset.name.toLocaleLowerCase().includes(query)
+      && mediaName(asset).toLocaleLowerCase().includes(query)
       && (options.folder === null || (asset.folder ?? "") === options.folder)
       && (!options.favorites || asset.favorite === true)
       && (options.usage === "all" || (options.usage === "used" ? used : !used));
   });
   if (options.sort === "name" || options.sort === "name-desc") {
     const sign = options.sort === "name" ? 1 : -1;
-    list.sort((a, b) => sign * a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+    list.sort((a, b) => sign * mediaName(a).localeCompare(mediaName(b), undefined, { numeric: true, sensitivity: "base" }));
   } else if (options.sort === "duration" || options.sort === "duration-desc") {
     const duration = (a: Asset) => a.kind !== "image" && Number.isFinite(a.duration) && a.duration > 0 ? a.duration : null;
     const sign = options.sort === "duration" ? 1 : -1;

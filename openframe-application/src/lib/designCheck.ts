@@ -11,6 +11,7 @@
 // box over footage is flagged as a risk instead, and the answer says why.
 // Loudness is left to measure_loudness and export.
 
+import { captionReading } from "./captions";
 import { layerBox, TITLE_SAFE, titleZone, VERTICAL_SAFE } from "./align";
 import { minTextSize } from "./brandKit";
 import { contrastFixes, endsByItself, hex, titleLook, type Backdrop, type PixelBox, type Tail, type TitleLook, type UnevenFade } from "./contrast";
@@ -22,7 +23,7 @@ import { frameAt, framesToSeconds, secondsToFrames } from "./time";
 import { findCompound, getAsset, mainTrack, projectDuration, sourceTimeAt } from "./project/ops";
 import { gridStructure, sourceToTimeline } from "./analysis/musicMap";
 import { CLICK_DB, DIP_DB, TAIL_DB, type EdgeReport } from "./analysis/edges";
-import { continues } from "./audio";
+import { continues, wholeSoundEffect } from "./audio";
 import { crossfadeJoin } from "./crossfadeJoin";
 import { calloutsOffFrame } from "./versionCallouts";
 import type { Clip, CompoundClip, Id, Project, TextClip, Track, VisualClip } from "./project/types";
@@ -287,7 +288,8 @@ export function tailTargets(p: Project): { clipId: Id; assetId: Id; from: number
     t.muted
       ? []
       : t.clips.flatMap((c) => {
-          if (c.type !== "audio" || c.muted || c.disabled || c.reverse || c.fadeOut) return [];
+          // Match preview_audio: a fade under 50 ms can still cut an audible tail.
+          if (c.type !== "audio" || c.muted || c.disabled || c.reverse || framesToSeconds(c.fadeOut, p.fps) >= 0.05) return [];
           const last = c.start + c.duration, to = sourceTimeAt(c, last, p.fps);
           // Before the end: only where the file sounds on past the cut and
           // nothing on the track carries on from it.
@@ -311,7 +313,7 @@ export function joinTargets(p: Project): { trackId: Id; at: number; clips: [Id, 
     const clips = t.clips.filter((c) => c.type === "audio" && !c.disabled && !c.muted).sort((a, b) => a.start - b.start);
     clips.forEach((a, i) => {
       const b = clips[i + 1];
-      if (b && a.start + a.duration === b.start && !continues(a, b, p.fps)) out.push({ trackId: t.id, at: +framesToSeconds(b.start, p.fps).toFixed(3), clips: [a.id, b.id] });
+      if (b && a.start + a.duration === b.start && !continues(a, b, p.fps) && !(wholeSoundEffect(p, a) && wholeSoundEffect(p, b))) out.push({ trackId: t.id, at: +framesToSeconds(b.start, p.fps).toFixed(3), clips: [a.id, b.id] });
     });
   }
   return out.sort((x, y) => x.at - y.at);
@@ -613,8 +615,8 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
     if (c.caption && inRun.has(c.id)) {
       if (seconds < CHUNK_MIN) add({ rule: "caption_too_fast", level: "warning", ...where0, at: sec(s.start), message: `A caption of a line shown a few words at a time flashes by: "${c.text}" for ${seconds.toFixed(2)} s (each chunk at least ${CHUNK_MIN} s)`, fix: "join it to the chunk before or after (fewer, longer chunks), or trim_clip it longer" });
     } else if (c.caption) {
-      const cps = shownChars(c.text) / Math.max(seconds, 1e-3);
-      if (cps > 20 || seconds < 5 / 6) add({ rule: "caption_too_fast", level: "warning", ...where0, at: sec(s.start), message: `A caption shows ${cps.toFixed(0)} characters a second for ${seconds.toFixed(2)} s (keep under 20 a second, at least 0.83 s)`, fix: "fewer words per caption, or a longer caption (trim_clip)" });
+      const { cps, met } = captionReading({ start: 0, end: seconds, text: c.text });
+      if (!met) add({ rule: "caption_too_fast", level: "warning", ...where0, at: sec(s.start), message: `A caption shows ${cps.toFixed(0)} characters a second for ${seconds.toFixed(2)} s (keep under 20 a second, at least 0.83 s)`, fix: "fewer words per caption, or a longer caption (trim_clip)" });
     } else {
       // A countdown digit or a one-word hit reads at a glance.
       const need = c.text.trim().length <= 3 ? 0.4 : Math.max(1.5, 0.4 * words(c.text));
@@ -744,7 +746,7 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
     const heard = t?.lastSecond ? `its last second runs ${t.lastSecond.join(", ")} dBFS by quarters and ends at ${t.endDb}, against ${t.bodyDb} dBFS before` : t ? `its very end is at ${t.endDb} dBFS against ${t.bodyDb} dBFS before` : "";
     if (last >= total - 1) add({ rule: "music_ends_abruptly", level: "tip", clip_id: clipId, at: sec(last), message: t ? `${long ? "A long audio clip" : "An audio clip"} stops at the very end while still playing: ${heard}` : "A long audio clip stops at the very end without a fade (its sound was not measured)", fix: "set_fades fade_out 1.5" });
     // Cut off before the end, with the picture going on: heard as a fault.
-    else add({ rule: "sound_cut_off", level: "warning", clip_id: clipId, at: sec(last), message: t ? `An audio clip is cut off at ${sec(last)} s while still sounding, with no fade, and the video goes on: ${heard}` : `A long audio clip stops at ${sec(last)} s without a fade, its file running on (its sound was not measured)`, fix: "set_fades fade_out 0.3 (a song or a bed: 1.5), or trim_clip its end to where the sound pauses" });
+    else add({ rule: "sound_cut_off", level: "warning", clip_id: clipId, at: sec(last), message: t ? `An audio clip is cut off at ${sec(last)} s while still sounding, with ${"fadeOut" in c && c.fadeOut ? "no effective fade" : "no fade"}, and the video goes on: ${heard}` : `A long audio clip stops at ${sec(last)} s without a fade, its file running on (its sound was not measured)`, fix: "set_fades fade_out 0.3 (a song or a bed: 1.5), or trim_clip its end to where the sound pauses" });
   }
 
   // Joins of audio clips, measured on each one's track (ADR-119): a hole or

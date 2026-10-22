@@ -388,7 +388,7 @@ describe("set_mask", () => {
     expect(() => runCommand(p, "set_mask", { clip_ids: [id], shape: "triangle" })).toThrow(/must be one of/);
     const q = runCommand(p, "add_adjustment_clip", { start: 0, duration: 2 });
     const adj = q.tracks.flatMap((t) => t.clips).find((c) => c.type === "adjustment")!;
-    expect(() => runCommand(q, "set_mask", { clip_ids: [adj.id], shape: "circle" })).toThrow(/no picture/);
+    expect(runCommand(q, "set_mask", { clip_ids: [adj.id], shape: "circle" }).tracks.flatMap((t) => t.clips).find((c) => c.id === adj.id)).toMatchObject({ mask: { shape: "circle" } });
   });
 });
 
@@ -524,4 +524,17 @@ describe("what the edits hunt found (ADR-106)", () => {
     const freeze = p.tracks.find((t) => t.main)!.clips.find((c) => c.type === "video" && c.freeze)!.id;
     expect(() => runCommand(p, "slip_clip", { clip_id: freeze, by: 1 })).toThrow(/freeze frame holds one frame/);
   });
+});
+
+it("film 5: fitted launch cutaway reports transparency; fill explicitly covers the interview", () => {
+  const p = createProject({ width: 1920, height: 1080, fps: { num: 30, den: 1 } });
+  p.assets.push({ id: "launch", name: "Launch", src: "launch.mp4", kind: "video", duration: 30, width: 1920, height: 1012, hasAudio: true, hasVideo: true });
+  const report: CommandReport = {};
+  const fitted = runCommand(p, "add_media_clip", { asset_id: "launch", start: 16.1, duration: 5.7, in: 12 }, report);
+  expect(report.notes?.join(" ")).toMatch(/fit.*fill/);
+  const fitClip = fitted.tracks.flatMap(t => t.clips)[0];
+  expect("transform" in fitClip && fitClip.transform.scale).toBe(1);
+  const covered = runCommand(p, "add_media_clip", { asset_id: "launch", start: 16.1, duration: 5.7, in: 12, fit: "fill" });
+  const c = covered.tracks.flatMap(t => t.clips)[0];
+  expect("transform" in c && c.transform.scale).toBeCloseTo(1080 / 1012, 6);
 });

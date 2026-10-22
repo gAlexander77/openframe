@@ -25,6 +25,15 @@ describe("media library views", () => {
     expect(JSON.stringify(assets)).toBe(before);
   });
 
+  it("can search and sort an asset whose display name is absent", () => {
+    // An automation import used to save name: undefined before normalization.
+    const unnamed = { ...assets[0], name: undefined } as unknown as Asset;
+    const items = [unnamed, assets[1]];
+    expect(ids(filterMedia(items, new Map(), { ...DEFAULT_MEDIA_BROWSER, query: "SHOT10" }))).toEqual(["ten"]);
+    expect(ids(filterMedia(items, new Map(), { ...DEFAULT_MEDIA_BROWSER, sort: "name" }))).toEqual(["two", "ten"]);
+    expect(unnamed.name).toBeUndefined();
+  });
+
   it("sorts source seconds, keeps ties stable and puts stills last in either direction", () => {
     const items = [assets[3], assets[1], assets[0], { ...assets[0], id: "tie" }];
     expect(ids(filterMedia(items, new Map(), { ...DEFAULT_MEDIA_BROWSER, sort: "duration" }))).toEqual(["ten", "tie", "two", "still"]);

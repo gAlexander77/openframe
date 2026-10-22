@@ -1,4 +1,5 @@
-import { animatedFrameAt } from "../lib/animatedImage";
+import { memoryOwners, MiB, trackCache } from "./memory";
+import { BorrowCache } from "../lib/memory";
 import { platform } from "../platform";
 import { looksLikeMedia, SNIFF_BYTES, sniffFormat } from "../lib/mediaKind";
 interface Decoder {
@@ -7,17 +8,11 @@ interface Decoder {
   close(): void;
 }
 type DecoderClass = { new(options: { data: ArrayBuffer; type: string; preferAnimation: boolean }): Decoder; isTypeSupported(type: string): Promise<boolean> };
-const cache = new Map<string, Promise<{ frames: ImageBitmap[]; durations: number[] } | null>>();
-/** Frames become owned bitmaps immediately; decoder frames never escape. */
-export function animationFor(src: string, name: string) {
-  let pending = cache.get(src);
-  if (!pending) {
-    pending = decode(src, name);
-    cache.set(src, pending);
-    pending.catch(() => cache.delete(src));
-  }
-  return pending;
-}
+type Animation = { frames: ImageBitmap[]; durations: number[] } | null;
+const cache = new BorrowCache<string, Animation>(256 * MiB, a => a?.frames.reduce((n, f) => n + f.width * f.height * 4, 0) ?? 64, a => a?.frames.forEach(f => f.close()));
+trackCache("animated_images", cache);
+memoryOwners.register("animated_image_borrows", () => ({ bytes: cache.borrowedBytes, count: 0 }));
+export const borrowAnimation = (src: string, name: string) => cache.acquire(src, () => decode(src, name));
 /** The decoder's type for a format that can animate, else null. */
 const ANIMATES: Record<string, string> = { gif: "image/gif", webp: "image/webp", png: "image/png", apng: "image/png" };
 
@@ -50,11 +45,4 @@ async function decode(src: string, name: string) {
   } catch (e) { frames.forEach(f => f.close()); throw e; }
   finally { decoder.close(); }
 }
-export async function animatedBitmap(src: string, name: string, time: number) {
-  const a = await animationFor(src, name);
-  return a?.frames[animatedFrameAt(a.durations, time)];
-}
-export async function closeAnimation(src: string) {
-  const pending = cache.get(src); cache.delete(src);
-  (await pending?.catch(() => null))?.frames.forEach(f => f.close());
-}
+export const closeAnimation = (src: string) => cache.delete(src);

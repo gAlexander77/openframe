@@ -23,15 +23,26 @@ async (page) => {
   const pick = async (slot, name) => {
     const home = (await state()).at;
     await inspector.getByRole("radio", { name: slot, exact: true }).click();
+    // Observe after React handles the click, in the same browser task.
+    // Playwright's click can return several frames into a running preview.
+    await page.evaluate(() => {
+      window.__presetStart = null;
+      document.addEventListener("click", () => {
+        const s = window.videoEditor.state();
+        window.__presetStart = { playing: s.playing, at: s.playhead, ms: performance.now() };
+      }, { once: true });
+    });
     await inspector.locator(".anim-tile", { hasText: new RegExp(`^${name}$`) }).click();
+    const start = await page.evaluate(() => ({ ...window.__presetStart, afterClickMs: Math.round(performance.now() - window.__presetStart.ms) }));
     const seen = [await state()];
+    const afterClick = seen[0].at;
     for (let i = 0; i < 40 && seen.at(-1).playing; i++) {
       await page.waitForTimeout(100);
       seen.push(await state());
     }
     // It plays the animation's section, then returns the playhead where it
     // was (as adding a title does): browsing presets never moves the edit.
-    return { started: seen[0].playing, first: seen[0].at, stoppedAt: seen.at(-1).at, stopped: !seen.at(-1).playing, home };
+    return { started: start.playing, first: start.at, afterClick, afterClickMs: start.afterClickMs, stoppedAt: seen.at(-1).at, stopped: !seen.at(-1).playing, home };
   };
   const details = {};
   const rise = await pick("In", "Rise");

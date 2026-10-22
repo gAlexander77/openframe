@@ -60,7 +60,9 @@ async (page) => {
           if (!e || e === document.documentElement) return true;
           if (shownMemo.has(e)) return shownMemo.get(e);
           const cs = css(e);
-          const v = cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity) >= 0.05 && shown(e.parentElement);
+          // Closed details lay out their children but paint only the summary.
+          const folded = e.parentElement?.tagName === "DETAILS" && !e.parentElement.open && e.tagName !== "SUMMARY";
+          const v = !folded && cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity) >= 0.05 && shown(e.parentElement);
           shownMemo.set(e, v);
           return v;
         };
@@ -431,10 +433,11 @@ async (page) => {
       await tip(page.getByRole("dialog").getByRole("button", { name: "Insert", exact: true }));
     }, true);
     await step(`${at}-save-copy`, () => menuItem("File", /Save a copy/), true);
-    await step(`${at}-manage-media`, async () => {
+    for (const expanded of [false, true]) await step(`${at}-manage-media${expanded ? "-folders" : ""}`, async () => {
       const lib = page.getByRole("region", { name: "Library" });
       await lib.getByRole("tab", { name: "Media", exact: true }).click();
       await page.locator(".media-clear", { hasText: "Manage media" }).click();
+      if (expanded) await page.locator(".folder-editor summary").click();
     }, true);
     await step(`${at}-marker-export`, async () => {
       await menuItem("View", "Markers");

@@ -1,8 +1,12 @@
+
 // A voiceover script line, directed (add_voiceover, retake_voiceover):
 // pause marks written in the text, a pronunciation map that respells words
 // for the voice while captions keep them as written, the pause a line's
 // ending calls for, and where the voice model's own pauses fall so a mark
 // can lengthen one instead of cutting the sentence in two (ADR-083).
+
+import type { Clip } from "./project/types";
+import { framesToSeconds, secondsToFrames, type Rational } from "./time";
 
 /** A pause the script asks for, in seconds. */
 export const PAUSE_DEFAULT = 0.5;
@@ -137,15 +141,20 @@ export function pauseAfter(text: string, paragraph = false): number {
  * Where each line goes, in seconds: at its own `at` when given, otherwise
  * its `gap` (default `gap`) after the line before (the first at `start`);
  * a line never starts before the previous one ends, so voices never
- * overlap. `before` delays a line that is not pinned.
+ * overlap. `before` delays a line that is not pinned. With `fps`, place
+ * on the frame clock: audio tails round up, gaps and marks to the nearest
+ * frame, so a fractional tail cannot steal a frame from the next pause.
  */
-export function layoutLines(lines: { at?: number; seconds: number; gap?: number; before?: number }[], start = 0, gap = 0.4): { start: number; end: number }[] {
-  let next = start, end = 0;
+export function layoutLines(lines: { at?: number; seconds: number; gap?: number; before?: number }[], start = 0, gap = 0.4, fps?: Rational): { start: number; end: number }[] {
+  const snap = (s: number) => fps ? secondsToFrames(s, fps) : s;
+  const seconds = (f: number) => +(fps ? framesToSeconds(f, fps) : f).toFixed(3);
+  let next = snap(start), end = 0;
   return lines.map((l) => {
-    const s = Math.max(l.at ?? next + (l.before ?? 0), end);
-    end = s + l.seconds;
-    next = end + (l.gap ?? gap);
-    return { start: +s.toFixed(3), end: +end.toFixed(3) };
+    const s = Math.max(l.at === undefined ? next + snap(l.before ?? 0) : snap(l.at), end);
+    // Match clipForAsset's whole-audio duration, including its last sample.
+    end = s + (fps ? Math.max(1, Math.ceil(l.seconds * fps.num / fps.den - 1e-6)) : l.seconds);
+    next = end + snap(l.gap ?? gap);
+    return { start: seconds(s), end: seconds(end) };
   });
 }
 
@@ -273,4 +282,9 @@ export function syllables(word: string): number {
   if (w.length <= 3) return 1;
   w = w.replace(/(?:[^laeiouycsxzgh]es|[^laeiouytd]ed|[^laeiouy]e)$/, (m) => m[0]).replace(/^y/, "");
   return Math.max(1, w.match(/[aeiouy]+/g)?.length ?? 0);
+}
+
+/** Placed clip bounds, rather than the synthesizer's unsnapped clock. */
+export function placedLineTimes(c: Pick<Clip, "start" | "duration">, fps: Rational): { start: number; end: number } {
+  return { start: +framesToSeconds(c.start, fps).toFixed(3), end: +framesToSeconds(c.start + c.duration, fps).toFixed(3) };
 }

@@ -5,7 +5,7 @@
 import type { Source, StreamTargetChunk } from "mediabunny";
 import type { AboutLink } from "../lib/about";
 import type { AgentCli, AgentCliResult } from "../lib/agentSetup";
-import type { Project } from "../lib/project/types";
+import type { Asset, PlaybackProxy, PlaybackProxySize, Project } from "../lib/project/types";
 
 export interface ImportedFile {
   name: string;
@@ -51,6 +51,8 @@ export interface ExportTarget {
 
 export interface Platform {
   kind: "desktop" | "web";
+  /** Chat replay picker (32 MiB maximum); explicit locations are absolute desktop paths or web URLs. */
+  openChatReplay(path?: string, signal?: AbortSignal): Promise<{ name: string; text: string } | null>;
   /** Ask the user for media files. */
   pickMedia(): Promise<ImportedFile[]>;
   /** Take files dropped onto the window (web) into the app's keeping. */
@@ -68,6 +70,11 @@ export interface Platform {
   /** An edit-friendly copy of media the webview cannot decode (desktop,
    * FFmpeg); resolves to its src. Progress is 0..1. */
   makeProxy?(src: string, onProgress: (fraction: number) => void, signal?: AbortSignal): Promise<string>;
+
+  makePlaybackProxy(asset: Asset, size: PlaybackProxySize, onProgress: (fraction: number) => void, signal?: AbortSignal): Promise<PlaybackProxy>;
+  /** Check the original fingerprint and whether the cached copy exists. */
+  playbackProxyInfo?(asset: Asset): Promise<{ fingerprint?: string; exists: boolean }>;
+  deletePlaybackProxy(src: string): Promise<void>;
 
   /** Let external AI agents connect over MCP (desktop: a local server plus a
    * stdio bridge, ADR-009). Returns how to connect, or null when off. */
@@ -99,6 +106,9 @@ export interface Platform {
   };
 
   openProjectFile(path?: string): Promise<unknown | null>;
+  /** Read an OTIO or FCPXML document. path is accepted only on desktop;
+   * its directory is also the base for relative media references. */
+  openTimelineFile(path?: string): Promise<{ name: string; text: string; path?: string } | null>;
   /** Copy the project and its media into a new folder inside `folder`
    * (desktop: an absolute path an agent named, created if missing), or
    * inside one the user picks when it is absent. Answers the project

@@ -1,3 +1,7 @@
+import { memoryOwners } from "./memory";
+import type { SourcePurpose } from "../lib/proxyPolicy";
+import { sourceForPurpose, checkPlaybackProxy, originalFingerprint, missingPlaybackProxy, proxyHealth } from "./playbackProxies";
+import { prefsStore } from "../state/prefs";
 // The preview player: turns store state into pictures and sound.
 //
 // - Paused: any change to the project, playhead, hover frame (preview
@@ -9,6 +13,8 @@
 // - Shuttle (J/K/L): forward rates play with sound at 1x and speed up as
 //   silent frame playback at 2x/4x/8x; reverse is silent frame playback.
 
+import { beforePlan } from "../lib/viewerCompare";
+import { projectWork } from "../state/projectWork";
 import type { VideoSample } from "mediabunny";
 import { cropClips, NO_CROP } from "../lib/crop";
 import { exportRange } from "../lib/export";
@@ -20,16 +26,17 @@ import { choose, DEFAULT_DECODE_RATE, entryTargets, heldBytes, leadFor, MAX_LEAD
 import { frameAt, framesToSeconds } from "../lib/time";
 import { provide } from "../state/actions";
 import { store, type EditorState } from "../state/store";
-import { audibleTime, audioContext, masterBus, scheduleAudio, type Schedule } from "./audio";
+import { audibleTime, audioContext, masterBus, setMonitorMuted, scheduleAudio, type Schedule } from "./audio";
 import { Compositor, type SourceImage } from "./compositor";
 import { ReverseCursor, VideoCursor, type HeldFrame, type ReverseOptions } from "./cursor";
 import { loadPlanLuts } from "./luts";
-import { imageFor, mediaFor, mediaForSrc, type MediaFile } from "./media";
+import { borrowImage, mediaForSrc, type MediaFile } from "./media";
 import { rasterizeText } from "./text";
 
 interface CursorEntry {
   cursor: Promise<VideoCursor | ReverseCursor | null>;
   used: number;
+  resolved?: VideoCursor | ReverseCursor | null;
 }
 
 /** Resolved pixels for one plan, ready for a synchronous compositor pass.
@@ -40,10 +47,25 @@ export type Resolved = Map<Id, { sample?: VideoSample; frame?: HeldFrame; matte?
 /** Decode cursors keyed by clip, shared shape for preview and export.
  * Reversed clips get a ReverseCursor; `reverse` sets the size it holds
  * frames at (default: full size, exact frames for export). */
+const livePools = new Set<CursorPool>();
+memoryOwners.register("decoder_cursors", () => ({ bytes: [...livePools].reduce((n, p) => n + p.memoryBytes, 0), count: [...livePools].reduce((n, p) => n + p.size, 0), estimated: true, detail: "Held frames only; native decoder queues are additional. Preroll admission remains 512 MiB." }), () => { for (const pool of livePools) pool.clear(); });
 export class CursorPool {
+  get size() { return this.map.size; }
+  get memoryBytes() { return [...this.map.values()].reduce((n, e) => n + (e.resolved?.memoryBytes ?? 0), 0); }
   private map = new Map<string, CursorEntry>();
+  private imageReleases: (() => void)[] = [];
+  private imageGeneration = 0;
+  private generation = 0;
+  releaseImages() { this.imageGeneration++; this.imageReleases.splice(0).forEach(release => release()); }
+  async image(asset: import("../lib/project/types").Asset, time: number) {
+    const generation = this.imageGeneration;
+    const borrowed = await borrowImage(asset, time);
+    if (generation !== this.imageGeneration) { borrowed.release(); return null; }
+    this.imageReleases.push(borrowed.release); livePools.add(this);
+    return borrowed.value;
+  }
 
-  constructor(private reverse: ReverseOptions = {}) {}
+  constructor(private reverse: ReverseOptions = {}, private purpose: SourcePurpose | (() => SourcePurpose) = "export", private playbackOn: () => boolean = () => true) {}
 
   /** `lane` 1 is a clip's second cursor, for frame blending's next frame:
    * one cursor holds one sample, so two frames need two. */
@@ -61,10 +83,20 @@ export class CursorPool {
     return this.open(JSON.stringify([clipId, "matte", src, reverse]), () => mediaForSrc(src), reverse);
   }
 
-  private forAsset(p: Project, clipId: Id, assetId: Id, reverse: boolean) {
+  private async forAsset(p: Project, clipId: Id, assetId: Id, reverse: boolean) {
+    const generation = this.generation;
     const asset = getAsset(p, assetId);
+    if (asset) await checkPlaybackProxy(asset);
+    if (generation !== this.generation) return null;
     // Relinking and undo can change a clip's source without changing its ID.
-    return this.open(JSON.stringify([clipId, asset?.proxy ?? asset?.src, reverse]), () => (asset ? mediaFor(asset) : null), reverse);
+    const purpose = typeof this.purpose === "function" ? this.purpose() : this.purpose;
+    const src = asset ? sourceForPurpose(asset, purpose, this.playbackOn()) : undefined;
+    const fingerprint = asset && src === asset.src ? originalFingerprint(asset) : undefined;
+    return this.open(JSON.stringify([clipId, src, fingerprint, reverse]), () => asset && src ? mediaForSrc(src, fingerprint).catch((e) => {
+      if (generation !== this.generation || src !== asset.playbackProxy?.src) throw e;
+      missingPlaybackProxy(asset);
+      return mediaForSrc(asset.proxy ?? asset.src, asset.proxy ? undefined : originalFingerprint(asset));
+    }) : null, reverse);
   }
 
   private open(key: string, media: () => Promise<MediaFile> | null, reverse: boolean) {
@@ -73,13 +105,16 @@ export class CursorPool {
       const m = media();
       const cursor = m
         ? m.then((f) => {
-            if (!f.videoSink || !f.keySink) return null;
-            if (!reverse) return new VideoCursor(f.videoSink, f.keySink, f.videoStart);
-            return new ReverseCursor(f.videoSink, f.keySink, f.videoStart, { width: f.width, height: f.height }, this.reverse);
+            if (!f.videoSink || !f.keySink) { f.release(); return null; }
+            if (!reverse) return new VideoCursor(f.videoSink, f.keySink, f.videoStart, f.release);
+            return new ReverseCursor(f.videoSink, f.keySink, f.videoStart, { width: f.width, height: f.height }, this.reverse, f.release);
           })
         : Promise.resolve(null);
       e = { cursor: cursor.catch(() => null), used: 0 };
+      const entry = e;
+      void e.cursor.then(c => { entry.resolved = c; });
       this.map.set(key, e);
+      livePools.add(this);
     }
     e.used = performance.now();
     return e.cursor;
@@ -94,9 +129,13 @@ export class CursorPool {
         void e.cursor.then((c) => c?.dispose());
       }
     }
+    if (!this.map.size && !this.imageReleases.length) livePools.delete(this);
   }
 
   clear() {
+    this.generation++;
+    livePools.delete(this);
+    this.releaseImages();
     for (const e of this.map.values()) void e.cursor.then((c) => c?.dispose());
     this.map.clear();
   }
@@ -105,6 +144,7 @@ export class CursorPool {
 /** Fetch every source a plan needs. Video samples are borrowed from their
  * cursors and stay valid until the next call on the same cursor. */
 export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorPool): Promise<Resolved> {
+  pool.releaseImages();
   const out: Resolved = new Map();
   await Promise.all([
     loadPlanLuts(plan),
@@ -131,7 +171,7 @@ export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorP
       } else if (src.kind === "image") {
         const asset = getAsset(p, src.assetId);
         if (asset) {
-          const bitmap = await imageFor(asset, src.time).catch(() => null);
+          const bitmap = await pool.image(asset, src.time ?? 0).catch(() => null);
           if (bitmap) out.set(l.clipId, { bitmap, key: `img:${asset.src}:${asset.animated ? src.time : 0}` });
         }
       }
@@ -185,11 +225,66 @@ export interface PrepRecord {
 
 export class Player {
   private compositor: Compositor | null = null;
+  private reference: ImageBitmap | null = null;
+  private capture = 0;
+  private captureNext: { take: (canvas: HTMLCanvasElement | OffscreenCanvas) => void; cancel: () => void } | null = null;
+  private referenceAbort: (() => void) | null = null;
+
+  private clearReference() {
+    this.capture++;
+    this.captureNext?.cancel();
+    this.captureNext = null;
+    this.referenceAbort?.();
+    this.referenceAbort = null;
+    this.reference?.close();
+    this.reference = null;
+    this.compositor?.clearCompare();
+  }
+
+  async showReference() {
+    if (this.reference) store.set({ compare: { ...store.get().compare, mode: "reference" } });
+    else await this.captureReference();
+  }
+
+  async captureReference() {
+    if (!this.compositor) throw new Error("The viewer is not available");
+    const session = projectWork.signal();
+    session.throwIfAborted();
+    this.captureNext?.cancel();
+    const token = ++this.capture;
+    // Snapshot immediately after the live presentation, before the wipe is
+    // drawn. This is the viewer's actual raster, including its crop mode
+    // and playback quality; it never captures the comparison itself.
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => { if (token === this.capture) this.clearReference(); resolve(); };
+      session.addEventListener("abort", abort, { once: true });
+      const done = () => { session.removeEventListener("abort", abort); resolve(); };
+      this.captureNext = {
+        cancel: done,
+        take: canvas => {
+          void createImageBitmap(canvas).then(bitmap => {
+            if (token !== this.capture || session.aborted) { bitmap.close(); done(); return; }
+            this.clearReference();
+            this.reference = bitmap;
+            const clear = () => this.clearReference();
+            session.addEventListener("abort", clear, { once: true });
+            this.referenceAbort = () => session.removeEventListener("abort", clear);
+            store.set({ compare: { ...store.get().compare, mode: "reference" } });
+            this.request();
+            done();
+          }, e => { session.removeEventListener("abort", abort); reject(e); });
+        },
+      };
+      this.request();
+    });
+  }
   // Reversed clips hold their decoded windows at about screen size.
-  private pool = new CursorPool({ maxSide: 1280 });
+  private pool = new CursorPool({ maxSide: 1280 }, () => store.get().scopes ? "scopes" : "preview", () => prefsStore.get().proxyPlayback);
   private wanted: number | null = null;
   private rendering = false;
   private unsub: () => void;
+  private unsubPrefs: () => void;
+  private unsubProxies: () => void;
   private last: Partial<EditorState> = {};
   /** Display size of the canvas in device pixels. */
   private displayW = 0;
@@ -221,7 +316,15 @@ export class Player {
 
   constructor() {
     this.unsub = store.subscribe(() => this.onStore());
+    const refresh = () => { this.preps.clear(); this.prepFor = null; this.request(); };
+    this.unsubPrefs = prefsStore.subscribe(refresh);
+    this.unsubProxies = proxyHealth.subscribe(refresh);
     provide({
+      mutePlayback: () => {
+        const muted = !store.get().monitorMuted;
+        setMonitorMuted(muted);
+        store.set({ monitorMuted: muted });
+      },
       playPause: () => (this.rate ? this.pause() : this.play(1)),
       shuttleForward: () => this.play(this.rate <= 0 ? 1 : Math.min(this.rate * 2, 8)),
       shuttleBack: () => this.play(this.rate >= 0 ? -1 : Math.max(this.rate * 2, -8)),
@@ -242,7 +345,7 @@ export class Player {
     this.compositor?.dispose();
     this.compositor = canvas ? new Compositor(canvas) : null;
     this.pool.clear();
-    if (!canvas) return;
+    if (!canvas) { this.clearReference(); return; }
     this.request();
     // Compile every pass's program in the background: a transition's first
     // use otherwise compiled inside a playback frame (about 0.4 s on
@@ -272,8 +375,9 @@ export class Player {
   pixels(maxWidth?: number) {
     const c = this.compositor;
     if (!c) return null;
-    if (maxWidth) return c.readPixelsScaled(maxWidth);
-    return { width: c.canvas.width, height: c.canvas.height, data: c.readPixels() };
+    const px = maxWidth ? c.readPixelsScaled(maxWidth) : { width: c.canvas.width, height: c.canvas.height, data: c.readPixels() };
+    // Nothing drawn since the last project's targets were released.
+    return px.data.length ? px : null;
   }
 
   private frameListeners = new Set<(frame: number) => void>();
@@ -297,6 +401,9 @@ export class Player {
     const s = store.get();
     const prev = this.last;
     this.last = s;
+    if (s.compare.mode === "off" && (this.reference || prev.compare?.mode !== "off")) this.clearReference();
+    if (prev.scopes !== s.scopes) { this.preps.clear(); this.prepFor = null; this.request(); }
+    if (prev.compare !== s.compare || (s.compare.mode === "beforeAfter" && prev.selection !== s.selection)) this.request();
     if (this.rate !== 0) {
       // An edit during playback restarts it from the current frame so sound
       // matches what is now on the timeline.
@@ -341,15 +448,23 @@ export class Player {
     // Motion blur at full quality paused (what preview_frame and export
     // show), with a few samples while playing (ADR-058).
     const plan = planFrame(p, end > 0 ? Math.min(f, end - 1) : f, { motionSamples: this.rate !== 0 ? MOTION_SAMPLES.playing : MOTION_SAMPLES.full });
+    const session = projectWork.signal();
+    if (session.aborted) return;
     const resolved = await resolveSources(p, plan, this.pool);
-    if (comp !== this.compositor) return;
+    if (comp !== this.compositor || session.aborted) return;
     // Above 1080p, play back at half resolution and show full on pause, as
     // Resolve and Premiere do: the biggest single playback lever.
     const scale = this.rate !== 0 && p.height > 1080 ? Math.min(s.previewScale, 0.5) : s.previewScale;
     const { w, h } = this.renderSize(p, scale);
     comp.resize(w, h);
     try {
-      comp.render(plan, sourceImages(resolved, w, h), p.background);
+      const sources = sourceImages(resolved, w, h);
+      comp.render(plan, sources, p.background);
+      const capture = this.captureNext;
+      this.captureNext = null;
+      capture?.take(comp.canvas);
+      if (s.compare.mode !== "off") comp.compare(s.compare.mode === "beforeAfter" ? beforePlan(plan, s.selection) : null,
+        s.compare.mode === "reference" ? this.reference : null, sources, p.background, s.compare.split, s.compare.orientation === "horizontal");
     } catch (e) {
       console.error("render failed", e);
     }
@@ -540,9 +655,19 @@ export class Player {
     this.request();
   }
 
+  releaseSession() {
+    if (this.rate !== 0 || this.schedule) this.stopClock();
+    this.rate = 0; this.wanted = null; this.until = this.loopFrom = null;
+    this.preps.clear(); this.prepTargets.clear(); this.prepFor = null;
+    this.prepared.length = 0; this.clearReference(); this.pool.clear();
+  }
+
   dispose() {
     this.pause();
     this.unsub();
+    this.unsubPrefs();
+    this.unsubProxies();
+    this.clearReference();
     this.pool.clear();
     this.compositor?.dispose();
   }
@@ -560,3 +685,4 @@ export function topClipAt(p: Project, f: number): VisualClip | null {
 }
 
 export const player = new Player();
+memoryOwners.register("player_session", () => ({ bytes: 0, count: 0 }), () => player.releaseSession());

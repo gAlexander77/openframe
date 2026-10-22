@@ -59,7 +59,9 @@ async (page) => {
   const same = (a, b) => a.every((c, i) => c.every((v, k) => Math.abs(v - b[i][k]) <= 24));
   const details = {};
   // Inside the O's stroke (left side of the ring), its hole, and a corner.
-  const ring = [0.5 - 0.09, 0.45], hole = [0.5, 0.45], corner = [0.08, 0.1];
+  // The hole's point keeps off x 0.5, the green/magenta bar border, where
+  // a viewer a pixel narrower samples a blend of the two.
+  const ring = [0.5 - 0.09, 0.45], hole = [0.52, 0.45], corner = [0.08, 0.1];
   const exec = (name, args) => page.evaluate(({ name, args }) => window.videoEditor.exec(name, args), { name, args });
 
   await exec("set_track_matte", { clip_id: ids.bars, matte_clip_id: ids.text, mode: "alpha" });

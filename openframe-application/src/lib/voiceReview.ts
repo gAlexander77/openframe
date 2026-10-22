@@ -403,6 +403,15 @@ const round = (x: number, d = 2) => +x.toFixed(d);
  * before the chooser held syllables (ADR-114): a retake lands it slower. */
 const longRushed = (m: Pick<LineMeasure, "sps">) => (m.sps ?? 0) > CHOSEN_MAX_SPS + 0.25;
 
+export const isSignoff = (m: LineMeasure) => !!m.text && parseLine(m.text).written.trim().split(/\s+/).filter(Boolean).length <= 3;
+
+/** A sign-off is measured, but has no words-per-second target verdict. */
+export function paceOnTarget(m: LineMeasure): boolean | null {
+  if (isSignoff(m) || m.wps === null) return null;
+  const [low, high] = bandOf(m);
+  return m.wps >= low && m.wps <= high;
+}
+
 /** What is wrong with a line and the call that fixes each, given the
  * median loudness of the lines reviewed. */
 export function verdict(m: LineMeasure, medianLufs: number | null): Fix[] {
@@ -435,7 +444,7 @@ export function verdict(m: LineMeasure, medianLufs: number | null): Fix[] {
   // Pace: a read off its band is read again to land on it (the retake
   // measures and corrects its speed); a line whose speed was already
   // chosen that way and still misses is at the voice's limit: advice.
-  for (const p of judgePace(m.wps, m.sps, bandOf(m))) {
+  for (const p of isSignoff(m) ? [] : judgePace(m.wps, m.sps, bandOf(m))) {
     if (p.level !== "fix") continue;
     if (/^rushed/.test(p.problem)) {
       // Long words: a band whose top says CHOSEN_MAX_SPS syllables a second.
@@ -467,11 +476,11 @@ export function verdict(m: LineMeasure, medianLufs: number | null): Fix[] {
  * speeds, short words drawn out. */
 export function advise(m: LineMeasure): Advice[] {
   const out: Advice[] = [];
-  for (const p of judgePace(m.wps, m.sps, bandOf(m))) {
+  for (const p of isSignoff(m) ? [] : judgePace(m.wps, m.sps, bandOf(m))) {
     if (p.level === "advice" && /^short words/.test(p.problem)) out.push({ note: p.problem });
     else if (p.level === "advice") out.push({ note: `${p.problem}: within a tenth of its band, so it passes${m.speedChosen ? "" : "; a retake with words_per_second lands it"}`, ...(m.speedChosen ? {} : { tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: bandOf(m) } }) });
     else if (m.speedChosen && !/^rushed/.test(p.problem) && !longRushed(m))
-      out.push({ note: `${p.problem}: its speed was already chosen for the band and the voice came no nearer within its natural speeds (0.6-1.3; a line meant slow no faster than 1); ${/^slow/.test(p.problem) ? "fewer or longer words, or pace slow if the line is meant so" : "fewer words, or the line split in two, or pace fast if the line is meant so"}` });
+      out.push({ note: `${p.problem}: its speed was already chosen for the band and the voice came no nearer within its natural speeds (0.6-1.3; a line meant slow no faster than 1); ${/^slow/.test(p.problem) ? `fewer or longer words${m.pace === "slow" ? "" : ", or pace slow if the line is meant so"}` : `fewer words, or the line split in two${m.pace === "fast" ? "" : ", or pace fast if the line is meant so"}`}` });
   }
   return out;
 }

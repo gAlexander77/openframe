@@ -233,3 +233,14 @@ describe("fit_music", () => {
     expect(() => runCommand(bare, "fit_music", { clip_id: music, drop_at: 2 })).toThrow(/no Drop marker/);
   });
 });
+
+
+it("fills the final eight-beat shot to the explicit 44 s end, beyond the last sounding beat", () => {
+  const beats = [8,4,4,4,4,2,2,2,2,4,2,2,1,1,2,2,2,1,1,1,1,2,2,4,4,4,1,1,1,1,1,1,1,1,2,2,8];
+  let p = project();
+  p = { ...p, assets: p.assets.map((a) => a.id === "long" ? { ...a, duration: 30 } : a), markers: [] };
+  p = runCommand(p, "add_markers", { times: Array.from({ length: 87 }, (_, i) => i / 2), label: "Beat" });
+  p = runCommand(p, "cut_to_beats", { start: 0, end: 44, grid: "beats", mute: true, media: beats.map((beats, i) => ({ asset_id: "long", in: i === 36 ? 20 : 0, beats })) });
+  expect(main(p)).toHaveLength(37);
+  expect(main(p).at(-1)).toMatchObject({ start: 1200, duration: 120, in: 20 });
+});

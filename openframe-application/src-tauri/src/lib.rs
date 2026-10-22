@@ -59,6 +59,13 @@ pub fn run() {
         .manage(export::Exports::default())
         .manage(ffmpeg::Ffmpeg::default())
         .manage(mcp::Mcp::default())
+        .on_page_load(|webview, payload| {
+            if webview.label() == "main"
+                && payload.event() == tauri::webview::PageLoadEvent::Started
+            {
+                mcp::page_reloading(&webview.app_handle().state::<mcp::Mcp>());
+            }
+        })
         .register_asynchronous_uri_scheme_protocol("media", |ctx, request, responder| {
             let media = ctx
                 .app_handle()
@@ -87,6 +94,9 @@ pub fn run() {
             export::export_sidecar,
             ffmpeg::ffmpeg_probe,
             ffmpeg::ffmpeg_proxy,
+            ffmpeg::ffmpeg_playback_proxy,
+            ffmpeg::ffmpeg_playback_proxy_info,
+            ffmpeg::ffmpeg_delete_playback_proxy,
             ffmpeg::ffmpeg_cancel,
             mcp::mcp_enable,
             mcp::mcp_reply,

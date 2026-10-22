@@ -1,3 +1,4 @@
+import { projectWork } from "./projectWork";
 // The built-in sound effects as an app action: the effect's WAV is made
 // on first use (lib/sfx.ts), saved with the project's media and reused by
 // name after that; the clips land on the effects track (ADR-098), the new
@@ -8,7 +9,7 @@ import type { Asset, Id, Project } from "../lib/project/types";
 import { placeSounds, SFX, type SoundCue } from "../lib/sfx";
 import { framesToSeconds } from "../lib/time";
 import { encodeWav } from "../lib/wav";
-import { audioContext } from "../engine/audio";
+import { audioContext, masterBus } from "../engine/audio";
 import { edit } from "./actions";
 import { adoptAndProbe, prepare } from "./media";
 import { store } from "./store";
@@ -46,6 +47,7 @@ export async function addSoundEffect(id: string, opts: { at?: number; frame?: nu
 /** Several sound effects in one undoable edit (add_sound_effect's list):
  * every file is made first, so a bad name changes nothing. */
 export async function addSoundEffects(cues: SoundCue[]): Promise<{ clipIds: Id[] }> {
+  const signal = projectWork.capture();
   const bad = cues.find((c) => !SFX[c.name]);
   if (bad) throw new Error(`No sound effect ${bad.name}; there are ${Object.keys(SFX).join(", ")}`);
   const assets = new Map<string, Asset>();
@@ -55,6 +57,7 @@ export async function addSoundEffects(cues: SoundCue[]): Promise<{ clipIds: Id[]
     assets.set(name, r.asset);
     if (r.fresh) fresh.push(r.asset);
   }
+  signal.throwIfAborted();
   let clipIds: Id[] = [];
   edit(cues.length === 1 ? `Add ${SFX[cues[0].name].label}` : `Add ${cues.length} sound effects`, (p) => {
     const r = placeSounds({ ...p, assets: [...p.assets, ...fresh] }, cues, assets, store.get().playhead);
@@ -89,6 +92,6 @@ export function auditionSoundEffect(id: string) {
   buf.copyToChannel(new Float32Array(r), 1);
   const src = ctx.createBufferSource();
   src.buffer = buf;
-  src.connect(ctx.destination);
+  src.connect(masterBus().input);
   void ctx.resume().then(() => src.start());
 }

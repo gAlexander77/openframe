@@ -1,8 +1,17 @@
+import { releaseAnswerUrl } from "./engine/answerUrls";
+import { memorySnapshot } from "./engine/memory";
+import { jobs, runJob } from "./state/jobs";
+import { findAssetHighlights, type HighlightRequest } from "./state/highlights";
+import { createClips } from "./state/clips";
+import { exportProjects } from "./state/export";
+import { createProxies, deleteProxies } from "./state/proxies";
+import { playbackProxyState } from "./engine/playbackProxies";
 // The in-page automation surface: `window.videoEditor`. The same command
 // registry agents use (ADR-006), plus actions, state and frame access, so
 // drive scripts, the future MCP bridge and the headless renderer all speak
 // to the app one way. Every edit made here is undoable like a user's.
 
+import { matchColor } from "./state/colorMatch";
 import { exportStills } from "./engine/export";
 import { player } from "./engine/player";
 import { COMMANDS, PROJECT_FILE_COMMANDS, validate, describeProject, runAgentCommand, type CommandReport } from "./lib/commands";
@@ -23,17 +32,19 @@ import { previewAudio, type AuditionRequest } from "./state/audition";
 import { generateMusic } from "./state/music";
 import type { SoundCue } from "./lib/sfx";
 import { loudnessReport } from "./state/delivery";
+import { autoCaptions } from "./state/captions";
 import { clipTranscript } from "./state/transcript";
 import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, keepFilterLoudness, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
 import { importLuts } from "./state/luts";
 import { importEach, importFiles } from "./state/media";
-import { sourceName } from "./lib/mediaKind";
+import { mediaName, sourceName } from "./lib/mediaKind";
 import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
-import { agentNotice, asAgent } from "./state/toast";
+import { agentNotice, asAgent, dismiss, toast, updateToast } from "./state/toast";
 import { platform } from "./platform";
-import { currentScreen, listSaved, newProject, openProject, openProjectFile, collectProject, saveProjectCopy } from "./state/project";
+import { currentScreen, listSaved, newProject, openProject, openProjectFile, collectProject, saveProjectCopy, importTimeline } from "./state/project";
+import { saveTimeline, type TimelineFormat } from "./state/interchange";
 import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
@@ -43,6 +54,7 @@ import { sourceFrames } from "./engine/analyze";
 import { checkProject, type CheckKind } from "./lib/designCheck";
 import { measureForCheck } from "./state/check";
 import { staleDuckNote, staleDucks } from "./lib/analysis/duck";
+import { readFileChapters } from "./lib/chapters";
 import { probe } from "./engine/media";
 import type { Asset } from "./lib/project/types";
 
@@ -53,15 +65,28 @@ function needProject() {
 }
 
 const automation = {
+  /** Developer diagnostics; no project edit or GC side effect. */
+  memory: memorySnapshot,
+  releaseUrl: releaseAnswerUrl,
+  createClips,
+  exportProjects,
   /** Every command with its JSON Schema, for tool listing. */
   commands: () => [...COMMANDS, ...PROJECT_FILE_COMMANDS].map(({ name, description, input }) => ({ name, description, input })),
   /** Run one command as an undoable edit. Throws with every problem named.
    * add_sticker returns a promise: its picture is drawn first. */
   exec(name: string, args: unknown = {}) {
+    // The pure registry has no session playhead; source edits without a
+    // destination mark use the same fallback as the source monitor.
+    if (name === "edit_from_source" && args && typeof args === "object" && !Array.isArray(args)) {
+      const marks = args as Record<string, unknown>;
+      if (marks.timeline_in === undefined && marks.timeline_out === undefined) args = { ...marks, timeline_in: framesToSeconds(store.get().playhead, store.get().project.fps) };
+    }
     const fileCommand = PROJECT_FILE_COMMANDS.find(c => c.name === name);
     if (fileCommand) {
       const problems = validate(args, fileCommand.input);
       if (problems.length) throw new Error(problems.join("; "));
+      if (name === "export_timeline") { needProject(); const a = args as { format: TimelineFormat; folder?: string }; return saveTimeline(a.format, a.folder, true); }
+      if (name === "import_timeline") return importTimeline((args as { file?: string }).file).then(r => r ? { ...r, project: describe() } : { opened: false });
       if (name === "collect_project") { needProject(); return collectProject(true, (args as { folder?: string }).folder); }
       return openProjectFile((args as { path?: string }).path).then(opened => ({ opened, project: opened ? describe() : null }));
     }
@@ -88,6 +113,7 @@ const automation = {
     // The timeline's linkage applies, its magnet never does (ADR-102).
     const before = store.document();
     store.editDocument(commandLabel(name, args), (p) => runAgentCommand(p, name, args, report, store.get().linkage));
+    if (report.sourceEdit) store.set({ inPoint: null, outPoint: null });
     // A voice line moved or resized under music ducked for it: the dip
     // stays where the line was, and the answer says so (ADR-104).
     for (const d of staleDucks(before, store.document())) (report.notes ??= []).push(staleDuckNote(d));
@@ -113,9 +139,9 @@ const automation = {
   },
   select: (ids: string[]) => store.select(ids),
   /** Import files by URL (web) or path (desktop). */
-  async import(srcs: { name: string; src: string; size?: number }[]) {
+  async import(srcs: { name?: string; src: string; size?: number }[]) {
     needProject();
-    return importFiles(srcs.map((s) => ({ name: s.name, src: s.src, size: s.size ?? 0 })));
+    return importFiles(srcs.map((s) => ({ name: mediaName(s), src: s.src, size: s.size ?? 0 })));
   },
   /** Import .cube LUTs by URL (web) or path (desktop) into project.luts;
    * apply_lut then puts one on a clip. Returns the new entries. */
@@ -144,7 +170,7 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { generateMusic, removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, addAmbience, analyzeMusic, loudnessReport, textBehindSubject, retakeVoiceover, reviewVoiceover },
+  ai: { autoCaptions, generateMusic, removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, matchColor, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, addAmbience, analyzeMusic, loudnessReport, textBehindSubject, retakeVoiceover, reviewVoiceover },
   /** export_versions: one file per version (lib/versions.ts), the project
    * left as it is; versionsSheet draws them all without exporting. */
   exportVersions: (o: VersionsOptions) => (needProject(), exportVersions(o)),
@@ -161,7 +187,7 @@ const automation = {
  * title weighs what it weighs in the exported file (drawn at 640 wide it
  * looked heavier: ADR-098). The viewer seeks to the last one, so the user
  * sees where the agent is looking. */
-async function grab(seconds: number[], width: number): Promise<Blob[]> {
+async function grab(seconds: number[], width: number, before = false, beforeClipIds?: string[]): Promise<Blob[]> {
   if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
   const p = store.get().project;
   const end = projectDuration(p);
@@ -173,7 +199,7 @@ async function grab(seconds: number[], width: number): Promise<Blob[]> {
   // drawing at the full 4K canvas would change nothing but the time taken.
   const k = Math.min(1, 1080 / Math.min(p.width, p.height));
   const big = { width: Math.max(w, Math.round(p.width * k)), height: Math.max(2, Math.round(p.height * k)) };
-  return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)), big);
+  return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)), big, before ? { clipIds: beforeClipIds } : undefined, projectWork.capture());
 }
 
 /** Frames in a grid, each with its label on a strip under it: the contact
@@ -220,10 +246,16 @@ async function blobToBase64(blob: Blob): Promise<string> {
 /** describeProject of the whole document, plus the compound clips the user
  * has open, outermost first. */
 function describe() {
-  // On the home screen the store still holds the last project: say so.
+  // Home has no open document.
   if (currentScreen() === "home") return { screen: "home", note: "No project is open. list_projects and open_project, or new_project." };
   const nest = store.get().nest;
-  return { ...describeProject(store.document()), ...(nest.length ? { open_compounds: nest.map((e) => e.id) } : {}) };
+  const doc = store.document();
+  const summary = describeProject(doc);
+  const assets = summary.assets.map((a) => {
+    const asset = doc.assets.find((x) => x.id === a.id)!;
+    return asset.playbackProxy ? { ...a, proxy: playbackProxyState(asset) } : a;
+  });
+  return { ...summary, assets, ...(nest.length ? { open_compounds: nest.map((e) => e.id) } : {}) };
 }
 
 declare global {
@@ -251,6 +283,10 @@ async function agentCall(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
 }
 
 const mcpHost: McpHost = {
+  jobs, runJob,
+  jobScope: () => (needProject(), { project: store.document().id, signal: projectWork.signal() }),
+  createClips: request => (needProject(), createClips(request)),
+  exportProjects,
   name: APP_NAME,
   version: __APP_VERSION__,
   canExport: () => platform.kind === "desktop",
@@ -258,12 +294,14 @@ const mcpHost: McpHost = {
   describe: () => automation.describe(),
   projectJson: () => store.document(),
   catalog: () => ({ ...catalogNames(), effectParams: Object.fromEntries(Object.entries(EFFECTS).map(([k, d]) => [k, d.params])) }),
+  createProxies: (ids, size) => (needProject(), createProxies(ids, size)),
+  deleteProxies: (ids) => (needProject(), deleteProxies(ids)),
   importMedia: async (files) => {
     needProject();
     // `name` is only the library's label; the file says what it is (ADR-095).
     const out = await importEach(files.map((f) => ({ name: f.name ?? sourceName(f.src), src: f.src, size: 0 })));
     return out.map((o) =>
-      "asset" in o ? { id: o.asset.id, name: o.asset.name, kind: o.asset.kind, duration: o.asset.duration, width: o.asset.width, height: o.asset.height }
+      "asset" in o ? { id: o.asset.id, name: o.asset.name, kind: o.asset.kind, duration: o.asset.duration, width: o.asset.width, height: o.asset.height, ...(o.asset.kind === "audio" ? { role: o.asset.role ?? null, ...(o.audioRole ? { audio_role: o.audioRole } : {}) } : {}) }
       : "lut" in o ? { lut_id: o.lut.id, name: o.lut.name, kind: "lut" }
       : { src: o.file.src, name: o.file.name, error: o.error },
     );
@@ -280,9 +318,9 @@ const mcpHost: McpHost = {
     store.seek(secondsToFrames(seconds, store.get().project.fps));
     return { playhead: seconds };
   },
-  frame: async (seconds, maxWidth) => blobToBase64((await grab([seconds], maxWidth))[0]),
-  sheet: async (times, tileWidth, columns) => {
-    const pics = await Promise.all((await grab(times, tileWidth)).map((b) => createImageBitmap(b)));
+  frame: async (seconds, maxWidth, before, beforeClipIds) => blobToBase64((await grab([seconds], maxWidth, before, beforeClipIds))[0]),
+  sheet: async (times, tileWidth, columns, before, beforeClipIds) => {
+    const pics = await Promise.all((await grab(times, tileWidth, before, beforeClipIds)).map((b) => createImageBitmap(b)));
     try {
       return await tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: pics[i].width, h: pics[i].height })), tileWidth, columns);
     } finally {
@@ -298,10 +336,11 @@ const mcpHost: McpHost = {
       const bmp = await createImageBitmap(await platform.blobFor(a.src));
       return tiles([{ src: bmp, label: `${bmp.width}x${bmp.height}`, w: bmp.width, h: bmp.height }], tileWidth, 1);
     }
-    const pics = await sourceFrames(a, times, tileWidth);
+    const pics = await sourceFrames(a, times, tileWidth, projectWork.capture());
     return tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: a.width || 16, h: a.height || 9 })), tileWidth, columns);
   },
   fileSheet: async (src, given, count, tileWidth, columns) => {
+    const signal = projectWork.capture();
     // A file read where it is, never imported: an export looked at as delivered.
     const name = sourceName(src);
     let info: Awaited<ReturnType<typeof probe>>;
@@ -313,18 +352,27 @@ const mcpHost: McpHost = {
     if (!info.hasVideo) throw new Error(`${name} is sound only; preview_media shows pictures and videos`);
     const asset = { id: "file", kind: info.kind, name, src, duration: info.duration, width: info.width, height: info.height, hasVideo: info.hasVideo, hasAudio: info.hasAudio } as Asset;
     const times = info.kind === "image" ? [0] : given ?? Array.from({ length: count }, (_, i) => +((info.duration * (i + 0.5)) / count).toFixed(2));
-    const pics = info.kind === "image" ? [await createImageBitmap(await platform.blobFor(src))] : await sourceFrames(asset, times, tileWidth);
+    const pics = info.kind === "image" ? [await createImageBitmap(await platform.blobFor(src))] : await sourceFrames(asset, times, tileWidth, signal);
     const image = await tiles(times.map((t, i) => ({ src: pics[i], label: info.kind === "image" ? `${info.width}x${info.height}` : `${+t.toFixed(2)} s`, w: info.width || 16, h: info.height || 9 })), tileWidth, info.kind === "image" ? 1 : columns);
-    return { image, file: { file: src, kind: info.kind, seconds: +info.duration.toFixed(3), width: info.width, height: info.height, ...(info.fps ? { fps: info.fps } : {}), audio: info.hasAudio, frames: times } };
+    let chapters: Awaited<ReturnType<typeof readFileChapters>> = [];
+    let chapterNote = "Chapter inspection reads Nero MP4/MOV chapter tables (as OpenFrame writes); other containers and QuickTime chapter tracks are not inspected.";
+    try { chapters = await readFileChapters((at, bytes) => platform.head(src, bytes, at)); }
+    catch (e) { chapterNote += ` Could not inspect chapters: ${e instanceof Error ? e.message : String(e)}`; }
+    return { image, file: { chapters, chapters_note: chapterNote, file: src, kind: info.kind, seconds: +info.duration.toFixed(3), width: info.width, height: info.height, ...(info.fps ? { fps: info.fps } : {}), audio: info.hasAudio, frames: times } };
   },
   audition: async (options) => {
     const r = await previewAudio(options as AuditionRequest);
-    return { ...(r.mp3 ? { data: await blobToBase64(new Blob([r.mp3 as Uint8Array<ArrayBuffer>])), mimeType: "audio/mpeg" } : {}), summary: r.summary };
+    return { ...(r.audio ? { data: await blobToBase64(new Blob([r.audio.data as Uint8Array<ArrayBuffer>])), mimeType: r.audio.mimeType } : {}), summary: r.summary };
   },
   checkProject: async (kind) => {
     needProject();
     const p = store.document();
-    return checkProject(p, kind as CheckKind, await measureForCheck(p));
+    const signal = projectWork.capture(), tid = toast("Checking the project", "progress");
+    try {
+      const measured = await measureForCheck(p, { signal, progress: pr => updateToast(tid, { progress: pr.fraction, text: pr.stage }) });
+      signal.throwIfAborted();
+      return checkProject(p, kind as CheckKind, measured);
+    } finally { dismiss(tid); }
   },
   exportVideo: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
@@ -338,12 +386,12 @@ const mcpHost: McpHost = {
   versionsSheet: async (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
     // A sheet of photographs too: sent as JPEG (jpeg above).
-    const sheet = await versionsSheet(options as VersionsOptions & { at?: number[] });
+    const sheet = await versionsSheet(options as VersionsOptions & { at?: number[]; times?: number[] });
     const bmp = await createImageBitmap(sheet.blob);
     const c = new OffscreenCanvas(bmp.width, bmp.height);
     c.getContext("2d")!.drawImage(bmp, 0, 0);
     bmp.close();
-    return { image: await jpeg(c), subjects: sheet.subjects, titles: sheet.titles, overlaps: sheet.overlaps, callouts: sheet.callouts, options: sheet.options, coverage: sheet.coverage };
+    return { image: await jpeg(c), subjects: sheet.subjects, titles: sheet.titles, overlaps: sheet.overlaps, callouts: sheet.callouts, options: sheet.options, coverage: sheet.coverage, text_overlaps: sheet.text_overlaps };
   },
   saveVersions: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
@@ -351,7 +399,9 @@ const mcpHost: McpHost = {
   },
   voiceover: (lines, options) => (needProject(), voiceover(lines as unknown as VoiceLine[], options as VoiceoverOptions)),
   ai: (tool, target, options) =>
-    tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[])
+    tool === "findHighlights" ? (needProject(), findAssetHighlights(options as HighlightRequest))
+    : tool === "autoCaptions" ? (needProject(), autoCaptions("", options))
+    : tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[])
     : tool === "addAmbience" ? (needProject(), addAmbience(options as unknown as AmbienceRequest))
     : tool === "generateMusic" ? (needProject(), generateMusic(options))
     : (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options),

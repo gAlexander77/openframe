@@ -97,3 +97,20 @@ describe("a chosen canvas (UX-02)", () => {
     expect(normalizeProject({ width: 1080, height: 1920 }).canvasFixed).toBeUndefined();
   });
 });
+
+it("normalizes optional marker ranges and chapter flags at root and inside compounds", () => {
+  const markers = [{ id: "valid", duration: 30, chapter: true }, { id: "invalid", duration: -1, chapter: "yes" }, { id: "fraction", duration: 1.5 }, { id: "infinite", duration: Infinity }];
+  const p = normalizeProject({ markers, compounds: [{ id: "k", tracks: [], markers }] });
+  for (const list of [p.markers, p.compounds![0].markers]) {
+    expect(list[0]).toMatchObject({ duration: 30, chapter: true });
+    for (const m of list.slice(1)) { expect(m).not.toHaveProperty("duration"); expect(m).not.toHaveProperty("chapter"); }
+  }
+});
+
+it("validates optional held duck pauses without dropping unrelated clip data", () => {
+  const load = (held: unknown) => normalizeProject({ assets: [{ id: "music", src: "music.wav", kind: "audio", duration: 10, hasAudio: true }], tracks: [{ kind: "audio", clips: [{ type: "audio", assetId: "music", duration: 300, duck: { keys: 12, held, minGap: 1.1 }, custom: "kept" }] }] }).tracks.flatMap((t) => t.clips).find((c) => c.type === "audio")!;
+  const c = load([[1, 1.5], [3, 2], [0, Infinity], ["1", 2], [-1, 2], null]);
+  expect(c).toMatchObject({ duck: { keys: 12, minGap: 1.1, held: [[1, 1.5]] }, custom: "kept" });
+  expect(load("broken")).toMatchObject({ duck: { keys: 12 } });
+  expect((load("broken") as { duck?: { held?: unknown } }).duck?.held).toBeUndefined();
+});

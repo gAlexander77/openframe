@@ -12,6 +12,11 @@ export type ActionId =
   | "stepForward"
   | "stepBack10"
   | "stepForward10"
+  | "selectNearestEdit"
+  | "selectNextEdit"
+  | "selectPrevEdit"
+  | "extendEdit"
+  | "fitSource"
   | "prevEdit"
   | "nextEdit"
   | "goStart"
@@ -80,17 +85,34 @@ export type ActionId =
   | "nudgeLeft5"
   | "nudgeRight5"
   | "toggleLoop"
+  | "toggleProxies"
   | "playInToOut"
   | "showShortcuts"
   | "showPreferences"
+  | "toggleCompare"
+  | "applyDefaultVideoTransition"
+  | "applyDefaultAudioCrossfade"
+  | "mutePlayback"
+  | "muteTrack"
+  | "soloTrack"
   | "saveFrame";
 
 export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
+  soloTrack: ["Alt+S"],
+  muteTrack: ["Shift+H"],
+  mutePlayback: ["Shift+S"],
+  applyDefaultAudioCrossfade: ["Mod+Alt+Shift+D"],
+  applyDefaultVideoTransition: ["Mod+Alt+D"],
   playPause: ["Space"],
   stepBack: ["ArrowLeft"],
   stepForward: ["ArrowRight"],
   stepBack10: ["Shift+ArrowLeft"],
   stepForward10: ["Shift+ArrowRight"],
+  selectNearestEdit: ["Shift+V"],
+  selectNextEdit: ["Shift+ArrowDown"],
+  selectPrevEdit: ["Shift+ArrowUp"],
+  extendEdit: ["E"],
+  fitSource: ["Shift+F"],
   prevEdit: ["ArrowUp"],
   nextEdit: ["ArrowDown"],
   goStart: ["Home"],
@@ -172,19 +194,31 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   // Resolve loops with Ctrl+/ (ours is the shortcut list); Mod+L is free.
   // Play In to Out is Premiere's Ctrl+Shift+Space.
   toggleLoop: ["Mod+L"],
+  toggleProxies: ["Alt+Shift+P"],
   playInToOut: ["Mod+Shift+Space"],
   showShortcuts: ["Mod+/"],
   showPreferences: ["Mod+,"],
   // Premiere's Export Frame.
   saveFrame: ["Mod+Shift+E"],
+  toggleCompare: ["Alt+Shift+C"],
 };
 
 export const ACTION_LABELS: Record<ActionId, string> = {
+  soloTrack: "Solo track",
+  muteTrack: "Mute track",
+  mutePlayback: "Mute playback",
+  applyDefaultAudioCrossfade: "Apply default audio crossfade",
+  applyDefaultVideoTransition: "Apply default video transition",
   playPause: "Play / pause",
   stepBack: "Previous frame",
   stepForward: "Next frame",
   stepBack10: "Back 10 frames",
   stepForward10: "Forward 10 frames",
+  selectNearestEdit: "Select nearest edit point",
+  selectNextEdit: "Select next edit point",
+  selectPrevEdit: "Select previous edit point",
+  extendEdit: "Extend edit to playhead",
+  fitSource: "Fit source to fill timeline range",
   prevEdit: "Previous edit point",
   nextEdit: "Next edit point",
   goStart: "Go to start",
@@ -253,10 +287,12 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   nudgeLeft5: "Nudge clips five frames left",
   nudgeRight5: "Nudge clips five frames right",
   toggleLoop: "Loop playback",
+  toggleProxies: "Proxy playback",
   playInToOut: "Play in to out",
   showShortcuts: "Keyboard shortcuts",
   showPreferences: "Preferences",
   saveFrame: "Save frame as PNG",
+  toggleCompare: "Toggle compare",
 };
 
 /** Canonical chord for a keyboard event: modifiers in a fixed order, then

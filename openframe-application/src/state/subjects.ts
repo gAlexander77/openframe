@@ -1,3 +1,5 @@
+import { ByteLru } from "../lib/memory";
+import { MiB, trackCache } from "../engine/memory";
 // The app's look at a project's shots before export_versions frames them
 // (ADR-097): every full-frame video or picture on the timeline, sampled
 // every half second (at most 24 times a shot), decoded 128 pixels wide and
@@ -18,11 +20,10 @@ const WIDTH = 128;
 const PER_SHOT = 24;
 
 /** Maps by media and source second, oldest first. */
-const seen = new Map<string, SaliencyMap>();
+const seen = new ByteLru<string, SaliencyMap>(32 * MiB);
+trackCache("subject_features", seen);
 const remember = (key: string, map: SaliencyMap) => {
-  seen.set(key, map);
-  // About 37 KB each: keep the last two thousand.
-  if (seen.size > 2000) seen.delete(seen.keys().next().value!);
+  seen.set(key, map, map.v.byteLength);
 };
 
 /** The source seconds a shot is looked at: every half second of what it
@@ -48,11 +49,11 @@ export function shotsToLook(p: Project): VisualClip[] {
 /** Look at every shot a version can crop: its saliency maps at timesOf.
  * A shot whose pictures cannot be decoded is left out (it keeps the
  * centered framing). */
-export async function lookAtShots(p: Project, signal?: AbortSignal): Promise<Looks> {
+export async function lookAtShots(p: Project, signal?: AbortSignal, shots = shotsToLook(p)): Promise<Looks> {
   const looks: Looks = {};
   const canvas = new OffscreenCanvas(WIDTH, WIDTH);
   const g = canvas.getContext("2d", { willReadFrequently: true })!;
-  for (const c of shotsToLook(p)) {
+  for (const c of shots) {
     signal?.throwIfAborted();
     if (c.type !== "video" && c.type !== "image") continue;
     const asset = getAsset(p, c.assetId);
@@ -62,8 +63,9 @@ export async function lookAtShots(p: Project, signal?: AbortSignal): Promise<Loo
     const missing = times.filter((t) => !seen.has(key(t)));
     if (missing.length) {
       try {
-        const pics = await sourceFrames(asset, missing, WIDTH);
+        const pics = await sourceFrames(asset, missing, WIDTH, signal);
         for (const [i, pic] of pics.entries()) {
+          signal?.throwIfAborted();
           if (!pic) continue;
           const w = WIDTH, h = Math.max(8, Math.round((WIDTH * asset.height) / asset.width));
           canvas.width = w;

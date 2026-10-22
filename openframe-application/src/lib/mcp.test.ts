@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeProject, runCommand } from "./commands";
+import { describeProject, runCommand, type CommandReport } from "./commands";
 import { describeChanges, handleMcp, listTools, type McpHost, TOOLS_META, toolsFingerprint } from "./mcp";
 import { createProject } from "./project/defaults";
 import type { Project } from "./project/types";
@@ -11,8 +11,9 @@ function host() {
     name: "OpenFrame",
     version: "0.1.0",
     exec(name: string, args: unknown) {
-      h.project = runCommand(h.project, name, args);
-      return describeProject(h.project);
+      const report: CommandReport = {};
+      h.project = runCommand(h.project, name, args, report);
+      return { ...describeProject(h.project), ...report };
     },
     describe: () => describeProject(h.project),
     projectJson: () => h.project,
@@ -91,6 +92,22 @@ const call = (h: McpHost, method: string, params?: Record<string, unknown>) => h
 
 const text = (r: Awaited<ReturnType<typeof call>>) => (r!.result as { content: { text: string }[] }).content[0].text;
 
+describe("MCP highlight discovery", () => {
+  it("passes source options through and accepts auto or boolean scene sampling", async () => {
+    const h = host();
+    for (const scenes of [true, false, "auto"]) {
+      const args = { asset_id: "a1", count: 3, scenes, weights: { audio: 0.7 }, times: [4], keywords: ["no way"], transcribe: false };
+      await call(h, "tools/call", { name: "find_highlights", arguments: args });
+      expect(h.aiCalls.at(-1)).toEqual(["findHighlights", "", args]);
+    }
+    for (const args of [{ asset_id: "a1", scenes: "all" }, { asset_id: "a1", count: -1 }, { asset_id: "a1", weights: { audio: -1 } }]) {
+      expect((await call(h, "tools/call", { name: "find_highlights", arguments: args }))!.result).toMatchObject({ isError: true });
+    }
+    expect(h.aiCalls).toHaveLength(3);
+    expect(listTools().find(t => t.name === "find_highlights")!.annotations.readOnlyHint).not.toBe(true);
+  });
+});
+
 describe("MCP projects", () => {
   it("lists saved projects newest first, marking the open one", async () => {
     const list = JSON.parse(text(await call(host(), "tools/call", { name: "list_projects", arguments: {} })));
@@ -115,6 +132,21 @@ describe("MCP projects", () => {
 });
 
 describe("MCP", () => {
+  it("routes timeline interchange to the app host, validates format and returns import warnings with a project summary", async () => {
+    const h = host(), received: unknown[] = [];
+    h.exec = ((name: string, args: unknown) => {
+      received.push([name, args]);
+      return name === "import_timeline" ? { opened: true, project: describeProject(h.project), warnings: ["Speed ramp could not be mapped."] } : { files: ["D:/edits/cut.fcpxml"], warnings: [] };
+    }) as unknown as typeof h.exec;
+    const imported = JSON.parse(text(await call(h, "tools/call", { name: "import_timeline", arguments: { file: "D:/edits/cut.otio" } })));
+    expect(imported).toMatchObject({ opened: true, project: { counts: { tracks: 1 } }, warnings: ["Speed ramp could not be mapped."] });
+    const exported = JSON.parse(text(await call(h, "tools/call", { name: "export_timeline", arguments: { format: "fcpxml", folder: "D:/edits" } })));
+    expect(exported.files).toEqual(["D:/edits/cut.fcpxml"]);
+    expect(received).toEqual([["import_timeline", { file: "D:/edits/cut.otio" }], ["export_timeline", { format: "fcpxml", folder: "D:/edits" }]]);
+    const bad = await call(h, "tools/call", { name: "export_timeline", arguments: { format: "avi" } });
+    expect(text(bad)).toMatch(/otio, fcpxml, edl/);
+    expect(received).toHaveLength(2);
+  });
   it("initializes with tools and resources", async () => {
     const r = await call(host(), "initialize", { protocolVersion: "2025-06-18" });
     expect(r?.result).toMatchObject({ capabilities: { tools: {}, resources: {} }, serverInfo: { name: "OpenFrame" } });
@@ -321,7 +353,7 @@ describe("what a blind test of the tools found", () => {
   it("checks app tools' arguments too, naming the ones it knows", async () => {
     const r = await call(host(), "tools/call", { name: "preview_frame", arguments: { time: 0.7 } });
     expect(r!.result).toMatchObject({ isError: true });
-    expect(text(r)).toBe("args.at is required; args.time is not a known argument; did you mean at? (known: at, max_width)");
+    expect(text(r)).toBe("args.at is required; args.time is not a known argument; did you mean at? (known: before, before_clip_ids, at, max_width, wait)");
   });
 
   it("says what set_filter and a picture's set_animation changed", async () => {
@@ -674,7 +706,7 @@ describe("what the Claude film test found (2026-10-20)", () => {
     }) as unknown as typeof h.ai;
     const r = await call(h, "tools/call", { name: "normalize_loudness", arguments: { clip_ids: ["c_music"] } });
     const parts = (r!.result as { content: { text: string }[] }).content;
-    expect(JSON.parse(parts[0].text)).toEqual([{ clipId: "c_music", gain: 0.7 }]);
+    expect(JSON.parse(parts[0].text)).toEqual([{ clip_id: "c_music", gain: 0.7, gain_db: -3.1 }]);
     const moved = JSON.parse(parts[1].text);
     expect(moved.changed_clips.map((c: { start: number }) => c.start)).toEqual([2.267, 2]);
     expect(moved.notes).toEqual(["The main track closed the 0.233 s gap at 2 s: the clip after it moved 0.233 s earlier."]);
@@ -728,4 +760,192 @@ describe("what the third Claude film found (ADR-121)", () => {
     expect(answer.changed_clips).toHaveLength(1);
     expect(JSON.stringify(answer)).not.toMatch(/word 3/);
   });
+});
+
+
+describe("ungraded previews and shot matching", () => {
+  it("validates before and clip IDs for both preview tools and forwards them", async () => {
+    const h = host(), frames: unknown[][] = [];
+    const frameHost: McpHost = { ...h, frame: async (...args) => { frames.push(args); return "iVBOR"; }, sheet: async (...args) => { frames.push(args); return "/9j/"; } };
+    for (const name of ["preview_frame", "preview_frames"]) {
+      const base = name === "preview_frame" ? { at: 1 } : { times: [1, 2] };
+      for (const invalid of [{ before: "yes" }, { before: 1 }, { before_clip_ids: "a" }, { before_clip_ids: [5] }]) {
+        const r = await call(frameHost, "tools/call", { name, arguments: { ...base, ...invalid } });
+        expect(r!.result).toMatchObject({ isError: true });
+      }
+      const r = await call(frameHost, "tools/call", { name, arguments: { ...base, before: true, before_clip_ids: ["a"] } });
+      expect(r!.result).not.toHaveProperty("isError");
+    }
+    expect(frames).toEqual([[1, 640, true, ["a"]], [[1, 2], 320, 4, true, ["a"]]]);
+  });
+
+  it("validates matching strength and passes all targets through one async tool", async () => {
+    const h = host();
+    const args = { reference_clip_id: "ref", clip_ids: ["a", "b"] };
+    const good = await call(h, "tools/call", { name: "match_color", arguments: args });
+    expect(good!.result).not.toHaveProperty("isError");
+    expect(h.aiCalls).toEqual([["matchColor", ["a", "b"], { referenceClipId: "ref", strength: 1, matchSaturation: true }]]);
+    const bad = await call(h, "tools/call", { name: "match_color", arguments: { ...args, strength: 2 } });
+    expect(bad!.result).toMatchObject({ isError: true });
+  });
+});
+describe("find_clips", () => {
+  it("searches titles inside compounds over handleMcp and returns compact read-only rows", async () => {
+    const h = host();
+    h.project = runCommand(h.project, "add_text", { text: "Sale now", start: 2, duration: 3 });
+    const title = h.project.tracks.flatMap((t) => t.clips).find((c) => c.type === "text")!;
+    h.project = runCommand(h.project, "create_compound_clip", { clip_ids: [title.id], name: "Ad" });
+    const outer = h.project.tracks.flatMap((t) => t.clips).find((c) => c.type === "compound")!;
+    const before = h.project;
+    const r = await call(h, "tools/call", { name: "find_clips", arguments: { query: "SALE", kind: "text", start: 0, end: 3, limit: 1 } });
+    const body = JSON.parse((r!.result as { content: { text: string }[] }).content[0].text);
+    expect(body).toMatchObject({ total: 1, shown: 1, clips: [{ clip_id: title.id, name: "Sale now", kind: "text", start: 0, end: 3, compound_clip_id: outer.id }] });
+    expect(h.project).toBe(before);
+    expect(listTools().find((t) => t.name === "find_clips")?.annotations).toMatchObject({ readOnlyHint: true });
+    const bad = await call(h, "tools/call", { name: "find_clips", arguments: { limit: 0 } });
+    expect(bad?.result).toMatchObject({ isError: true });
+  });
+});
+
+
+it("keeps bulk transition cut results in MCP's compact edit answer and in a batch", async () => {
+  const h = host();
+  for (let i = 0; i < 3; i++) h.project = runCommand(h.project, "add_media_clip", { asset_id: "a1", start: i * 2, duration: 2 });
+  h.exec = (name, args) => {
+    const report: CommandReport = {};
+    h.project = runCommand(h.project, name, args, report);
+    return { ...describeProject(h.project), ...report };
+  };
+  const r = await call(h, "tools/call", { name: "batch", arguments: { commands: [{ command: "apply_default_transitions", args: {} }] } });
+  const body = JSON.parse((r!.result as { content: { text: string }[] }).content[0].text);
+  expect(body.cuts.applied).toHaveLength(2);
+  expect(body.cuts.skipped[0]).toMatchObject({ reason: "no neighbor" });
+  expect(body.changed_clips).toHaveLength(2);
+});
+
+it("keeps quiet batch additions in step order and names each adding step", async () => {
+  const h = host();
+  const r = await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "batch", arguments: { quiet: true, commands: [
+    { command: "add_media_clip", args: { asset_id: "a1", start: 0, duration: 3 } },
+    { command: "add_text", args: { text: "Headline", start: 0, duration: 3 } },
+    { command: "set_text", args: { clip_id: "$2", text: "Changed" } },
+    { command: "add_text", args: { text: "Subhead", start: 0, duration: 3 } },
+  ] } } }, h);
+  const out = JSON.parse((r!.result as { content: { text: string }[] }).content[0].text);
+  expect(out.added_clips).toEqual([out.added_by_step["1"][0], out.added_by_step["2"][0], out.added_by_step["4"][0]]);
+  expect(Object.keys(out.added_by_step)).toEqual(["1", "2", "4"]);
+  expect(out.added_clips.map((id: string) => h.project.tracks.flatMap((t) => t.clips).find((c) => c.id === id)!.type)).toEqual(["video", "text", "text"]);
+});
+
+it("formats internal AI answers only at the MCP boundary", async () => {
+  const h: McpHost = host();
+  h.ai = async (tool) => tool === "clipTranscript" ? { clipId: "c1", words: [{ text: " to", start: 26.099999999999998, end: 26.23456 }] } : [{ clipId: "c1", lufs: -20.123456, gain: 1.6158931678266677, limitedBy: "peak" }];
+  const call = async (name: string, args: unknown) => {
+    const r = await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, h);
+    return JSON.parse((r!.result as { content: { text: string }[] }).content[0].text);
+  };
+  expect(await call("get_transcript", { clip_id: "c1" })).toEqual({ clip_id: "c1", words: [{ text: "to", start: 26.1, end: 26.235 }] });
+  expect(await call("normalize_loudness", { clip_ids: ["c1"] })).toEqual([{ clip_id: "c1", lufs: -20.123, gain: 1.616, gain_db: 4.2, limited_by: "peak" }]);
+});
+
+
+it("includes remaining text-overlap findings in a version check", async () => {
+  const h: McpHost = host();
+  const reports = [{ version: "Film 9x16", reports: [{ rule: "text_overlaps_text", clip_ids: ["head", "sub"], at: 1 }] }];
+  h.versionsSheet = async () => ({ image: "iVBOR", text_overlaps: reports });
+  const r = await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "export_versions", arguments: { ratios: ["9:16"], check: true } } }, h);
+  const result = r!.result as { content: { type: string; text?: string }[] };
+  expect(JSON.parse(result.content.find((c) => c.type === "text")!.text!).text_overlaps).toEqual(reports);
+});
+
+
+it("rounds raw app measurements and imported media at the response boundary", async () => {
+  const h: McpHost = host();
+  h.importMedia = async () => [{ id: "asset", duration: 8.12345678 }];
+  h.seek = () => ({ playhead: 1.23456789 });
+  h.fileSheet = async () => ({ image: "jpeg", file: { fps: 29.97002997, frames: [1.23456789] } });
+  h.audition = async () => ({ summary: { integrated_lufs: -16.12345678, start: 1.23456789 } });
+  const run = async (name: string, args: unknown) => {
+    const r = await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, h);
+    const content = (r!.result as { content: { type: string; text?: string }[] }).content;
+    return JSON.parse(content.find((c) => c.type === "text")!.text!);
+  };
+  expect(await run("import_media", { files: [{ src: "speech.wav" }] })).toEqual([{ id: "asset", duration: 8.123 }]);
+  expect(await run("seek", { at: 1.23456789 })).toEqual({ playhead: 1.235 });
+  expect(await run("preview_media", { file: "film.mp4" })).toEqual({ fps: 29.97, frames: [1.235] });
+  expect(await run("preview_audio", { start: 1, audio: false })).toEqual({ integrated_lufs: -16.123, start: 1.235 });
+});
+
+it("routes desktop playback proxy tools with a half-size default and clear browser refusal", async () => {
+  const h = host();
+  const call = (name: string, args: unknown) => handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, h);
+  const missing = await call("create_proxies", { asset_ids: ["a1"] });
+  expect(JSON.stringify(missing)).toContain("not available in the browser build");
+  const sizes: unknown[] = [];
+  Object.assign(h, { createProxies: async (ids: string[], size: string) => { sizes.push([ids, size]); return [{ asset_id: "a1", proxy: "ready", size, seconds: 2 }]; }, deleteProxies: async () => [{ asset_id: "a1", proxy: "none", seconds: 0.1 }] });
+  expect(JSON.stringify(await call("create_proxies", { asset_ids: ["a1"] }))).toContain("ready");
+  expect(sizes).toEqual([[["a1"], "half"]]);
+  await call("create_proxies", { asset_ids: ["a1"], size: "quarter" });
+  expect(sizes[1]).toEqual([["a1"], "quarter"]);
+  expect(JSON.stringify(await call("create_proxies", { asset_ids: ["a1"], size: "bad" }))).toContain("isError");
+  expect(JSON.stringify(await call("create_proxies", { asset_ids: [] }))).toContain("Choose at least one");
+  expect(JSON.stringify(await call("delete_proxies", { asset_ids: ["a1"] }))).toContain("none");
+});
+
+it("accepts master seconds for version checks and rejects mixed units and out-of-range times", async () => {
+  const h = host();
+  h.project = runCommand(h.project, "add_color_clip", { color: "#203040", start: 0, duration: 44 });
+  const run = (arguments_: unknown) => call(h, "tools/call", { name: "export_versions", arguments: arguments_ });
+  await run({ ratios: ["9:16"], check: true, check_times: [1, 11.5, 29] });
+  expect(h.versionCalls.at(-1)).toMatchObject({ times: [1, 11.5, 29] });
+  // Film 5 A55 asked for nine moments, silently losing the end card.
+  expect((await run({ ratios: ["9:16"], check: true, check_times: [1.5, 5, 14, 18, 23, 28, 36, 41, 43] }))!.result).toMatchObject({ isError: true });
+  expect((await run({ ratios: ["9:16"], check: true, check_at: Array(9).fill(0.5) }))!.result).toMatchObject({ isError: true });
+  expect((await run({ ratios: ["9:16"], check: true, check_at: [0.5], check_times: [1] }))!.result).toMatchObject({ isError: true });
+  expect((await run({ ratios: ["9:16"], check: true, check_times: [45] }))!.result).toMatchObject({ isError: true });
+});
+
+
+it("passes an explicit preview format and preserves the fallback audio MIME and format", async () => {
+  const h: McpHost & { auditions: unknown[] } = host();
+  h.audition = async (o) => { h.auditions.push(o); return { data: "UklGRg==", mimeType: "audio/wav", summary: { format: "wav", seconds: 1 } }; };
+  const r = await call(h, "tools/call", { name: "preview_audio", arguments: { start: 0, format: "m4a" } });
+  expect(h.auditions[0]).toMatchObject({ format: "m4a" });
+  const content = (r!.result as { content: { type: string; mimeType?: string; text?: string }[] }).content;
+  expect(content[0]).toMatchObject({ type: "audio", mimeType: "audio/wav" });
+  expect(JSON.parse(content[1].text!)).toEqual({ format: "wav", seconds: 1 });
+  expect((await call(h, "tools/call", { name: "preview_audio", arguments: { start: 0, format: "flac" } }))!.result).toMatchObject({ isError: true });
+});
+
+
+it("returns a running job, reuses retries, and collects the complete finished answer", async () => {
+  const h: McpHost = host();
+  let finish!: (value: unknown) => void, calls = 0;
+  h.ai = async () => { calls++; return new Promise(resolve => { finish = resolve; }); };
+  const invoke = async (name: string, args: object) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
+  const first = await invoke("auto_captions", { wait: 0 });
+  expect(first).toMatchObject({ state: "running", tool: "auto_captions", progress: 0, note: "call job_status with job_id; cancel_job stops it" });
+  const retry = await invoke("auto_captions", {});
+  expect(retry.job_id).toBe(first.job_id);
+  expect(calls).toBe(1);
+  const answer = { words: ["Every", "word"], audio_seconds: 36, elapsed_seconds: 12 };
+  finish(answer);
+  // Let registry completion and the original MCP answer settle.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(await invoke("job_status", { job_id: first.job_id })).toMatchObject({ state: "done", result: answer });
+  expect(await invoke("job_status", {})).toEqual([expect.objectContaining({ job_id: first.job_id, state: "done" })]);
+});
+
+it("cancel_job aborts the host work and job_status never publishes its late answer", async () => {
+  const base = host();
+  let signal!: AbortSignal, finish!: (value: unknown) => void;
+  const h: McpHost = { ...base, runJob: async (context, work) => { signal = context.signal; return work(); }, ai: async () => new Promise(resolve => { finish = resolve; }) };
+  const invoke = async (name: string, args: object) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
+  const first = await invoke("get_transcript", { clip_id: "c1", wait: 0 });
+  expect(await invoke("cancel_job", { job_id: first.job_id })).toMatchObject({ state: "canceled" });
+  expect(signal.aborted).toBe(true);
+  finish({ words: ["late"] });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(await invoke("job_status", { job_id: first.job_id })).toMatchObject({ state: "canceled" });
+  expect((await invoke("job_status", { job_id: first.job_id })).result).toBeUndefined();
 });

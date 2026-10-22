@@ -220,6 +220,12 @@ export const CANDIDATES = 100;
  * window would leave `within`. Index i is the center i / CANDIDATES.
  */
 export function windowScores(map: SaliencyMap, axis: "x" | "y", size: number, within: Rect01): Float64Array {
+  if (!subjectBox(map, within)) {
+    const centered = new Float64Array(CANDIDATES + 1).fill(-Infinity);
+    const middle = axis === "x" ? (within.left + within.right) / 2 : (within.top + within.bottom) / 2;
+    centered[Math.round(middle * CANDIDATES)] = 1;
+    return centered;
+  }
   const prof = profile(map, axis, within);
   const n = prof.length;
   const lo = axis === "x" ? within.left : within.top, hi = axis === "x" ? within.right : within.bottom;
@@ -312,6 +318,11 @@ export function subjectBox(map: SaliencyMap, within: Rect01 = { left: 0, top: 0,
       }
       if (!best || mass > best.mass) best = { left: l / w, right: (r + 1) / w, top: t / h, bottom: (b + 1) / h, mass };
     }
+  // No dominant component in repeating foam, or almost the whole frame
+  // salient: neither is a reliable subject to crop around (ADR-135).
+  let total = 0;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) total += weight(v[y * w + x]);
+  if (!best || best.mass < total * 0.18 || (best.right - best.left) * (best.bottom - best.top) > (within.right - within.left) * (within.bottom - within.top) * 0.65) return null;
   return best;
 }
 

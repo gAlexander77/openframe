@@ -1,10 +1,12 @@
+import { ByteLru } from "../lib/memory";
+import { MiB, trackCache } from "./memory";
 // A clip's sound design as Web Audio nodes (lib/soundFx.ts, ADR-060),
 // built in one place for playback, export and loudness measurement, so
 // what is measured is what plays. The filters go before the clip's
 // volume, as a channel strip's inserts do; echo and reverb after it, so
 // their tails ring on past the clip's end and its fade.
 
-import { mixGains, reverbImpulse, type FilterKind } from "../lib/soundFx";
+import { mixGains, reverbImpulse, saturationCurve, type FilterKind } from "../lib/soundFx";
 import type { AudioClip, AudioFilter, Echo, Reverb, VideoClip } from "../lib/project/types";
 
 /** Nodes in a row: sound goes into `input` and comes out of `output`. */
@@ -59,7 +61,7 @@ function wetDry(ctx: BaseAudioContext, effect: FxChain, mix: number, path: strin
   return { input, output };
 }
 
-function echoNodes(ctx: BaseAudioContext, e: Echo, curve: FxCurve, ride: Ride): FxChain {
+export function echoNodes(ctx: BaseAudioContext, e: Echo, curve: FxCurve, ride: Ride): FxChain {
   const delay = new DelayNode(ctx, { delayTime: e.time, maxDelayTime: 2 });
   const feedback = new GainNode(ctx, { gain: e.feedback });
   delay.connect(feedback).connect(delay);
@@ -68,15 +70,15 @@ function echoNodes(ctx: BaseAudioContext, e: Echo, curve: FxCurve, ride: Ride): 
 
 /** Impulse responses by room, so a long export's windows (each its own
  * context) make the same room once. */
-const rooms = new Map<string, Float32Array[]>();
+const rooms = new ByteLru<string, Float32Array[]>(16 * MiB);
+trackCache("reverb_impulses", rooms);
 
-function reverbNodes(ctx: BaseAudioContext, r: Reverb, curve: FxCurve, ride: Ride): FxChain {
+export function reverbNodes(ctx: BaseAudioContext, r: Reverb, curve: FxCurve, ride: Ride): FxChain {
   const key = `${ctx.sampleRate}|${r.size}|${r.decay}`;
   let ir = rooms.get(key);
   if (!ir) {
     ir = reverbImpulse(ctx.sampleRate, r);
-    rooms.set(key, ir);
-    if (rooms.size > 8) rooms.delete(rooms.keys().next().value!);
+    rooms.set(key, ir, ir.reduce((n, ch) => n + ch.byteLength, 0));
   }
   const buffer = new AudioBuffer({ numberOfChannels: 2, length: ir[0].length, sampleRate: ctx.sampleRate });
   ir.forEach((ch, c) => buffer.copyToChannel(ch as Float32Array<ArrayBuffer>, c));
@@ -92,10 +94,37 @@ const chain = (parts: FxChain[]): FxChain | null => {
 };
 
 /** The inserts before the clip's volume: high-pass, then low-pass. */
-export function preFaderFx(ctx: BaseAudioContext, c: VideoClip | AudioClip, curve: FxCurve, ride: Ride): FxChain | null {
+export function preFaderFx(ctx: BaseAudioContext, c: VideoClip | AudioClip, curve: FxCurve, ride: Ride, timelineAtZero = 0, register: (n: AudioScheduledSourceNode) => void = () => {}): FxChain | null {
+  const character: FxChain[] = [];
+  if (c.mono) {
+    const mono = new GainNode(ctx, { channelCount: 1, channelCountMode: "explicit" });
+    character.push({ input: mono, output: mono });
+  }
+  if (c.saturation) {
+    const shaper = new WaveShaperNode(ctx, { curve: saturationCurve(c.saturation.drive), oversample: "2x" });
+    character.push({ input: shaper, output: shaper });
+  }
+  if (c.ringMod) {
+    const mod = new GainNode(ctx, { gain: 0 });
+    // A sine carrier with an explicit phase. OscillatorNode cannot set its
+    // phase when an offline window starts midway through the timeline.
+    const frequency = c.ringMod.frequency;
+    const oscillator = new OscillatorNode(ctx, { frequency });
+    const start = ctx.currentTime;
+    const phase = 2 * Math.PI * (((timelineAtZero + start) * frequency) % 1);
+    oscillator.setPeriodicWave(ctx.createPeriodicWave(new Float32Array([0, Math.sin(phase)]), new Float32Array([0, Math.cos(phase)]), { disableNormalization: true }));
+    oscillator.connect(mod.gain);
+    oscillator.start(start);
+    register(oscillator);
+    // sqrt(2) compensates a sine carrier's mean-square loss.
+    const compensation = new GainNode(ctx, { gain: Math.SQRT2 });
+    mod.connect(compensation);
+    character.push(wetDry(ctx, { input: mod, output: compensation }, c.ringMod.mix, "ringMod.mix", curve, ride));
+  }
   return chain([
     ...(c.highpass ? [filterNodes(ctx, "highpass", c.highpass, curve, ride)] : []),
     ...(c.lowpass ? [filterNodes(ctx, "lowpass", c.lowpass, curve, ride)] : []),
+    ...character,
   ]);
 }
 

@@ -1,3 +1,4 @@
+import { paceOnTarget } from "./voiceReview";
 import { describe, expect, it } from "vitest";
 import { advise, bandOf, compareScript, diffWords, judgeHearings, matchShare, numberReadings, respell, sameNumber, scriptPace, tokens, verdict, type LineMeasure } from "./voiceReview";
 
@@ -249,4 +250,17 @@ describe("the script's pace (ADR-121)", () => {
     expect(scriptPace(retakes, [{ start: 50, end: 54 }]).words_per_second).toBe(1.03);
     expect(scriptPace([{ first: 0.6, last: 4.6, words: 9 }, { first: 5.1, last: 11, words: 15 }], []).words_per_second).toBe(2.31);
   });
+});
+
+
+it("does not pace a sign-off of up to three words or repeat its existing pace", () => {
+  for (const text of ["Lumen", "Lumen Trails.", "Explore Lumen Trails."]) {
+    const m = { ...okLine, text, pace: "slow" as const, readAs: "ad" as const, wps: 1.64, sps: 2.3, speedChosen: true };
+    expect(verdict(m, -20)).toEqual([]);
+    expect(paceOnTarget(m)).toBeNull();
+    expect(advise(m)).toEqual([]);
+  }
+  const advice = advise({ ...okLine, pace: "slow", readAs: "ad", wps: 1.5, sps: 2, speedChosen: true });
+  expect(advice).toHaveLength(1);
+  expect(advice[0].note).not.toMatch(/or pace slow/);
 });

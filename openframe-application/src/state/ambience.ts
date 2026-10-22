@@ -5,7 +5,7 @@
 // is long enough is reused.
 
 import { renderBedFile, renderBedPcm } from "../engine/ambience";
-import { audioContext } from "../engine/audio";
+import { audioContext, masterBus } from "../engine/audio";
 import { AMBIENCE, AMBIENCE_IDS, BED_MAX_SECONDS, bedFileName, placeBed } from "../lib/ambience";
 import { projectDuration } from "../lib/project/ops";
 import type { Asset, Id } from "../lib/project/types";
@@ -48,6 +48,7 @@ const r3 = (x: number) => +x.toFixed(3);
 
 /** Add bed `name` over a stretch of the timeline. */
 export async function addAmbience(req: AmbienceRequest): Promise<AmbienceAnswer> {
+  const signal = projectWork.capture();
   const bed = AMBIENCE[req.name];
   if (!bed) throw new Error(`No ambience ${req.name}; there are ${AMBIENCE_IDS.join(", ")}`);
   const p = store.get().project;
@@ -67,7 +68,6 @@ export async function addAmbience(req: AmbienceRequest): Promise<AmbienceAnswer>
   if (!asset) {
     const frames = tiles ? Math.floor(BED_MAX_SECONDS * fps) : Math.ceil(need * fps - 1e-6);
     const seconds = framesToSeconds(frames, p.fps);
-    const signal = projectWork.signal();
     const tid = toast(`Making ${bed.label}`, "progress");
     try {
       const { wav } = await renderBedFile(req.name, seconds, seed, RATE, (x) => updateToast(tid, { progress: x }), signal);
@@ -79,6 +79,7 @@ export async function addAmbience(req: AmbienceRequest): Promise<AmbienceAnswer>
       dismiss(tid);
     }
   }
+  signal.throwIfAborted();
   let placed!: ReturnType<typeof placeBed>;
   const file = asset;
   edit(`Add ${bed.label}`, (q) => {
@@ -112,7 +113,7 @@ export async function auditionAmbience(name: string): Promise<void> {
   g.gain.linearRampToValueAtTime(1, t + 0.5);
   g.gain.setValueAtTime(1, t + 7);
   g.gain.linearRampToValueAtTime(0, t + 8);
-  src.connect(g).connect(ctx.destination);
+  src.connect(g).connect(masterBus().input);
   await ctx.resume();
   src.start(t);
   playing = src;

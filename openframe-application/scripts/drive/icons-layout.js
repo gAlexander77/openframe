@@ -14,13 +14,19 @@ async (page) => {
   for (const [width, height] of [[1600, 950], [1280, 720], [1100, 680]]) {
     await page.setViewportSize({ width, height });
     await page.waitForTimeout(200);
-    const tabs = page.locator('.lib-tab');
+    const tabs = page.getByRole('region', { name: 'Library', exact: true }).getByRole('tab');
+    const names = ['Media', 'Layouts', 'Audio', 'Text', 'Stickers', 'Effects', 'Transitions', 'Captions', 'Filters', 'Adjustment', 'AI tools', 'Markers', 'Timeline', 'Check'];
     const clipped = await tabs.evaluateAll((nodes) => nodes.filter((e) => {
       const r = e.getBoundingClientRect(), p = e.parentElement.getBoundingClientRect();
       return r.left < p.left - 1 || r.right > p.right + 1 || r.top < p.top - 1 || r.bottom > p.bottom + 1;
     }).map((e) => e.textContent));
-    for (const tab of await tabs.all()) { await tab.click(); }
-    check(`${width}-all-library-tabs`, clipped.length === 0 && await tabs.count() === 12, clipped); // 12 with Check (ADR-111)
+    const reached = [];
+    for (const name of names) {
+      const named = page.getByRole('region', { name: 'Library', exact: true }).getByRole('tab', { name, exact: true });
+      await named.click();
+      if (await named.getAttribute('aria-selected') === 'true') reached.push(name);
+    }
+    check(`${width}-all-library-tabs`, clipped.length === 0 && await tabs.count() === names.length && reached.length === names.length, { clipped, reached });
     for (const kind of ['details', 'text']) {
       await page.evaluate((kind) => {
         const v = window.videoEditor;

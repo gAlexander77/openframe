@@ -9,9 +9,12 @@
 .dialog-form footer, .editor-dialog > footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .dialog-error { color: var(--danger); margin: 0; }
 .media-manager { width: min(720px, calc(100vw - 40px)); }
+.media-proxy-controls { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: 8px; margin-top: 14px; }
+.media-proxy-controls .lib-hint { margin: 0; }
+.media-proxy-controls .btn { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-file-list { display: grid; gap: 8px; max-height: 40vh; overflow: auto; margin: 16px 0; }
-.media-file { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
-.media-file > div { flex: 1; min-width: 0; display: grid; gap: 5px; }
+.media-file { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
+.media-file > div { flex: 1 1 100%; min-width: 0; display: grid; gap: 5px; }
 .media-file .btn { flex-shrink: 0; }
 .media-path { display: block; overflow-wrap: anywhere; color: var(--text-3); font-size: var(--fs-sm); }
 .relink-review { padding: 12px; margin-bottom: 14px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; }
@@ -46,3 +49,6 @@
 .about-note { margin: 8px 0 0; color: var(--text-3); font-size: var(--fs-xs); }
 .prefs-gap { margin-top: 18px; }
 .prefs-switch { grid-template-columns: 1fr auto; }
+
+.prefs-transition { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.prefs-transition select { min-width: 0; width: 100%; }

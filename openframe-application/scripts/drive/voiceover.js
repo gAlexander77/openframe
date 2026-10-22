@@ -25,9 +25,12 @@ async (page) => {
   await panel.getByRole("button", { name: "Start recording" }).click();
   details.countdown = { ok: await panel.getByText("Starting in 3").waitFor({ timeout: 3000 }).then(() => true, () => false) };
   await panel.getByRole("button", { name: "Stop and keep" }).waitFor({ timeout: 6000 });
+  const recording = Date.now();
   details.live = { ok: await button.evaluate((b) => b.classList.contains("vo-live")) };
   await page.waitForTimeout(2000);
   await page.screenshot({ path: "scratch/voiceover-live.png" });
+  // The take is as long as the recording ran, screenshot included.
+  const recorded = (Date.now() - recording) / 1000;
   await panel.getByRole("button", { name: "Stop and keep" }).click();
   await page.waitForFunction(() => window.videoEditor.project().assets.some((a) => a.name === "Voiceover 1.wav"), null, { timeout: 15000 });
   await page.waitForFunction(() => window.videoEditor.project().tracks.some((t) => t.kind === "audio" && t.clips.length), null, { timeout: 5000 });
@@ -40,7 +43,7 @@ async (page) => {
   // Placement: playback began at frame 30, and the pre-roll before it is
   // dropped, so the take starts exactly there.
   details.placed = { ok: r.start === 30, start: r.start };
-  details.length = { ok: r.duration >= 50 && r.duration <= 70 && r.hasAudio, ...r };
+  details.length = { ok: r.duration >= 50 && Math.abs(r.duration - recorded * 30) <= 12 && r.hasAudio, recorded, ...r };
   // Sound actually arrived: the fake device beeps, so the peak is loud.
   const peak = await page.evaluate(async () => {
     const api = window.videoEditor;

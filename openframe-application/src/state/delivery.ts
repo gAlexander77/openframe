@@ -5,6 +5,7 @@
 import { activeSpan, BALANCE_WINDOWS, isolateTracks, isDialog, isMusic, lineBalances, loudnessDifference, marginSummary, speechWindows, windowLoudness } from "../lib/analysis/balance";
 import { assetsOf, trackRole } from "../lib/audioRoles";
 import { measureMix, type MixMeasurement } from "../engine/mixdown";
+import { duckRangeContext } from "../lib/analysis/duck";
 import { checkSpec, LOUDNESS_SPECS, PROGRAM_KINDS, rangeVerdict, SPEC_IDS, type ProgramKind, type SpecId } from "../lib/analysis/delivery";
 import { toDbtp } from "../lib/analysis/truePeak";
 import { clipEnd, projectDuration } from "../lib/project/ops";
@@ -43,13 +44,14 @@ export async function loudnessReport(spec = "", opts: ReportOptions = {}) {
   const start = Math.max(0, opts.start ?? 0);
   const end = Math.min(opts.end ?? Infinity, framesToSeconds(projectDuration(p), p.fps));
   if (!(end > start)) throw new Error("Nothing to measure: the timeline is empty there.");
-  const tid = toast("Measuring loudness", "progress");
+  const cancel = new AbortController();
+  const signal = AbortSignal.any([cancel.signal, projectWork.capture()]);
+  const tid = toast("Measuring loudness", "progress", undefined, { label: "Cancel", run: () => cancel.abort() });
   try {
-    const m = await measureMix(p, start, end, { loudness: opts.loudness, signal: projectWork.signal(), onProgress: (x) => updateToast(tid, { progress: x }) });
+    const m = await measureMix(p, start, end, { loudness: opts.loudness, signal, onProgress: (x) => updateToast(tid, { progress: x }) });
     const tracks = [];
     let balance;
     if (opts.by_track) {
-      const signal = projectWork.signal();
       // Each stem rendered once, whichever answer it serves.
       const stems = new Map<string, Promise<MixMeasurement>>();
       const stem = (ids: string[]) => {
@@ -104,7 +106,7 @@ export async function loudnessReport(spec = "", opts: ReportOptions = {}) {
       ...(opts.by_track ? { by_track: tracks, track_measurement: `as mixed, before master normalization${opts.per_second ? "" : "; per_second true adds each track's three-second loudness every second"}`, ...(balance ? { balance } : {}) } : {}),
       integrated_lufs: round(m.integrated),
       loudness_range_lu: round(m.range),
-      range: rangeVerdict(m.range, opts.kind),
+      range: rangeVerdict(m.range, opts.kind, duckRangeContext(p, start, end)),
       short_term_max_lufs: round(m.shortTermMax),
       momentary_max_lufs: round(m.momentaryMax),
       true_peak_dbtp: round(truePeak),

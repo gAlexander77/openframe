@@ -1,4 +1,4 @@
-.source-monitor { width: min(780px, calc(100vw - 40px)); }
+.source-monitor { width: min(780px, calc(100vw - 40px)); max-height: calc(100vh - 24px); overflow-y: auto; }
 .frame-preview { position: relative; display: grid; place-items: center; min-width: 0; background: #000; aspect-ratio: 16 / 9; overflow: hidden; }
 .frame-preview canvas { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
 .frame-preview-error { position: absolute; inset: 0; display: grid; place-items: center; background: #111b; color: var(--text-2); }
@@ -9,6 +9,7 @@
 .source-transport { display: flex; align-items: center; justify-content: center; gap: 12px; }
 .source-marks { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 14px 0; }
 .source-marks > div { display: flex; gap: 8px; align-items: center; }
+.source-marks button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .source-monitor > .lib-hint { margin: 8px 0 14px; }
 .media-preview-button { padding: 3px 0; border: 0; background: none; color: var(--accent); text-align: left; font-size: var(--fs-xs); }
 .media-preview-button:hover { text-decoration: underline; }
@@ -34,3 +35,15 @@
   .trim-pair figcaption { min-height: 0; }
   .trim-pair .frame-preview, .trim-pair .trim-audio { max-height: max(40px, calc(100cqh - 124px)); }
 }
+
+/* Query the stage to tighten the preview itself: its own size container
+   can only change its descendants. Leave room for two 40 px pictures,
+   the header, source labels and footnote in a 151 px stage. */
+@container player-stage (max-height: 200px) {
+  .trim-preview { padding: 6px; gap: 4px; }
+  .trim-pair .frame-preview, .trim-pair .trim-audio { max-height: max(0px, calc(100cqh - 100px)); }
+}
+
+.source-monitor footer { flex-wrap: wrap; }
+.source-fit { display: flex; flex-wrap: wrap; gap: 8px; }
+.source-fit p { flex-basis: 100%; margin: 0; }

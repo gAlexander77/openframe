@@ -79,7 +79,11 @@ async (page) => {
         // lane's contents under the sticky header column too.
         const scroller = document.querySelector(".tl-scroll")?.getBoundingClientRect();
         const headerW = document.querySelector(".tl-corner")?.offsetWidth ?? 0;
+        const master = document.querySelector(".mix-strip.master")?.getBoundingClientRect();
         const sticky = (el, r) => {
+          // Track strips scroll under the opaque sticky master. Audit only
+          // their painted portion, as with the timeline's sticky headers.
+          if (master && el.closest(".mix-strip:not(.master)")) return cut(r, { ...view, right: master.left });
           if (!scroller || !el.closest(".tl-rows")) return r;
           return cut(r, { left: scroller.left + (el.closest(".tl-lane") ? headerW : 0), top: scroller.top + 28, right: scroller.right, bottom: scroller.bottom });
         };

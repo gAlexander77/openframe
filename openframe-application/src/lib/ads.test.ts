@@ -42,6 +42,14 @@ const SHAPES: [number, number][] = [
 ];
 
 describe("ad elements", () => {
+  it("uses the safe column's width for a tall end card's type", () => {
+    const { project: p, clipIds } = addAdElement(branded(1080, 1920), "end_card", { start: 0, headline: "Fresh every morning", cta: "Order now" });
+    const headline = clipsOf(p, clipIds).find((c): c is TextClip => c.type === "text" && c.text === "Fresh every morning")!;
+    expect(headline.style.size).toBeGreaterThanOrEqual(72);
+    const b = box(p, headline), s = safeArea(p);
+    expect(b.left).toBeGreaterThanOrEqual(s.left * p.width - 1);
+    expect(b.right).toBeLessThanOrEqual((1 - s.right) * p.width + 1);
+  });
   it("builds an end card: a brand-colored card, logo, headline, button and url, grouped, inside the safe area", () => {
     const { project: p, clipIds } = addAdElement(branded(), "end_card", { start: 300, headline: "Fresh roast", cta: "Order now" });
     const cs = clipsOf(p, clipIds);
@@ -328,4 +336,15 @@ describe("text behind the subject of a picture", () => {
     expect(index(title)).toBeLessThan(index(photo.id));
     expect(() => putBehindSubject(p, photo.id, [title], { cutout: { enabled: true, src: "m", from: 0, to: 1, model: "m" } })).toThrow(/cut-out picture/);
   });
+});
+
+
+it("puts a brand wordmark on an end card without a logo, unless none is asked", () => {
+  for (const [logo, expected] of [[undefined, true], ["none", false]] as const) {
+    const p = runCommand(createProject(), "set_brand", { name: "Lumen Trails" });
+    const out = addAdElement(p, "end_card", { start: 0, headline: "Explore", logo }).project;
+    expect(out.tracks.flatMap((t) => t.clips).some((c) => c.type === "text" && c.text === "Lumen Trails")).toBe(expected);
+  }
+  const out = addAdElement(branded(), "end_card", { start: 0, headline: "Explore" }).project;
+  expect(out.tracks.flatMap((t) => t.clips).some((c) => c.type === "text" && c.text === "Roast")).toBe(false);
 });

@@ -39,6 +39,10 @@ Then:
 
 The app must be running with Allow AI agents on whenever the agent works;
 start a new agent session after adding the server.
+While the editor page is reloading or broken, the agent gets an immediate
+error explaining that the editor is not ready, or that it reloaded before
+answering and the project must be checked before retrying an edit.
+Restarting OpenFrame clears this state so the editor can listen again.
 
 **When the app gains tools.** A client lists a server's tools once, when
 it connects, so tools (or parameters) a newer build adds stay invisible to
@@ -705,6 +709,19 @@ in the web build or over the WebView2 debug port: `exec(name, args)`,
 `mcp(message)`, and the AI tools (`ai.removeSilences`, ...,
 `ai.removeBackground`). See
 [[Driving the app]].
+
+`memory()` is a developer readout of known retained bytes by kind, counts
+and byte budgets. Model and GPU numbers are estimates; browser/driver
+allocations and decoder queues need process measurements too. It does not
+force garbage collection. `render()` and `still()` return temporary Blob
+URLs: fetch the bytes, then call `releaseUrl(url)` in `finally`. Abandoned
+URLs expire after 60 seconds, are evicted within 128 MiB, and are revoked
+when the project closes. In-memory exports stop at 128 MiB; larger deliveries
+use the streaming file export. MCP previews return bytes directly and
+release retained image/audio payloads after delivery; MCP exports return
+file paths. `memory-long-media` records known resources and a warmed
+before/after JS heap, with a 64 MiB heap allowance and 8 MiB retained limit
+after returning Home ([[ADR-144 Session resources have byte budgets and explicit owners]]).
 
 `onFrame(callback)` reports the timeline frame after a viewer draw and
 returns an unsubscribe function. `playbackStats()` reports dropped frames,

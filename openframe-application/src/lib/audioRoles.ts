@@ -40,7 +40,7 @@ export const assetsOf = (p: Project): AssetOf => {
  * The stem an audio track is: its role when a tool or the user set one;
  * else what most of its clips' sound is (by length); else, for a project
  * from before roles, the names add_voiceover and the sound effect tracks
- * had; else music, the bed under everything (an imported song). Video
+ * had; else unset when the imported audio is uncertain. Video
  * tracks are not stems: their sound is the picture's own.
  */
 export function trackRole(t: Track, assetOf: AssetOf = none): TrackRole | undefined {
@@ -52,12 +52,12 @@ export function trackRole(t: Track, assetOf: AssetOf = none): TrackRole | undefi
     if (r) length.set(r, (length.get(r) ?? 0) + c.duration);
   }
   if (length.size) return [...length].sort((a, b) => b[1] - a[1])[0][0];
-  // ponytail: names only for tracks nothing else describes (projects saved
-  // before roles); a renamed track with role-less imports stays music.
+  // Legacy tool names for documents from before explicit roles.
   if (/^voiceover\b/i.test(t.name)) return "dialog";
   if (/sound effects|\bsfx\b/i.test(t.name)) return "effects";
   if (/ambien|room tone/i.test(t.name)) return "ambience";
-  return "music";
+  if (/^music\b/i.test(t.name)) return "music";
+  return undefined;
 }
 
 /** The audio tracks of a stem. */
@@ -71,12 +71,12 @@ export const tracksOfRole = (p: Project, role: TrackRole): Track[] => {
  * duration): `prefer` when given (an audio track id; when its spot is
  * taken, a new track of its role just below it), else the first unlocked
  * track of that role with room, else a new one named for the role, below
- * the last of its kind. A sound without a role (an imported file) lands
- * only on a music track, never on the voice, the effects or the beds.
+ * the last of its kind. An uncertain import lands on an
+ * unclassified audio track until the user assigns it a stem.
  */
 export function roleTrack(p: Project, role: TrackRole | undefined, start: number, duration: number, prefer?: Id): { project: Project; trackId: Id } {
   const of = assetsOf(p);
-  const want = role ?? "music";
+  const want = role;
   if (prefer !== undefined) {
     const t = ops.findTrack(p, prefer);
     if (!t) throw new Error(`No track with id ${prefer}`);
@@ -90,7 +90,7 @@ export function roleTrack(p: Project, role: TrackRole | undefined, start: number
   const free = p.tracks.find((t) => t.kind === "audio" && !t.locked && trackRole(t, of) === want && ops.rangeFree(t, start, duration));
   if (free) return { project: p, trackId: free.id };
   const fresh: Track = { ...createTrack("audio", role ? ROLE_TRACK_NAMES[role] : "Audio"), ...(role ? { role } : {}) };
-  const last = p.tracks.findLastIndex((t) => trackRole(t, of) === want);
+  const last = p.tracks.findLastIndex((t) => t.kind === "audio" && trackRole(t, of) === want);
   return { project: ops.addTrack(p, fresh, last >= 0 ? last + 1 : undefined), trackId: fresh.id };
 }
 

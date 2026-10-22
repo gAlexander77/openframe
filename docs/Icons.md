@@ -29,18 +29,22 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Save frame / export duration | ImageDown / Clock |
 | Home project placeholder | Clapperboard |
 | Fit timeline or viewer | Maximize2 |
+| Compare looks | Columns2 |
 | Scopes | ChartColumnBig |
+| Proxy playback | Files |
 | Maximize / restore window | Square / PanelsTopLeft |
 | Duplicate / rename / delete | Copy / Pencil / Trash2 |
 | Grid view / list view (media library, Home) | LayoutGrid / List |
 | Keyframe / animation graph | Diamond / ChartSpline |
 | Markers / search / shortcuts | Bookmark / Search / Keyboard |
 | Project check (the Check tab) | ListChecks |
+| Timeline clip index | ListVideo |
 | Play / pause / stop / loop | Play / Pause / Square / Repeat |
 | Previous or next frame | ChevronLeft / ChevronRight |
 | Start or end / preferences / new project | SkipBack or SkipForward / Settings / FilePlus2 |
 | Close / add / remove | X / Plus / Minus |
 | Crop / mirror | Crop / FlipHorizontal2 |
+| Pen mask | Spline |
 | Visibility / locked | Eye or EyeOff / Lock or LockOpen |
 | Sound on or muted | Volume2 / VolumeX |
 | Transitions / filters / color | Blend / Palette / PaintBucket |
