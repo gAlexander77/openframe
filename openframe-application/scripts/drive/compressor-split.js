@@ -79,6 +79,19 @@ async (page) => {
     const sv = await mix(1, 3);
     details.voice = { ...against(wv, sv, 2, 1) };
     details.voice.ok = details.voice.errorUnderSignalDb > 60;
+    await mute(t2, true);
+
+    // A compound's own compressor must retain its detector state too.
+    const t3 = await track("Compound sound");
+    const inner = (await call("add_media_clip", { asset_id: song.id, start: 0, duration: 6, track_id: t3 })).added_clips[0].id;
+    const picture = (await call("add_color_clip", { color: "#101010", start: 0, duration: 6 })).added_clips[0].id;
+    const compound = (await call("create_compound_clip", { clip_ids: [inner, picture], name: "Compressed scene" })).added_clips[0].id;
+    await call("set_compressor", { clip_ids: [compound], preset: "strong" });
+    await call("set_param", { clip_ids: [compound], path: "eq.low", value: 6 });
+    const wc = await mix(2, 4);
+    await call("split", { clip_ids: [compound], at: 3 });
+    details.compound = against(wc, await mix(2, 4), 3, 2);
+    details.compound.ok = details.compound.errorUnderSignalDb > 60 && details.compound.signalDb > -60;
     return { ok: Object.values(details).every((d) => d.ok), details };
   });
 };

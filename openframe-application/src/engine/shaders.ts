@@ -589,6 +589,35 @@ void main() {
   outColor = c;
 }`;
 
+/** Threshold before downsampling: a tiny highlight must survive the pyramid. */
+export const GLOW_EXTRACT_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform float u_threshold;
+out vec4 outColor;
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  float l = c.a > 0.0 ? dot(c.rgb / c.a, vec3(0.2126, 0.7152, 0.0722)) : 0.0;
+  outColor = c * smoothstep(u_threshold * 0.01, u_threshold * 0.01 + 0.2, l);
+}`;
+
+export const GLOW_UP_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform sampler2D u_blur;
+uniform vec2 u_size;
+uniform bool u_spline;
+uniform float u_amount;
+out vec4 outColor;
+${READ_BACK}
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  vec4 b = u_spline ? bspline(u_blur, v_uv, u_size) : texture(u_blur, v_uv);
+  outColor = vec4(c.rgb + b.rgb * u_amount * 0.04, max(c.a, b.a));
+}`;
+
 /** A drop shadow (ADR-070): the layer's blurred alpha, moved and tinted,
  * under the layer itself. Both premultiplied. Past the canvas the blurred
  * picture's edge repeats (CLAMP_TO_EDGE), as the blur's own edges do, so a
@@ -944,9 +973,7 @@ export const EFFECT_SHADERS: Record<string, string> = {
     outColor = vec4(c.rgb + f * c.a, c.a);`),
   // radius: pixels at 1080p the glow reaches (7 x 7 taps a third of it
   // apart); a stored glow without one reached 18, its default (ADR-117).
-  // ponytail: at its 48 px maximum the taps are 16 px apart and a small
-  // highlight glows as a grid of copies; the big blur's pyramid (ADR-069)
-  // is the upgrade if wider glows are wanted.
+  // Wider radii run through the compositor's pyramid instead.
   glow: effect(["amount", "threshold", "radius"], `
     vec4 c = texture(u_tex, v_uv);
     vec4 acc = vec4(0.0);

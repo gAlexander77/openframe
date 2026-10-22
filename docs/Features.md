@@ -282,7 +282,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   equal power over the seconds before the cut; `cut_music` takes bars out
   of a song on its grid and joins the pieces so the beat runs on. A split
   of one sound plays on with no click guard at the cut, its halves through
-  one EQ and compressor (ADR-117).
+  one EQ and compressor (ADR-117). Identical halves of a compound clip
+  with EQ or compression also keep one bus, so its detector does not restart
+  at the split in preview or export (ADR-136).
+  Without a grid or Bar markers, a join fading into silence can suggest
+  `roll_edit` to a nearby stretch silent in both files, within half a second
+  and within the clips' source handles.
   `preview_audio` measures every join, click and dropout
   ([[ADR-104 Voice and sound an agent can trust without ears]],
   [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]).
@@ -364,6 +369,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   pixel size is pixels at 1080p, so the viewer and the export draw an
   effect alike, and Glow, Reduce image noise and Sketch take a radius or
   line width, [[ADR-117 A whole file relinks to itself, effects keep their size at every render size, and a split's halves share one compressor]]),
+  Glow radii above 18 use a thresholded pyramid blur, so small highlights
+  spread smoothly instead of repeating on a tap grid; radii through 18
+  keep their original pixels (ADR-136).
   24 transitions, 17 looks, adjustment layers. The **Strobe flash**
   starts at 2 flashes a second: more than 3 can trigger seizures (WCAG
   2.3.1), so keep it there.
@@ -1195,7 +1203,9 @@ A quiet recording need not leave the music nearly silent.
   **call-to-action button**, and a **logo reveal** (the logo pops in, with
   an optional glow flare and white flash, and the tagline). Explicit
   headline lines shrink to fit the column before wrapping, stopping at
-  the readable floor; the logo and room rules still apply.
+  the readable floor; the logo and room rules still apply. On 9:16,
+  the headline and button start from the safe column's width, making use
+  of the frame before the logo and room fitter give space (ADR-136).
 - **Text behind the subject** (`text_behind_subject`): a title sits behind
   the person or product in a video or a photo. The background is removed
   on this computer (a video's Remove background matte; a photo cut out once
@@ -1227,7 +1237,11 @@ A quiet recording need not leave the music nearly silent.
   as one group. Captions are burned in on tall versions by default (even
   from a hidden caption track), sized by the short side and kept clear of
   the stacks; `captions` says `burn`, `none` or `as_project`
-  ([[ADR-091 Tall versions stack what stood side by side]]).
+  ([[ADR-091 Tall versions stack what stood side by side]]). Rings and
+  spotlights inside compound scenes follow their pictures just as on the
+  root timeline. On tall versions, burned captions move above a ring they
+  cross when there is safe room; the check sheet names the move in `done`.
+  A ring drawn around the caption stays with it (ADR-136).
   A title card built as a compound refits as one picture, a split screen
   whose halves filled the frame fills the new one, text never ends under
   the frame's readable size, and `overrides` move, resize or hide a clip

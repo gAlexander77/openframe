@@ -897,6 +897,10 @@ import or export report. On the web, export uses the save picker or download.
 Ask `preview_audio` to hear up to 30 seconds of the mix or one stem. MP3
 is the default; if its encoder cannot run, the preview uses M4A or WAV and
 names the actual `format`. You can request `format: "wav"` directly.
+If a join fades into silence and there is no grid or Bar marker, its
+measurements can suggest a `roll_edit` target within half a second where
+both source files are silent. Apply that target to move the handoff while
+keeping the two clips' outer edges.
 `audio: false` returns measurements alone. Flat-range advice names pauses
 held down by ducking; lower `duck_under_speech min_gap` or choose `open_at`
 moments if you want music to rise there.
@@ -904,6 +908,8 @@ moments if you want music to rise there.
 For portrait hooks, use size 70-110 and two to four words per line;
 ordinary portrait titles use 50-90. Explicit lines in an end-card headline
 shrink to fit the column before wrapping, down to the readable floor.
+A 9:16 end card sizes its headline and button from the safe column, then
+gives logo space first if the card needs to fit a shorter room.
 Voiceover line start/end answers are the placed clip times; `seconds`
 remains the speech length.
 
@@ -911,6 +917,9 @@ With `export_versions check: true`, use `check_times: [1, 11.5, 29]` for
 seconds of the master, or `check_at: [0.15, 0.5, 0.92]` for fractions of
 each version. Choose one. Cut-downs omit moments cut out of the master,
 move end-card moments with the card, and show the opening if none remain.
+Rings and spotlights inside compound scenes follow the footage in each
+version. On tall versions, captions crossing a ring move above it when
+there is safe room; the check sheet reports what moved in `done`.
 A version override with `hidden: true` can hide a cinematic-bars adjustment.
 On repeating texture without a distinct subject, automatic reframing stays
 centered and says so; give `focus` to choose a region yourself. An adapted

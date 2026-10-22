@@ -11,6 +11,7 @@ import { runCommand } from "./commands";
 import { inSource, onCanvas } from "./follow";
 import { paramAt } from "./keyframes";
 import { createProject } from "./project/defaults";
+import { createCompound } from "./project/compound";
 import { findClip } from "./project/ops";
 import type { ColorClip, Project, VisualClip } from "./project/types";
 import type { Looks } from "./reframe";
@@ -32,6 +33,23 @@ const frame = (s: number) => Math.round(s * FPS);
 const clip = <T = VisualClip>(p: Project, id: string) => findClip(p, id)!.clip as T;
 const ids = (p: Project) => new Set(p.tracks.flatMap((t) => t.clips).map((c) => c.id));
 const added = (before: Project, after: Project) => [...ids(after)].filter((id) => !ids(before).has(id));
+
+it("keeps a callout inside a compound on its picture in each shape", () => {
+  const { p, ring } = cutSection();
+  const nested = createCompound(p, [...ids(p)], "Scene").project;
+  expect(nested.compounds).toHaveLength(1);
+  for (const ratio of ["1:1", "9:16", "4:5"] as const) {
+    const plain = versionProject({ ...nested, tracks: nested.compounds![0].tracks }, { ratio });
+    const q = versionProject(nested, { ratio });
+    const view = { ...q, tracks: q.compounds![0].tracks };
+    for (const at of [1.5, 2.5, 3.5]) {
+      const a = ringOn(plain, ring, at), b = ringOn(view, ring, at);
+      expect(Math.abs(a.cx - b.cx)).toBeLessThan(1);
+      expect(Math.abs(a.cy - b.cy)).toBeLessThan(1);
+      expect(Math.abs(a.w - b.w)).toBeLessThan(1);
+    }
+  }
+});
 
 /** A 1920x1080 explainer with one 2560x1440 screen recording on its main
  * track from `start` for `duration` seconds. */
@@ -272,7 +290,7 @@ describe("the check names a callout off the frame or off what it pointed at", ()
     expect(clean).toEqual([]);
   });
 
-  it("asks for the captions to move, not a ring that crosses them", () => {
+  it("moves burned captions above a ring that crosses them on a tall version", () => {
     // A 9:16 version burns its captions across a tall ring (as the Lift
     // ring's caption in the rebuilt film); an override moving the ring would
     // take it off the wheel it circles.
@@ -280,10 +298,10 @@ describe("the check names a callout off the frame or off what it pointed at", ()
     let p = runCommand(p0, "add_shape", { kind: "ellipse", start: 1, duration: 3, x: 0, y: 0.05, width: 0.3, height: 0.6, fill: false, stroke_color: "#22C3DA", stroke_width: 6 });
     const ring = added(p0, p)[0];
     p = runCommand(p, "add_captions", { captions: [{ text: "Lift the shadows", start: 1, end: 4 }] });
-    const q = versionProject(p, { ratio: "9:16" });
-    const hit = captionCollisions(q).find((x) => x.clip_id === ring)!;
-    expect(hit.note).toMatch(/it points at what is under it, so move the captions/);
-    expect(hit.note).not.toMatch(/an override \{clip_id/);
+    const moved: import("./versions").CaptionCollision[] = [];
+    const q = versionProject(p, { ratio: "9:16" }, undefined, undefined, undefined, moved);
+    expect(captionCollisions(q).find((x) => x.clip_id === ring)).toBeUndefined();
+    expect(moved.find(x => x.clip_id === ring)?.done).toMatch(/captions.*above.*ring/);
   });
 
   it("names a highlight box the layout moved off the footage, and keeps a ring around a caption on it", () => {

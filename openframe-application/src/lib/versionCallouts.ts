@@ -22,8 +22,8 @@
 // over other content than in the master, is reported for the check sheet
 // (calloutReports).
 //
-// ponytail: callouts on the project's timeline over a video or picture
-// clip (not inside compound clips); a turned callout or picture is placed
+// Each scene's timeline is handled in its own frame, including compounds.
+// ponytail: a turned callout or picture is placed
 // by its center and size, its angle kept; the footage's anchor point, in
 // and out animations and wiggle are not followed (as ADR-120's anchors).
 
