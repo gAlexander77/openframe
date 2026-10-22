@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeProject, runCommand } from "./commands";
+import { describeProject, runCommand, type CommandReport } from "./commands";
 import { describeChanges, handleMcp, listTools, type McpHost, TOOLS_META, toolsFingerprint } from "./mcp";
 import { createProject } from "./project/defaults";
 import type { Project } from "./project/types";
@@ -728,4 +728,39 @@ describe("what the third Claude film found (ADR-121)", () => {
     expect(answer.changed_clips).toHaveLength(1);
     expect(JSON.stringify(answer)).not.toMatch(/word 3/);
   });
+});
+
+
+describe("find_clips", () => {
+  it("searches titles inside compounds over handleMcp and returns compact read-only rows", async () => {
+    const h = host();
+    h.project = runCommand(h.project, "add_text", { text: "Sale now", start: 2, duration: 3 });
+    const title = h.project.tracks.flatMap((t) => t.clips).find((c) => c.type === "text")!;
+    h.project = runCommand(h.project, "create_compound_clip", { clip_ids: [title.id], name: "Ad" });
+    const outer = h.project.tracks.flatMap((t) => t.clips).find((c) => c.type === "compound")!;
+    const before = h.project;
+    const r = await call(h, "tools/call", { name: "find_clips", arguments: { query: "SALE", kind: "text", start: 0, end: 3, limit: 1 } });
+    const body = JSON.parse((r!.result as { content: { text: string }[] }).content[0].text);
+    expect(body).toMatchObject({ total: 1, shown: 1, clips: [{ clip_id: title.id, name: "Sale now", kind: "text", start: 0, end: 3, compound_clip_id: outer.id }] });
+    expect(h.project).toBe(before);
+    expect(listTools().find((t) => t.name === "find_clips")?.annotations).toMatchObject({ readOnlyHint: true });
+    const bad = await call(h, "tools/call", { name: "find_clips", arguments: { limit: 0 } });
+    expect(bad?.result).toMatchObject({ isError: true });
+  });
+});
+
+
+it("keeps bulk transition cut results in MCP's compact edit answer and in a batch", async () => {
+  const h = host();
+  for (let i = 0; i < 3; i++) h.project = runCommand(h.project, "add_media_clip", { asset_id: "a1", start: i * 2, duration: 2 });
+  h.exec = (name, args) => {
+    const report: CommandReport = {};
+    h.project = runCommand(h.project, name, args, report);
+    return { ...describeProject(h.project), ...report };
+  };
+  const r = await call(h, "tools/call", { name: "batch", arguments: { commands: [{ command: "apply_default_transitions", args: {} }] } });
+  const body = JSON.parse((r!.result as { content: { text: string }[] }).content[0].text);
+  expect(body.cuts.applied).toHaveLength(2);
+  expect(body.cuts.skipped[0]).toMatchObject({ reason: "no neighbor" });
+  expect(body.changed_clips).toHaveLength(2);
 });

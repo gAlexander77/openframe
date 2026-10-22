@@ -475,11 +475,13 @@ export function audibleTime(ctx: AudioContext): number {
 
 export interface MasterBus {
   input: GainNode;
+  output: GainNode;
   left: AnalyserNode;
   right: AnalyserNode;
 }
 
 let bus: MasterBus | null = null;
+let monitorMuted = false;
 
 /** Playback's master bus: everything scheduled for preview goes through it,
  * so the meters show exactly what reaches the speakers. */
@@ -491,22 +493,37 @@ export function masterBus(): MasterBus {
   const mk = () => Object.assign(ctx.createAnalyser(), { fftSize: 1024, smoothingTimeConstant: 0 });
   const left = mk();
   const right = mk();
-  input.connect(ctx.destination);
-  input.connect(split);
+  const output = ctx.createGain();
+  output.gain.value = monitorMuted ? 0 : 1;
+  input.connect(output);
+  output.connect(ctx.destination);
+  output.connect(split);
   split.connect(left, 0);
   split.connect(right, 1);
-  bus = { input, left, right };
+  bus = { input, output, left, right };
   return bus;
+}
+
+/** Session-only preview mute, before both meter taps. Offline export
+ * builds its own graph and never reads this switch. */
+export function setMonitorMuted(muted: boolean) {
+  monitorMuted = muted;
+  // Set directly: an automation event waits for the context to render, so
+  // an idle (suspended) context kept the old gain until playback resumed.
+  if (bus) {
+    bus.output.gain.cancelScheduledValues(0);
+    bus.output.gain.value = muted ? 0 : 1;
+  }
 }
 
 /** Hear the program or not (a voiceover take mutes it); the meters keep
  * reading either way. */
 export function setMonitor(on: boolean) {
-  const { input } = masterBus();
+  const { output } = masterBus();
   const ctx = audioContext();
   try {
-    if (on) input.connect(ctx.destination);
-    else input.disconnect(ctx.destination);
+    if (on) output.connect(ctx.destination);
+    else output.disconnect(ctx.destination);
   } catch {
     /* already in that state */
   }
@@ -526,7 +543,7 @@ export function tapLoudness(onStep: (meanSquare: number) => void): Promise<() =>
     // A silent path to the output keeps the tap pulled by the graph.
     const sink = ctx.createGain();
     sink.gain.value = 0;
-    masterBus().input.connect(node).connect(sink).connect(ctx.destination);
+    masterBus().output.connect(node).connect(sink).connect(ctx.destination);
     return node;
   });
   loudnessTap.catch(() => (loudnessTap = null));

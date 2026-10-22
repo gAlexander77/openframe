@@ -33,7 +33,7 @@ export interface ToolInfo {
 // ---- groups, in the order a video gets made ----------------------------------
 
 export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
-  { name: "Start here", blurb: "Read before editing: the guide, the timeline and the names the tools accept.", tools: ["help", "describe_project", "list_catalog"] },
+  { name: "Start here", blurb: "Read before editing: the guide, the timeline and the names the tools accept.", tools: ["help", "describe_project", "find_clips", "list_catalog"] },
   { name: "Projects", blurb: "Work in a new project so the user's own stay untouched.", tools: ["list_projects", "open_project", "new_project", "save_project_copy", "open_project_file", "collect_project", "set_project"] },
   { name: "Media", blurb: "Bring files in and keep the library tidy.", tools: ["import_media", "remove_media", "relink_media", "replace_clip", "rename_media", "edit_media_folder", "organize_media"] },
   {
@@ -63,7 +63,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
     blurb: "A brand kit every part of an ad draws from, built ad elements, and titles behind the subject.",
     tools: ["set_brand", "apply_brand", "add_ad_element", "text_behind_subject"],
   },
-  { name: "Effects, transitions and color", blurb: "Effects stacks, transitions at cuts, looks and the color grade.", tools: ["add_effect", "edit_effects", "copy_effects", "apply_effect_preset", "paste_attributes", "set_transition", "set_filter", "auto_adjust", "set_hsl", "set_curve", "set_color_wheel", "apply_lut", "set_colorize"] },
+  { name: "Effects, transitions and color", blurb: "Effects stacks, transitions at cuts, looks and the color grade.", tools: ["add_effect", "edit_effects", "copy_effects", "apply_effect_preset", "paste_attributes", "set_transition", "apply_default_transitions", "set_filter", "auto_adjust", "set_hsl", "set_curve", "set_color_wheel", "apply_lut", "set_colorize"] },
   {
     name: "Sound",
     blurb: "Voice, music, effects and the mix.",
@@ -76,7 +76,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
 export const groupOf = (name: string) => TOOL_GROUPS.find((g) => g.tools.includes(name))?.name ?? "More";
 
 /** Tools that only read: clients may run them without asking. */
-const READ_ONLY = new Set(["plan_music", "help", "describe_project", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "preview_audio", "check_project", "measure_loudness", "export_status", "get_transcript", "review_voiceover", "seek"]);
+const READ_ONLY = new Set(["plan_music", "help", "describe_project", "find_clips", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "preview_audio", "check_project", "measure_loudness", "export_status", "get_transcript", "review_voiceover", "seek"]);
 /** Tools that remove things (all are still undoable, but say so). */
 const DESTRUCTIVE = new Set(["delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "cut_music", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
 /** Tools that reach outside the project: files on disk, downloads. */
@@ -103,6 +103,7 @@ export function annotations(name: string): { title: string; readOnlyHint?: true;
  * against its schema. Ids are placeholders an agent replaces. */
 export const EXAMPLES: Record<string, Record<string, unknown>> = {
   help: { topic: "ad" },
+  find_clips: { query: "Sale", kind: "text", limit: 10 },
   list_catalog: { section: "effects" },
   new_project: { name: "Spring sale ad" },
   set_project: { width: 1080, height: 1920, fps: "30" },
@@ -115,6 +116,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_param: { clip_ids: ["c_123"], path: "transform.scale", value: 1.2 },
   add_keyframe: { clip_id: "c_123", path: "transform.x", at: 1, value: 0.75, ease: "fastIn" },
   frame_region: { clip_id: "c_123", region: { x: 0.25, y: 0.2, w: 0.5, h: 0.5 }, to_region: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, from: 0, to: 3 },
+  apply_default_transitions: { clip_ids: ["c_1", "c_2", "c_3"], kind: "video", type: "dissolve", duration: 0.5 },
   set_transition: { clip_id: "c_123", type: "dissolve", duration: 0.5 },
   add_effect: { clip_id: "c_123", type: "glow", params: { amount: 60, threshold: 88 } },
   set_filter: { clip_id: "c_123", type: "teal", intensity: 0.8 },

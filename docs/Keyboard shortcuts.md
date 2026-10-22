@@ -16,6 +16,7 @@ on 2026-10-18; when they change, change this page with them.
 | Action | Keys |
 |---|---|
 | Play / pause | `Space` |
+| Mute playback | `Shift+S` |
 | Previous frame | `Left` |
 | Next frame | `Right` |
 | Back 10 frames | `Shift+Left` |
@@ -47,6 +48,10 @@ on 2026-10-18; when they change, change this page with them.
 | Paste | `Ctrl+V` |
 | Freeze frame | `Alt+F` |
 | Extract audio | `Ctrl+Shift+S` |
+| Apply default video transition | `Ctrl+Alt+D` |
+| Apply default audio crossfade | `Ctrl+Alt+Shift+D` |
+| Mute track | `Shift+H` |
+| Solo track | `Alt+S` |
 | Create compound clip | `Alt+G` |
 | Break apart compound clip | `Alt+Shift+G` |
 | Activate / deactivate clip | `V` |
@@ -114,6 +119,12 @@ on 2026-10-18; when they change, change this page with them.
 | Preferences | `Ctrl+,` |
 
 ## Elsewhere
+
+In the library's Timeline tab, Up/Down move through clip rows and select,
+seek and reveal the reached clip. Enter selects the focused row again.
+Default-transition actions act on selected clips' outgoing cuts, or the
+nearest eligible main-track cut with nothing selected. Mute track and
+Solo track act on the tracks of selected clips.
 
 - **The viewer:** after clicking the viewer, the arrow keys nudge the
   selected pictures 1 px (with Shift, 10 px); elsewhere they step frames.

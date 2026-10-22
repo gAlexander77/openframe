@@ -212,6 +212,21 @@ A title an AI agent gave a drop shadow, a border or a colorize shows them
 in its **Text** tab (as **Drop shadow**, **Border** and **Colorize**), where
 you can change them or switch them off.
 
+## Apply transitions at several cuts
+
+Set **Default video transition**, **Transitions** seconds and **Audio
+crossfades** seconds in Preferences. In the Transitions library,
+right-click a card and choose **Set as default**; its Default badge marks
+it. The starting choices are Dissolve, 0.5 s for video and 0.5 s for audio.
+
+Select the clips before the cuts, then choose **Timeline > Apply default
+video transition** or **Apply default audio crossfade**. The Keyboard
+shortcuts panel lists their keys. One Undo removes the whole application.
+With no selection, the nearest eligible main-track cut is used. On audio
+tracks, select the outgoing audio clips; the incoming clips need sound
+before their in-points. Gaps and locked tracks are skipped, existing
+transitions stay, and each new length shortens to fit the join.
+
 ## Compose with viewer guides
 
 Choose **Safe margins**, **Rule of thirds**, or **Safe margins + thirds**
@@ -225,6 +240,19 @@ Guides follow the picture when resizing, using a portrait canvas or entering
 full screen. They do not block editing handles, appear in exports, change
 the project or consume an Undo step. The choice lasts for this app session;
 choose **Guides off** to hide them.
+
+## Find a clip on the timeline
+
+Open the library's **Timeline** tab beside Markers. Search a clip's name,
+its media name, its text (including a title's later lines), or its kind.
+Filter by Video, Audio, Text, Captions, Pictures or Other, and sort by
+Start, Name or Track. Rows show the track, start timecode, duration and
+color label; deactivated clips are dimmed.
+
+Click a row to select its clip, jump to its start and bring it into view.
+Up and Down move through rows; Enter selects the focused row. Selecting
+on the timeline highlights the matching row too. Double-click a compound
+row to open it; the list then follows that compound's own timeline.
 
 ## Organize edits with markers
 
@@ -605,7 +633,7 @@ Where one audio clip ends and another starts on the same track, right-click
 the first and choose **Crossfade into next clip**: the first fades out as
 the second fades in, at constant power, over the seconds before the cut, so
 the cut itself still lands where you put it. It takes the default
-transition length from **Preferences** (0.5 s), or as much as the clips
+**Audio crossfades** length from **Preferences** (0.5 s), or as much as the clips
 allow when that is less.
 The timeline draws it as a small marker at the end of the first clip;
 click it to open the clip's **Audio** tab, where **Crossfade** sets its
@@ -626,6 +654,13 @@ controls the whole mix, including exports, and shows stereo levels and
 short-term LUFS; with many tracks, their strips scroll sideways and the
 master stays in view at the right. A drag is one undo step. Double-click a
 fader or pan to reset it. Close the panel with **Close mixer** or Escape.
+
+The speaker in the player's transport and on the master strip is **Mute
+playback**. It silences previews, scrubbing and auditions, and the master
+meters read silence. It lasts for the app session and leaves exports
+unchanged. Use **Mute track** and **Solo track** in the Timeline menu or
+their entries in Keyboard shortcuts to toggle the tracks of selected
+clips in one undo step. Those track settings do affect export.
 
 ## Use animated images
 

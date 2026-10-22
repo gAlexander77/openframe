@@ -6,7 +6,7 @@
 // through the app's own audio output before adding it.
 
 import { renderMusicFiles, renderMusicPcm, type Measured } from "../engine/music";
-import { audioContext } from "../engine/audio";
+import { audioContext, masterBus } from "../engine/audio";
 import { planMusic, type MusicPlan } from "../lib/music/arrange";
 import { cueSheet, musicName, readMusicArgs, type CueSheet, type MusicOptions } from "../lib/music/cues";
 import { STEMS, STYLES, type Stem } from "../lib/music/styles";
@@ -151,7 +151,7 @@ export async function previewMusic(args: Record<string, unknown>, onProgress?: (
   buf.copyToChannel(r.right, 1);
   const src = ctx.createBufferSource();
   src.buffer = buf;
-  src.connect(ctx.destination);
+  src.connect(masterBus().input);
   src.onended = () => {
     if (playing === src) playing = null;
     onEnded?.();

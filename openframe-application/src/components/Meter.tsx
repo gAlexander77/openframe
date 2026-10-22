@@ -10,6 +10,7 @@ const HOLD_MS = 1200;
  * meter every NLE keeps beside the picture. Draws only while playing. */
 export function Meter() {
   const playing = useEditor((s) => s.playing);
+  const muted = useEditor((s) => s.monitorMuted);
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current!;
@@ -31,7 +32,8 @@ export function Meter() {
       ctx.clearRect(0, 0, w, h);
       const bw = (w - 2) / 2;
       [b?.left, b?.right].forEach((a, i) => {
-        const db = a ? peakDb(a) : -Infinity;
+        const db = a && !muted ? peakDb(a) : -Infinity;
+        if (muted) { level[i] = FLOOR; held[i] = FLOOR; }
         // fall back smoothly rather than snapping to silence
         level[i] = Math.max(db, level[i] - 1.2);
         if (level[i] >= held[i] || now - heldAt[i] > HOLD_MS) {
@@ -58,7 +60,7 @@ export function Meter() {
     };
     draw();
     return () => cancelAnimationFrame(raf);
-  }, [playing]);
+  }, [playing, muted]);
   return (
     <>
       <canvas ref={ref} className="meter" aria-label="Audio level" data-tip="Audio level (dBFS); the top line holds the recent peak" />
@@ -77,6 +79,7 @@ const lu = (v: number) => (v > -70 ? v.toFixed(1) : "—");
  * line): momentary, short-term, and integrated since play started. Stays
  * after a stop, so a pass can be read. */
 function Loudness({ playing }: { playing: boolean }) {
+  const muted = useEditor((s) => s.monitorMuted);
   const [v, setV] = useState<[number, number, number] | null>(null);
   useEffect(() => {
     if (!playing) return;
@@ -97,9 +100,9 @@ function Loudness({ playing }: { playing: boolean }) {
   if (!v) return null;
   return (
     <div className="lufs num" aria-label="Loudness" data-tip="Loudness in LUFS (EBU R128): momentary, short-term (3 s) and integrated since play started. Streaming sites play at about -14.">
-      <span>M {lu(v[0])}</span>
-      <span>S {lu(v[1])}</span>
-      <span>I {lu(v[2])}</span>
+      <span>M {lu(muted ? -Infinity : v[0])}</span>
+      <span>S {lu(muted ? -Infinity : v[1])}</span>
+      <span>I {lu(muted ? -Infinity : v[2])}</span>
     </div>
   );
 }

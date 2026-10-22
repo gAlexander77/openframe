@@ -8,7 +8,7 @@ import type { Asset, Id, Project } from "../lib/project/types";
 import { placeSounds, SFX, type SoundCue } from "../lib/sfx";
 import { framesToSeconds } from "../lib/time";
 import { encodeWav } from "../lib/wav";
-import { audioContext } from "../engine/audio";
+import { audioContext, masterBus } from "../engine/audio";
 import { edit } from "./actions";
 import { adoptAndProbe, prepare } from "./media";
 import { store } from "./store";
@@ -89,6 +89,6 @@ export function auditionSoundEffect(id: string) {
   buf.copyToChannel(new Float32Array(r), 1);
   const src = ctx.createBufferSource();
   src.buffer = buf;
-  src.connect(ctx.destination);
+  src.connect(masterBus().input);
   void ctx.resume().then(() => src.start());
 }

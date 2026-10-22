@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 167 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 169 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -40,7 +40,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 
 ## Contents
 
-- **Start here**: `help`, `describe_project`, `list_catalog`
+- **Start here**: `help`, `describe_project`, `find_clips`, `list_catalog`
 - **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `set_project`
 - **Media**: `import_media`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
@@ -50,7 +50,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
 - **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
-- **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, `set_colorize`
+- **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `apply_default_transitions`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, `set_colorize`
 - **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `set_crossfade`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
 - **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`
 
@@ -88,6 +88,25 @@ Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and 
 | `clips` | boolean |  | false: the tracks alone, each with its clip count instead of its clips (the cheap way to learn track ids); media, markers and nested timelines then only when asked true |
 | `brand` | boolean |  | The brand kit (set_brand): given with the whole timeline, left out of a narrowed answer unless true; false leaves it out of the whole one |
 | `fields` | string[] |  | Each clip's id, type, start and end, and only these of its fields, e.g. ["text"] for captions as words and times, ["transform", "keyframes"] for where things sit |
+
+### find_clips
+
+Find clips by name, media name, text or kind, including inside compound clips. Answers compact rows sorted by start, total and shown. Nested times and stretch filters are local to that compound timeline; compound_clip_id names the containing clip instance. A point (start equals end) finds clips playing then; a stretch is end-exclusive.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `query` | string |  | Case-insensitive text in the clip name, media name, title/caption text or kind |
+| `kind` | "video" \| "audio" \| "text" \| "caption" \| "image" \| "color" \| "adjustment" \| "compound" |  | Only this kind; text means titles, caption means captions |
+| `track_id` | string |  | Only clips on this track |
+| `start` | number |  | Clips still playing after this second (local time inside compounds) (0..) |
+| `end` | number |  | Clips starting before this second (same as start finds a point) (0..) |
+| `limit` | integer |  | Maximum rows returned (default 50) (1..1000) |
+
+Example:
+
+```json
+{"name":"find_clips","arguments":{"query":"Sale","kind":"text","limit":10}}
+```
 
 ### list_catalog
 
@@ -2024,6 +2043,24 @@ Example:
 
 ```json
 {"name":"set_transition","arguments":{"clip_id":"c_123","type":"dissolve","duration":0.5}}
+```
+
+### apply_default_transitions
+
+Apply default transitions to touching cuts after clip_ids (omit for every cut on main). Video defaults to the preferred type and duration (initially dissolve, 0.5 s); audio to the preferred crossfade length (initially 0.5 s). kind both handles each clip by its kind. Existing transitions stay unless replace is true; locked tracks and gaps are skipped. Durations shorten to each join's limits. One edit, with applied and skipped cuts and reasons.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] |  | Clips before the cuts; omitted means every cut on the main track |
+| `kind` | "video" \| "audio" \| "both" |  | Which cuts (default video) |
+| `type` | "dissolve" \| "dipBlack" \| "dipWhite" \| "wipeLeft" \| "wipeRight" \| "wipeUp" \| "wipeDown" \| "circleOpen" \| "clockWipe" \| "slideLeft" \| "slideRight" \| "pushLeft" \| "pushUp" \| "zoomIn" \| "zoomOut" \| "spin" \| "blur" \| "pixelate" \| "glitch" \| "flash" \| "whipLeft" \| "whipRight" \| "zoomPunch" \| "spinBlur" |  | Override the preferred video transition |
+| `duration` | number |  | Override the video/audio length in seconds; shortened to fit each join (0.05..) |
+| `replace` | boolean |  | Replace existing transitions or crossfades (default false) |
+
+Example:
+
+```json
+{"name":"apply_default_transitions","arguments":{"clip_ids":["c_1","c_2","c_3"],"kind":"video","type":"dissolve","duration":0.5}}
 ```
 
 ### set_filter

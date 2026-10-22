@@ -20,7 +20,7 @@ import { choose, DEFAULT_DECODE_RATE, entryTargets, heldBytes, leadFor, MAX_LEAD
 import { frameAt, framesToSeconds } from "../lib/time";
 import { provide } from "../state/actions";
 import { store, type EditorState } from "../state/store";
-import { audibleTime, audioContext, masterBus, scheduleAudio, type Schedule } from "./audio";
+import { audibleTime, audioContext, masterBus, setMonitorMuted, scheduleAudio, type Schedule } from "./audio";
 import { Compositor, type SourceImage } from "./compositor";
 import { ReverseCursor, VideoCursor, type HeldFrame, type ReverseOptions } from "./cursor";
 import { loadPlanLuts } from "./luts";
@@ -222,6 +222,11 @@ export class Player {
   constructor() {
     this.unsub = store.subscribe(() => this.onStore());
     provide({
+      mutePlayback: () => {
+        const muted = !store.get().monitorMuted;
+        setMonitorMuted(muted);
+        store.set({ monitorMuted: muted });
+      },
       playPause: () => (this.rate ? this.pause() : this.play(1)),
       shuttleForward: () => this.play(this.rate <= 0 ? 1 : Math.min(this.rate * 2, 8)),
       shuttleBack: () => this.play(this.rate >= 0 ? -1 : Math.max(this.rate * 2, -8)),

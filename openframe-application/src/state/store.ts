@@ -34,6 +34,7 @@ export type LeftTab =
   | "adjustment"
   | "captions"
   | "markers"
+  | "timeline"
   | "ai"
   | "check";
 
@@ -79,6 +80,8 @@ export interface EditorState {
   /** The Scopes panel is showing (in the media library's place). */
   scopes: boolean;
   mixer: boolean;
+  /** Preview output only; remembered for this app session, never exported. */
+  monitorMuted: boolean;
   /** Viewer overlays only: never saved into the project or rendered. */
   viewerGuides: Guides;
   leftTab: LeftTab;
@@ -153,6 +156,7 @@ let state: EditorState = {
   previewScale: 1,
   scopes: false,
   mixer: false,
+  monitorMuted: false,
   viewerGuides: "off",
   leftTab: "media",
   mediaBrowser: { ...DEFAULT_MEDIA_BROWSER },

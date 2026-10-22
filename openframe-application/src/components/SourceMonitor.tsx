@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { audibleTime, audioContext, scheduleAudio, type Schedule } from "../engine/audio";
+import { audibleTime, audioContext, masterBus, scheduleAudio, type Schedule } from "../engine/audio";
 import { player } from "../engine/player";
 import { AudioLines, ChevronLeft, ChevronRight, Pause, Play } from "../icons";
 import { sourceFrames, sourceProject } from "../lib/sourceMonitor";
@@ -41,7 +41,7 @@ export function SourceMonitor({ asset, onClose }: { asset: Asset; onClose: () =>
       if (generation !== transport.current.generation || signal.aborted) return;
       const start = frame >= markOut - 1 || frame < markIn ? markIn : frame;
       const at = ctx.currentTime + 0.05;
-      const schedule = scheduleAudio(ctx, ctx.destination, project, start / rate, markOut / rate, at);
+      const schedule = scheduleAudio(ctx, masterBus().input, project, start / rate, markOut / rate, at);
       transport.current.schedule = schedule;
       void schedule.done.catch((e) => { if (generation === transport.current.generation) { stop(); setError(String(e)); } });
       setPlaying(true);

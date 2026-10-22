@@ -9,6 +9,7 @@ import { projectDuration } from "../lib/project/ops";
 import { formatTimecode, parseJump } from "../lib/time";
 import { provide, run, tipFor } from "../state/actions";
 import { store, useEditor } from "../state/store";
+import { MonitorMute } from "./MonitorMute";
 import { Meter } from "./Meter";
 import { CropBar } from "./CropOverlay";
 import { TransformOverlay } from "./TransformOverlay";
@@ -236,6 +237,7 @@ function Transport() {
         </button>
       </div>
       <div className="transport-right">
+        <MonitorMute />
         <ViewerZoom />
         <CanvasRatio />
         <PreviewQuality />
