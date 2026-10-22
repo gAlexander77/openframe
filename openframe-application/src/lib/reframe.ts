@@ -285,6 +285,14 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
     if (focus?.some((x) => x[a] !== undefined) && !axes.includes(a)) said?.push({ option: "focus", clip_id: after.id, note: `${after.id} shows its picture's whole ${a === "x" ? "width" : "height"} in this shape, so focus ${a} has nothing to move` });
   }
   if (!axes.length) return none;
+  // ponytail: saliency has no speaker identity; retain this warning until
+  // a semantic person/face detector supplies calibrated confidence.
+  if (aim === "subject" && look && !focus) {
+    const core = subjectBox(look.maps[0]);
+    const x = core ? +((core.left + core.right) / 2).toFixed(2) : 0.5;
+    const y = core ? +((core.top + core.bottom) / 2).toFixed(2) : 0.5;
+    said?.push({ option: "reframe", clip_id: after.id, note: `${after.id}: low-confidence framing from visual saliency, which can select a bright monitor instead of a speaker. Inspect preview_media and give focus {clip_id: "${after.id}", x, y} on the intended person (current candidate x ${x}, y ${y}); fit "fit" or "blur" preserves the whole picture.` });
+  }
 
   const centers = placed.map((s) => centerOf(q, after, s.l));
   const auto: Record<"x" | "y", number[]> = { x: [], y: [] };
@@ -366,8 +374,8 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
   // second-guess it (a screen recording's most salient part is rarely what
   // the push was for); a subject the master's own push cuts is still named.
   const notes: SubjectNote[] = [];
-  const judged = aim === "subject" || aim === "center";
-  if (look) {
+  const judged = !focus && (aim === "subject" || aim === "center");
+  if (look && !focus) {
     const sec = (rel: number) => +framesToSeconds(after.start + rel, fps).toFixed(2);
     placed.forEach((s, k) => {
       if (!s.map || !s.looked) return;

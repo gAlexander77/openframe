@@ -26,19 +26,21 @@
 // and the end card, cutting the middle out of the picture tracks; the
 // music runs from the start and fades at the new end.
 
+import { onCanvas } from "./follow";
+import { subjectBox } from "./analysis/subject";
 import { titleWrap } from "./ads";
 import { titleZone, VERTICAL_SAFE } from "./align";
 import { minTextSize } from "./brandKit";
 import { canvasSize } from "./canvas";
 import { EFFECTS } from "./catalog";
 import { CAPTION_WRAP, captionFit, captionMax, captionY } from "./captionLooks";
-import { withoutCaptions } from "./captions";
-import { seenLetters, seenTexts, type Measured as CheckMeasured } from "./designCheck";
+import { DEFAULT_LINES, readableCaptions, withoutCaptions } from "./captions";
+import { seenLetters, seenTexts, seenShots, type Measured as CheckMeasured } from "./designCheck";
 import { paramAt } from "./keyframes";
-import { clipEnd, findCompound, getAsset, liftRange, projectDuration } from "./project/ops";
+import { clipEnd, findCompound, getAsset, liftRange, projectDuration, sourceTimeAt } from "./project/ops";
 import type { Clip, ColorClip, CompoundClip, Id, ImageClip, Keyframe, Project, TextClip, TextStyle, Track, VideoClip, VisualClip } from "./project/types";
-import { fittedSize, textPad } from "./render/size";
-import { lookFor, reframeShot, type Focus, type Looks, type OptionNote, type Reframe, type ShotTargets, type SubjectNote } from "./reframe";
+import { fittedSize, textLines, textPad } from "./render/size";
+import { lookFor, focusAt, restLayer, reframeShot, type Focus, type Looks, type OptionNote, type Reframe, type ShotTargets, type SubjectNote } from "./reframe";
 import { anchorOf, reanchor } from "./anchors";
 import { calloutReports, calloutsOf, followCallouts, followed, shotTargets, type CalloutReport } from "./versionCallouts";
 import { maskReach } from "./mask";
@@ -1186,6 +1188,85 @@ function followerPlans(master: Project, q: Project, follows: Map<Measured, Measu
   }
 }
 
+/** A whole-line caption that wraps past two lines in the new column is
+ * regrouped at its spoken-word times. Imported cues without word times
+ * distribute words within their existing window; no words are discarded. */
+function fitCaptionLines(q: Project): Project {
+  return { ...q, tracks: q.tracks.map(t => ({ ...t, clips: t.clips.flatMap((c): Clip[] => {
+    if (c.type !== "text" || !c.caption || c.disabled) return [c];
+    const lines = textLines(q, c);
+    const chars = Math.max(8, Math.floor(c.style.maxWidth * q.width / (c.style.size * q.height / 1080 * 0.6)));
+    if (lines ? lines.length <= 2 : c.text.split("\n").length <= 2 && c.text.length <= chars * 2) return [c];
+    const texts = c.text.trim().split(/\s+/), sec = (f: number) => framesToSeconds(f, q.fps);
+    // ponytail: cues without word times are distributed evenly; forced
+    // alignment can replace this estimate without changing the cue window.
+    const timed = c.wordTimes?.length === texts.length ? c.wordTimes : undefined;
+    const words = texts.map((text, i) => ({ text, start: sec(timed?.[i] ?? c.duration * i / texts.length), end: sec(timed?.[i + 1] ?? c.duration * (i + 1) / texts.length) }));
+    const caps = readableCaptions(words, { ...DEFAULT_LINES, maxChars: chars }, sec(c.duration));
+    return caps.map((cap, i) => {
+      const start = secondsToFrames(cap.start, q.fps), end = secondsToFrames(cap.end, q.fps);
+      return { ...c, id: i ? `${c.id}_portrait_${i}` : c.id, start: c.start + start, duration: Math.max(1, end - start), text: cap.text, wordTimes: cap.words?.map(w => secondsToFrames(w, q.fps) - start) };
+    });
+  }) })) };
+}
+
+/** Speaker identifiers in a tall version leave room for the framed subject.
+ * Saliency is only a candidate (reframeShot says so); explicit focus wins.
+ * Sample the subject through the identifier's entire visible window. */
+function clearSubjectTitles(q: Project, looks: Looks | undefined, focus: Focus[] | undefined, keep: Set<Id>, said: OptionNote[]): Project {
+  if (q.height <= q.width) return q;
+  const shots = q.tracks.filter(t => !t.hidden).flatMap(t => t.clips).filter((c): c is VideoClip => c.type === "video" && !c.disabled && !!getAsset(q, c.assetId)?.hasAudio);
+  const seen = seenShots(q, true), changed = new Map<Id, Clip>();
+  const hit = (a: Rect, b: Rect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  const z = titleZone(q), zone = { left: z.left * q.width, right: (1 - z.right) * q.width, top: z.top * q.height, bottom: (1 - z.bottom) * q.height };
+  const titles = q.tracks.filter(t => !t.hidden).flatMap(t => t.clips).filter((c): c is TextClip => c.type === "text" && !c.caption && !c.disabled);
+  const captions = q.tracks.filter(t => !t.hidden).flatMap(t => t.clips).filter((c): c is TextClip => c.type === "text" && !!c.caption && !c.disabled);
+  for (const c of titles) {
+    const boxes: Rect[] = [];
+    for (const shot of shots) {
+      const from = Math.max(c.start, shot.start), to = Math.min(clipEnd(c), clipEnd(shot));
+      if (to <= from) continue;
+      const look = lookFor(looks, shot), points = focus?.filter(f => f.clip_id === shot.id);
+      if (!look && !points?.length) continue;
+      const step = Math.max(1, secondsToFrames(0.5, q.fps));
+      const samples = new Set([from, to - 1]);
+      for (let f = from; f < to; f += step) samples.add(f);
+      for (const f of samples) {
+        if (!seen.some(r => r.clipId === shot.id && f >= r.start && f < r.start + r.duration)) continue;
+        const rel = f - shot.start;
+        const x = points?.length ? focusAt(points, "x", rel, secondsToFrames(0.4, q.fps)) ?? 0.5 : undefined;
+        const y = points?.length ? focusAt(points, "y", rel, secondsToFrames(0.4, q.fps)) ?? 0.5 : undefined;
+        const time = sourceTimeAt(shot, f, q.fps);
+        const i = look?.times.reduce((best, t, i) => Math.abs(t - time) < Math.abs(look.times[best] - time) ? i : best, 0) ?? 0;
+        // ponytail: focus is a point, not a face box; reserve this envelope
+        // until a person/face detector provides actual subject bounds.
+        const box = x !== undefined && y !== undefined ? { left: x - 0.12, right: x + 0.12, top: y - 0.18, bottom: y + 0.18 } : look?.maps[i] && subjectBox(look.maps[i]);
+        if (!box) continue;
+        const a = onCanvas(q, shot, restLayer(shot, rel), box.left, box.top), b = onCanvas(q, shot, restLayer(shot, rel), box.right, box.bottom);
+        boxes.push({ left: Math.min(a.x, b.x), right: Math.max(a.x, b.x), top: Math.min(a.y, b.y), bottom: Math.max(a.y, b.y) });
+      }
+    }
+    const bounds = boxOf(q, c);
+    if (!boxes.some(b => hit(bounds, b))) continue;
+    if (keep.has(c.id) || c.group || c.anchor || c.keyframes?.["transform.y"] || c.keyframes?.["transform.x"]) {
+      said.push({ option: "reframe", clip_id: c.id, note: `${c.id}: title overlaps the framed subject; its override, group, anchor or position keys keep its placement. Move the identifier with overrides {clip_id: "${c.id}", x, y}.` }); continue;
+    }
+    const gap = 0.02 * q.height;
+    const offsets = boxes.flatMap(b => [{ dx: 0, dy: b.top - gap - bounds.bottom }, { dx: 0, dy: b.bottom + gap - bounds.top }]).sort((a, b) => Math.abs(a.dy) - Math.abs(b.dy));
+    const blocked = [...boxes, ...captions.filter(k => k.start < clipEnd(c) && c.start < clipEnd(k)).map(k => boxOf(q, k)), ...titles.filter(k => k !== c && k.start < clipEnd(c) && c.start < clipEnd(k)).map(k => boxOf(q, (changed.get(k.id) ?? k) as TextClip))];
+    const move = offsets.find(({ dx, dy }) => {
+      const b = { left: bounds.left + dx, right: bounds.right + dx, top: bounds.top + dy, bottom: bounds.bottom + dy };
+      return b.left >= zone.left && b.right <= zone.right && b.top >= zone.top && b.bottom <= zone.bottom && !blocked.some(k => hit(b, k));
+    });
+    if (move) {
+      const y = c.transform.y + move.dy / q.height;
+      changed.set(c.id, { ...c, transform: { ...c.transform, y } });
+      said.push({ option: "reframe", clip_id: c.id, note: `${c.id}: identifier moved clear of the framed subject (y ${+y.toFixed(3)}); inspect the portrait preview, then overrides can place it by hand.` });
+    } else said.push({ option: "reframe", clip_id: c.id, note: `${c.id}: no safe room for this identifier clear of the framed subject and captions. Shorten it, move it with overrides, or use fit "blur" to leave more room.` });
+  }
+  return changed.size ? { ...q, tracks: q.tracks.map(t => ({ ...t, clips: t.clips.map(c => changed.get(c.id) ?? c) })) } : q;
+}
+
 /** A caption on a tall frame: its type kept against the short side, as a
  * title's is, wrapped in and centered on the column the apps leave, at the
  * height captions take there (lib/captionLooks.ts). */
@@ -2215,6 +2296,8 @@ export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, loo
   const said: OptionNote[] = [], framed: Id[] = [], eased: Id[] = [];
   const shaped = reshape(q, v.ratio, v.fit ?? "fill", { looks, reframe: v.reframe, focus, notes, pushes: v.pushes, said, framed, eased });
   q = shaped === q || v.textless ? shaped : clearCaptions(q, shaped, new Set((v.overrides ?? []).map((o) => o.clip_id)), moved);
+  if (q.height > q.width && shaped !== master) q = fitCaptionLines(q);
+  if (shaped !== master && !v.textless) q = clearSubjectTitles(q, looks, focus, new Set((v.overrides ?? []).map(o => o.clip_id)), said);
   if (v.textless) q = textless(q);
   // By hand, last: the version's overrides, and what points into a picture they move.
   if (v.overrides?.length) q = carryPinned(master, applyOverrides(q, v.overrides), v.overrides, said);

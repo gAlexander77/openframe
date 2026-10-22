@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { createProject, createTrack } from "../project/defaults";
-import { activeSpan, aimDepths, combinedLoudness, duckDepth, duckTargetsError, isolateTracks, isDialog, isMusic, lineBalances, lineCeiling, lineDepths, LINE_CEILING_LU, loudnessDifference, marginSummary, speechWindows, windowLoudness } from "./balance";
+import { activeSpan, aimDepths, lineMarginsMet, combinedLoudness, duckDepth, duckTargetsError, isolateTracks, isDialog, isMusic, lineBalances, lineCeiling, lineDepths, LINE_CEILING_LU, loudnessDifference, marginSummary, speechWindows, windowLoudness } from "./balance";
 
 /** 100 ms steps (mean squares) at a steady LUFS. */
 const steps = (lufs: number, n: number) => Array(n).fill(10 ** ((lufs + 0.691) / 10));
@@ -99,4 +99,12 @@ it("measures only where someone speaks: windows joined across short gaps, energi
   // Half the time 10 dB louder: the louder half dominates the energy.
   expect(combinedLoudness([{ lufs: -10, seconds: 5 }, { lufs: -20, seconds: 5 }])).toBeCloseTo(-12.6, 1);
   expect(combinedLoudness([{ lufs: -Infinity, seconds: 5 }])).toBe(-Infinity);
+});
+
+it("film 5: a measured 20.1 LU line fails the requested 15 LU ceiling, even at zero dip", () => {
+  expect(lineMarginsMet([20.1, 10.7, 12], 10, 15)).toBe(false);
+  expect(lineMarginsMet([10.7, 12, 15], 10, 15)).toBe(true);
+  expect(lineMarginsMet([9.8, 12], 10, 15)).toBe(false);
+  expect(lineMarginsMet([null], 10, 15)).toBe(false);
+  expect(lineMarginsMet([], 10, 15)).toBe(false);
 });

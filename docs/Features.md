@@ -1039,6 +1039,15 @@ makes a 13 s one). Times are timeline seconds.
   sampling is one small frame per second, automatic only up to two hours.
   Vocal excitement is a heuristic; review candidates before making clips
   ([[ADR-140 Highlight discovery streams features and refines candidates]]).
+- **Readable automatic captions:** whole-line generation chooses phrase and
+  punctuation boundaries together, with up to two lines, at least 0.83 s
+  and at most 20 characters a second when the speech window permits. Short
+  orphan cues join their neighbors. Recognized words become monotonic and
+  non-overlapping before transcripts or captions use them; overlapping
+  duplicate boundary words are merged. The explicit one-to-three-word
+  caption modes keep their existing timing. `auto_captions` reports any
+  reading-time limits it could not meet; its existing Accurate model option
+  can help with recognizer errors, which still need editorial review.
 
 - **Remove silences**, **Split scenes**, **Beat markers**, **Normalize
   loudness** (EBU R128, to −14/−16/−23/−24 LUFS, the true peak under
@@ -1189,6 +1198,17 @@ A quiet recording need not leave the music nearly silent.
 
 ## Ads and deliverables
 
+- **Portrait interview checks:** saliency-based framing is labeled low
+  confidence because a bright monitor can outweigh a speaker. Inspect the
+  preview and give `export_versions.focus` on the intended person, or use
+  `fit: "fit"`/`"blur"` to preserve the full picture. Explicit focus owns
+  the subject choice; diagnostics do not suggest restoring an excluded
+  saliency candidate. Independent identifiers move clear of the framed
+  subject and captions when room allows; unresolved or authored placements
+  are reported. Captions that wrap past two lines are regrouped at their
+  word times (estimated within the cue when no word times exist). Version
+  checks reject more than eight moments instead of dropping the last ones.
+
 - **Kinetic typography** (After Effects' text animators, CapCut's
   per-character text animations): a title's in, out or loop animation can
   play by each letter, word or line, with a stagger (0 all together, 1 one
@@ -1290,6 +1310,23 @@ A quiet recording need not leave the music nearly silent.
 
 ## Export
 
+- **Chapter verification:** chapter-enabled MP4 export results list the
+  actual chapter titles and seconds written, including UTF-8 title limits.
+  `preview_media file` reads the exported Nero chapter table independently
+  by range without downloading the media payload. Other containers and
+  QuickTime chapter tracks are explicitly outside this inspection.
+- **Canvas and cutaways:** solid canvas fill covers the complete canvas
+  behind cropped or transformed media. `add_media_clip` retains whole-source
+  fitting by default and reports transparent bands; `fit: "fill"` covers
+  the frame for a cutaway, and `fit: "blur"` puts a covering blurred copy
+  behind a fitted picture. These choices preserve deliberate overlays.
+- **Honest audio checks:** the project checker listens to short fades under
+  50 ms rather than treating any nonzero fade as an adequate ending.
+  `duck_under_speech` reports the measured per-line minimum and ceiling as
+  unmet when they are outside the requested band, even if no more dip can
+  be removed. `preview_audio` names speech, effects and ambience by their
+  track roles; speech pauses are not diagnosed as music ring-outs.
+
 - CapCut's export dialog: MP4/MOV/WebM/MKV, H.264/HEVC/VP9/AV1 by what
   the device can encode, 480p to 4K, quality levels or a bitrate, frame
   rate, in/out range, audio-only (AAC in M4A, MP3, WAV) and still frames.
@@ -1340,7 +1377,12 @@ A quiet recording need not leave the music nearly silent.
   OpenTimelineIO, FCPXML 1.10 or CMX 3600 EDL. OTIO and FCPXML carry cuts,
   gaps, connected overlays, audio tracks, dissolves, markers and nested
   compound clips. OTIO exports speed effects and generator metadata;
-  FCPXML keeps basic OpenFrame text/color as metadata over gap placeholders.
+  FCPXML writes Basic Titles as visible editable titles, clip/track volume,
+  frame-sampled volume keys (including ducking), linear fades, range markers
+  and chapter markers. Color clips and shapes remain gap placeholders with
+  OpenFrame metadata. Export warnings name unsupported processing, grading,
+  framing, title styling and animation; OTIO metadata is not a promise that
+  another editor will reproduce the finished look or sound (ADR-139).
   EDL carries the main picture track and a separate list for each audio
   track, with reel names, source/record timecodes and dissolve durations;
   NTSC rates use drop-frame labels. Imports report unsupported effects,

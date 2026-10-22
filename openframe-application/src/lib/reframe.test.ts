@@ -237,3 +237,13 @@ it("reports center framing when the texture has no distinct subject, while an ex
   const focused = versionProject(p, { ratio: "9:16", focus: [{ clip_id: id, x: 0.73 }] }, undefined, looks);
   expect(landing(focused, id, 0.73).x).toBeCloseTo(540, 0);
 });
+
+it("film 5: labels saliency framing uncertain and does not overrule explicit speaker focus", () => {
+  const { p, id } = film(), looks = looking(id, () => 0.3);
+  const says = { options: [] as OptionNote[], coverage: [] };
+  versionProject(p, { ratio: "9:16" }, undefined, looks, [], [], [], says);
+  expect(says.options.some(x => /low.confidence/i.test(x.note) && /focus/.test(x.note))).toBe(true);
+  const notes: SubjectNote[] = [];
+  versionProject(p, { ratio: "9:16", reframe: "center", focus: [{ clip_id: id, x: 0.68, y: 0.5 }] }, undefined, looks, notes);
+  expect(notes).toEqual([]);
+});

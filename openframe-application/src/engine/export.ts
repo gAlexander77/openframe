@@ -10,7 +10,7 @@
 // captureStream, so a slow machine takes longer but never drops a frame
 // (research pitfall 23).
 
-import { appendChapters, chaptersInRange } from "../lib/chapters";
+import { appendChapters, chapterBox, readChapterBox, chaptersInRange } from "../lib/chapters";
 import { beforePlan } from "../lib/viewerCompare";
 import {
   ALL_FORMATS,
@@ -74,6 +74,8 @@ export interface ExportProgress {
 export interface ExportResult {
   frames: number;
   seconds: number;
+  /** Actual Nero chapter titles and times written (including title truncation). */
+  chapters?: import("../lib/chapters").Chapter[];
   bytes: number;
   /** Wall-clock seconds the export took. */
   elapsed: number;
@@ -528,6 +530,7 @@ export async function exportProject(
     finalPeak?.flush();
     return {
       ...(finalMeter && finalPeak ? { loudness: { integrated: +finalMeter.integrated().toFixed(2), truePeak: +toDbtp(finalPeak.peak).toFixed(2) } } : {}),
+      ...(plan.chapters ? { chapters: readChapterBox(chapterBox(chapters)) } : {}),
       frames: plan.frames,
       seconds: plan.seconds,
       bytes,

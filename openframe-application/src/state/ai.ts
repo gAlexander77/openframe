@@ -29,7 +29,7 @@ import { syncProblem } from "../lib/project/sync";
 import { normalizationMix } from "../lib/audio";
 import { fxTail } from "../lib/soundFx";
 import { measureMix } from "../engine/mixdown";
-import { activeSpan, aimDepths, BALANCE_WINDOWS, duckDepth, duckTargetsError, isDialog, lineBalances, lineCeiling, loudnessDifference, marginSummary, speechWindows, windowLoudness, type LineBalance } from "../lib/analysis/balance";
+import { activeSpan, aimDepths, lineMarginsMet, BALANCE_WINDOWS, duckDepth, duckTargetsError, isDialog, lineBalances, lineCeiling, loudnessDifference, marginSummary, speechWindows, windowLoudness, type LineBalance } from "../lib/analysis/balance";
 import { cueMoments, cuesUnderLines, DUCK_ATTACK, DUCK_MIN_GAP, DUCK_RELEASE, duckMark, duckWrote, mergeKeys, quietVoiceNote, trackDuckKeys, voicesUnder as voicesUnderMusic, writtenKeys, type VoiceUnder } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { ceilingFor, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
@@ -1001,8 +1001,8 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
     const music = speechLufs(bed);
     const difference = loudnessDifference(dialogLufs, music);
     const r1 = (x: number | null) => (x === null || !Number.isFinite(x) ? null : +x.toFixed(1));
-    // A line over the ceiling with no dip left is as low as the music goes.
-    const lineMet = each.every((l, i) => l.voice_above_music_lu === null || ((minLine === undefined || l.voice_above_music_lu >= minLine - 0.05) && (maxLine === undefined || l.voice_above_music_lu <= maxLine + 0.05 || lineDb![i] === 0)));
+    // Feasibility does not change whether the measured ceiling was met.
+    const lineMet = lineMarginsMet(each.map(l => l.voice_above_music_lu), minLine, maxLine);
     const speechMet = target === undefined || difference === null ? undefined : Math.abs(target - difference) <= 0.5;
     balance = {
       window: "speech",
@@ -1064,6 +1064,7 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
     return { at: sec(o.at), ...(m?.label ? { label: m.label } : {}), ...(o.up ? { up: [sec(o.up[0]), sec(o.up[1])] } : o.line ? { inside_line: [sec(o.line[0]), sec(o.line[1])] } : { plays: false }) };
   });
   const notes: string[] = [];
+  if (balance?.per_line.met === false && balance.per_line.each?.some(l => l.voice_above_music_lu !== null && maxLine !== undefined && l.voice_above_music_lu > maxLine + 0.05 && l.depth_db === 0)) notes.push("The per-line ceiling is not met: music in at least one line is already too quiet at its base volume, and ducking never raises it above that volume. Adjust the bed's base level or relax max_line_lu, then measure again.");
   const drops = now.markers.filter((m) => /^drop/i.test(m.label) && plan.held.some(([a, b]) => m.frame >= a && m.frame < b) && !opens.some((x) => x.frame === m.frame));
   if (drops.length)
     notes.push(`The music stays down through ${plural(held.length, "pause")} between lines shorter than min_gap (${opts.min_gap ?? DUCK_MIN_GAP} s, so it does not pump; held lists them), and ${drops.map((m) => `the ${m.label} at ${sec(m.frame)} s`).join(" and ")} ${drops.length === 1 ? "falls in one and plays" : "fall in them and play"} ducked: open_at ["${drops[0].label}"] brings the music up there.`);

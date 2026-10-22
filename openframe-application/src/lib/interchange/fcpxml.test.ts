@@ -55,7 +55,7 @@ it("round trips generated overlays in connected storylines, odd dissolves and re
   expect(cuts(r.project)).toEqual(cuts(p));
   expect(r.project.compounds).toHaveLength(1);
   expect(r.project.tracks[0].clips[0]).toMatchObject({ type: "text", text: 'Hello <&> "world"' });
-  expect(xml).toContain('<spine lane="2"');
+  expect(xml).toMatch(/<title[^>]+lane="2"/);
   expect(xml).not.toMatch(/<gap[^>]+lane=/);
 });
 it("reads clip/video wrappers and asset-clip's default resource duration", () => {
@@ -71,4 +71,28 @@ it("carries dissolves on connected overlay storylines", () => {
   const r = fromFcpxml(toFcpxml(p));
   expect(r.warnings).toEqual([]);
   expect(cuts(r.project)).toEqual(cuts(p));
+});
+
+it("film 5: writes visible native titles, chapter markers and ducked volume with fades", () => {
+  const p = normalizeProject(fixture);
+  const title = createTrack("video", "Titles");
+  title.clips.push(createTextClip("Jeanette Epps\nNASA astronaut", 25, 100));
+  p.tracks.unshift(title);
+  p.markers.push({ id: "chapter", frame: 75, label: "Discovery", chapter: true, color: "red" });
+  const t = p.tracks.find(t => t.kind === "audio")!;
+  const c = t.clips[0];
+  if (c.type !== "audio") throw Error("audio");
+  c.volume = 0.5; c.fadeIn = 5; c.fadeOut = 10;
+  c.keyframes = { volume: [{ f: 0, v: 0.5 }, { f: 25, v: 0.1 }, { f: 75, v: 0.5 }] };
+  const xml = toFcpxml(p);
+  expect(xml).toContain('<title ref="basic-title"');
+  expect(xml).toContain('<text><text-style ref=');
+  expect(xml).toContain('Jeanette Epps&#10;NASA astronaut');
+  expect(xml).toContain('<chapter-marker start=');
+  expect(xml).toContain('<adjust-volume amount="-6.0206dB">');
+  expect(xml).toContain('<fadeIn type="linear" duration="5/25s"/>');
+  expect(xml).toContain('<fadeOut type="linear" duration="10/25s"/>');
+  expect(xml).toContain('value="-20dB"');
+  expect(xml).toContain('<keyframe time="50/25s" value="-20dB" interp="linear" curve="linear"/>');
+  expect(xml).toContain('<chapter-marker start="150/25s" duration="1/25s" value="Discovery"/>');
 });

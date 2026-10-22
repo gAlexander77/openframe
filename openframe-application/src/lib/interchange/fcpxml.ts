@@ -1,7 +1,9 @@
 // FCPXML 1.10: primary storyline, connected lanes and referenced compound
 // sequences. Connections use the parent's source clock, not sequence time.
-// ponytail: native effects and titles need per-element adapters. Unsupported
-// elements are reported; OpenFrame text/color survive only in metadata.
+// ponytail: native processing and styled title backgrounds need per-element
+// adapters. Basic titles and audio levels are native; losses are reported.
+import { parseColor } from "../shapes";
+import { paramAt } from "../keyframes";
 import type { Clip, Marker, Project, Track } from "../project/types";
 import { projectDuration } from "../project/ops";
 import { framesToSeconds, isDropFrameRate, secondsToFrames } from "../time";
@@ -17,7 +19,28 @@ export function toFcpxml(p: Project): string {
   const sec = (s: number) => time(secondsToFrames(s, p.fps));
   const assetIds = new Map(p.assets.map((a, i) => [a.id, `a${i + 1}`]));
   const compoundIds = new Map((p.compounds ?? []).map((k, i) => [k.id, `c${i + 1}`]));
-  const markerXml = (markers: Marker[], offset: number, start: number, duration: number) => markers.filter(m => m.frame >= offset && m.frame < offset + duration).map(m => `<marker${attrs({ start: time(start + m.frame - offset), duration: time(1), value: m.label })}/>`).join("");
+  let styleId = 0;
+  const db = (gain: number) => `${+(20 * Math.log10(Math.max(10 ** (-96 / 20), gain))).toFixed(4)}dB`;
+  const rgba = (color: string) => (parseColor(color) ?? [1, 1, 1, 1]).map(x => +x.toFixed(6)).join(" ");
+  const volumeXml = (c: Clip | undefined, t: Track | undefined, start: number, length: number) => {
+    if (!c || !("volume" in c)) return "";
+    const track = t?.volume ?? 1;
+    const muted = c.muted || t?.muted || (p.tracks.some(t => t.solo) && !t?.solo);
+    const gain = (rel: number) => db(muted ? 0 : paramAt(c, "volume", rel) * track);
+    const head = start - secondsToFrames(c.in, p.fps);
+    if (!muted && c.volume === 1 && track === 1 && !c.fadeIn && !c.fadeOut && !c.keyframes?.volume?.length) return "";
+    // Linear gain curves are sampled per frame before conversion to dB:
+    // linear interpolation in dB would change the shape of a duck.
+    const keys = c.keyframes?.volume?.length ? `<keyframeAnimation>${Array.from({ length: length + 1 }, (_, f) => `<keyframe${attrs({ time: time(start + f), value: gain(head + f), interp: "linear", curve: "linear" })}/>`).join("")}</keyframeAnimation>` : "";
+    const fades = `${c.fadeIn > head ? `<fadeIn type="linear" duration="${time(Math.min(length, c.fadeIn - head))}"/>` : ""}${c.fadeOut > c.duration - head - length ? `<fadeOut type="linear" duration="${time(Math.min(length, c.fadeOut - (c.duration - head - length)))}"/>` : ""}`;
+    return `<adjust-volume amount="${db(muted ? 0 : c.volume * track)}">${fades || keys ? `<param name="amount">${fades}${keys}</param>` : ""}</adjust-volume>`;
+  };
+  const titleXml = (c: Clip | undefined) => {
+    if (c?.type !== "text") return "";
+    const id = `ts${++styleId}`, tr = c.transform;
+    return `<text><text-style ref="${id}">${esc(c.text)}</text-style></text><text-style-def id="${id}"><text-style${attrs({ font: c.style.font, fontSize: c.style.size * p.height / 1080, fontColor: rgba(c.style.color), bold: c.style.bold ? "1" : undefined, italic: c.style.italic ? "1" : undefined, alignment: c.style.align })}/></text-style-def><adjust-transform${attrs({ position: `${100 * tr.x * p.width / p.height} ${-100 * tr.y}`, scale: `${tr.scale} ${tr.scaleY ?? tr.scale}`, rotation: -tr.rotation })}/>`;
+  };
+  const markerXml = (markers: Marker[], offset: number, start: number, duration: number) => markers.filter(m => m.frame >= offset && m.frame < offset + duration).map(m => `<${m.chapter ? "chapter-marker" : "marker"}${attrs({ start: time(start + m.frame - offset), duration: time(m.duration ?? 1), value: m.label })}/>`).join("");
   const sequence = (tracks: Track[], markers: Marker[], depth: number): string => {
     if (depth > 16) throw new Error("Compound nesting exceeds 16 levels.");
     const main = tracks.find(t => t.main) ?? tracks.find(t => t.kind === "video");
@@ -40,10 +63,10 @@ export function toFcpxml(p: Project): string {
     if (at < duration) items.push({ offset: at, start: 0, duration: duration - at, connected: [] });
     const writeClip = (c: Clip | undefined, offset: number, start: number, length: number, children: string, track?: Track, lane?: number): string => {
       const ref = c && ("assetId" in c ? assetIds.get(c.assetId) : c.type === "compound" ? compoundIds.get(c.compoundId) : undefined);
-      const tag = ref ? c?.type === "compound" ? "ref-clip" : "asset-clip" : "gap";
+      const tag = c?.type === "text" ? "title" : ref ? c?.type === "compound" ? "ref-clip" : "asset-clip" : "gap";
       const extra = c && !ref ? { type: c.type, text: c.type === "text" ? c.text : undefined, color: c.type === "color" ? c.color : undefined } : undefined;
       const meta = md("track", { name: track?.name ?? main?.name ?? "Main", main: lane === undefined, kind: track?.kind ?? "video", order: tracks.indexOf(track ?? main!) });
-      const contents = `<${tag}${attrs({ ref, name: c?.name ?? (c && "assetId" in c ? p.assets.find(a => a.id === c.assetId)?.name : c?.type) ?? "Gap", lane: tag === "gap" ? undefined : lane, offset: time(tag === "gap" && lane !== undefined ? 0 : offset), start: time(start), duration: time(length), enabled: c?.disabled ? "0" : undefined, srcEnable: ref && c && "muted" in c && c.muted ? "video" : c?.type === "audio" ? "audio" : undefined, audioRole: tag === "asset-clip" && track?.kind === "audio" ? "dialogue" : undefined })}>${children}${extra ? md("generator", extra).replace("</metadata>", meta.replace("<metadata>", "")) : meta}</${tag}>`;
+      const contents = `<${tag}${attrs({ ref: tag === "title" ? "basic-title" : ref, name: c?.name ?? (c && "assetId" in c ? p.assets.find(a => a.id === c.assetId)?.name : c?.type) ?? "Gap", lane: tag === "gap" ? undefined : lane, offset: time(tag === "gap" && lane !== undefined ? 0 : offset), start: time(start), duration: time(length), enabled: c?.disabled ? "0" : undefined, srcEnable: ref && c && "muted" in c && c.muted ? "video" : c?.type === "audio" ? "audio" : undefined, audioRole: tag === "asset-clip" && track?.kind === "audio" ? "dialogue" : undefined })}>${titleXml(c)}${volumeXml(c, track, start, length)}${children}${extra ? md("generator", extra).replace("</metadata>", meta.replace("<metadata>", "")) : meta}</${tag}>`;
       // A gap has no lane attribute in the DTD; a connected storyline does.
       return tag === "gap" && lane !== undefined ? `<spine${attrs({ lane, offset: time(offset) })}>${contents}</spine>` : contents;
     };
@@ -68,6 +91,7 @@ export function toFcpxml(p: Project): string {
     return `<sequence${attrs({ format: "f1", duration: time(duration), tcStart: "0s", tcFormat: isDropFrameRate(p.fps) ? "DF" : "NDF", audioLayout: "stereo", audioRate: "48k" })}><spine>${spine}</spine></sequence>`;
   };
   const resources = [`<format${attrs({ id: "f1", frameDuration: time(1), width: p.width, height: p.height, colorSpace: "1-1-1 (Rec. 709)" })}/>`, '<effect id="dissolve" name="Cross Dissolve" uid="FxPlug:4731E73A-8DAC-4113-9A30-AE85B1761265"/>'];
+  if ([...p.tracks, ...(p.compounds ?? []).flatMap(k => k.tracks)].some(t => t.clips.some(c => c.type === "text"))) resources.push('<effect id="basic-title" name="Basic Title" uid=".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti"/>');
   for (const a of p.assets) resources.push(`<asset${attrs({ id: assetIds.get(a.id), name: a.name, start: "0s", duration: sec(a.kind === "image" ? Math.max(a.duration, framesToSeconds(projectDuration(p), p.fps)) : a.duration), hasVideo: a.hasVideo ? "1" : "0", hasAudio: a.hasAudio ? "1" : "0", format: a.hasVideo ? "f1" : undefined, audioSources: a.hasAudio ? "1" : undefined, audioChannels: a.hasAudio ? "2" : undefined })}><media-rep kind="original-media" src="${esc(fileUrl(a.src))}"/></asset>`);
   for (const k of p.compounds ?? []) resources.push(`<media${attrs({ id: compoundIds.get(k.id), name: k.name })}>${sequence(k.tracks, k.markers, 1)}</media>`);
   return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n<fcpxml version="1.10"><resources>${resources.join("")}</resources><library><event name="OpenFrame"><project name="${esc(p.name)}">${sequence(p.tracks, p.markers, 0)}</project></event></library></fcpxml>\n`;
@@ -117,8 +141,8 @@ export function fromFcpxml(xml: string): TimelineImport {
           marks.push({ OTIO_SCHEMA: "Marker.2", name: n.attrs.value ?? "", marked_range: range(parentAt + number(n.attrs.start) - parentSource, 0) }); continue;
         }
         if (n.tag === "spine") { collect(n, parentAt + number(n.attrs.offset) - parentSource, number(n.attrs.start), Number(n.attrs.lane) || defaultLane); continue; }
-        const unsupported = ["title", "mc-clip", "sync-clip", "audition"].includes(n.tag);
-        if (!["asset-clip", "ref-clip", "gap", "clip", "video", "audio", "transition"].includes(n.tag) && !unsupported) {
+        const unsupported = ["title", "mc-clip", "sync-clip", "audition"].includes(n.tag) && !(n.tag === "title" && metadata(n, "generator").type === "text");
+        if (!["asset-clip", "ref-clip", "gap", "clip", "video", "audio", "transition", "title"].includes(n.tag) && !unsupported) {
           if (parent.tag !== "transition" && ["timeMap", "filter-video", "filter-audio", "title", "mc-clip", "sync-clip", "audition"].includes(n.tag)) warn(`FCPXML ${n.tag} could not be mapped.`);
           continue;
         }
@@ -171,7 +195,7 @@ export function fromFcpxml(xml: string): TimelineImport {
           const nested = child(asset, "sequence");
           if (!nested) { warn(`Compound ${n.attrs.name ?? n.attrs.ref} has no sequence; kept as a gap.`); item = { OTIO_SCHEMA: "Gap.1" }; }
           else item = { ...stack(nested, [...path, n.attrs.ref]), metadata: { openframe: { compoundName: asset.attrs.name, compoundRef: n.attrs.ref } } };
-        } else if ((n.tag === "gap" && !["text", "color"].includes(String(generator.type))) || ["title", "mc-clip", "sync-clip", "audition"].includes(n.tag)) item = { OTIO_SCHEMA: "Gap.1" };
+        } else if ((n.tag === "gap" && !["text", "color"].includes(String(generator.type))) || (["title", "mc-clip", "sync-clip", "audition"].includes(n.tag) && !generator.type)) item = { OTIO_SCHEMA: "Gap.1" };
         else if (generator.type === "text" || generator.type === "color") item = { OTIO_SCHEMA: "Clip.1", media_reference: { OTIO_SCHEMA: "GeneratorReference.1", generator_kind: generator.type, parameters: generator } };
         else {
           const src = asset && (child(asset, "media-rep")?.attrs.src ?? asset.attrs.src);

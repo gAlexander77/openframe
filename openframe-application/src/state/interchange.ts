@@ -1,5 +1,6 @@
 import { safeFileName } from "../lib/export";
 import { toOtio } from "../lib/interchange/otio";
+import { timelineWarnings } from "../lib/interchange/warnings";
 import { toFcpxml } from "../lib/interchange/fcpxml";
 import { audioEdls, toEdl } from "../lib/interchange/edl";
 import { platform } from "../platform";
@@ -11,15 +12,8 @@ export type TimelineFormat = "otio" | "fcpxml" | "edl";
 export async function saveTimeline(format: TimelineFormat, folder?: string, agent = false): Promise<{ files: string[]; warnings: string[] } | null> {
   if (folder !== undefined && platform.kind !== "desktop") throw new Error("Exporting to a folder is desktop only; the web build uses a save dialog or download.");
   const p = store.document();
-  const warnings: string[] = [];
+  const warnings = timelineWarnings(p, format);
   const tracks = [...p.tracks, ...(p.compounds ?? []).flatMap(k => k.tracks)];
-  if (format !== "otio") {
-    if (tracks.some(t => t.clips.some(c => "effects" in c && c.effects.length || "keyframes" in c && Object.keys(c.keyframes ?? {}).length))) warnings.push("Effects and keyframes are not carried by this format.");
-    if (tracks.some(t => t.clips.some(c => "speed" in c && (c.speed !== 1 || c.speedCurve || c.reverse || c.freeze)))) warnings.push("Speed changes are exported as cuts with the original source in-point; use OTIO for speed metadata.");
-    if (tracks.some(t => t.clips.some(c => !["video", "audio", "image", "compound"].includes(c.type)))) warnings.push("Titles, color clips and adjustment layers become gaps in other editors; FCPXML retains basic text and color in OpenFrame metadata.");
-    if (tracks.some(t => t.clips.some(c => "transitionOut" in c && c.transitionOut && c.transitionOut.type !== "dissolve"))) warnings.push("Transitions are mapped to cross dissolves.");
-  }
-  if (format === "edl") warnings.push("EDL carries the main video track and one file per audio track. Overlays, markers and compounds are not included; compound clips become black.");
   if (format === "edl" && tracks.some(t => t.clips.some((c, i) => {
     const next = t.clips[i + 1];
     return "transitionOut" in c && c.transitionOut && next && "in" in next && next.in * p.fps.num / p.fps.den < Math.floor(c.transitionOut.duration / 2);

@@ -898,6 +898,9 @@ it("accepts master seconds for version checks and rejects mixed units and out-of
   const run = (arguments_: unknown) => call(h, "tools/call", { name: "export_versions", arguments: arguments_ });
   await run({ ratios: ["9:16"], check: true, check_times: [1, 11.5, 29] });
   expect(h.versionCalls.at(-1)).toMatchObject({ times: [1, 11.5, 29] });
+  // Film 5 A55 asked for nine moments, silently losing the end card.
+  expect((await run({ ratios: ["9:16"], check: true, check_times: [1.5, 5, 14, 18, 23, 28, 36, 41, 43] }))!.result).toMatchObject({ isError: true });
+  expect((await run({ ratios: ["9:16"], check: true, check_at: Array(9).fill(0.5) }))!.result).toMatchObject({ isError: true });
   expect((await run({ ratios: ["9:16"], check: true, check_at: [0.5], check_times: [1] }))!.result).toMatchObject({ isError: true });
   expect((await run({ ratios: ["9:16"], check: true, check_times: [45] }))!.result).toMatchObject({ isError: true });
 });

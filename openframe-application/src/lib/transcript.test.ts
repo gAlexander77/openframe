@@ -34,3 +34,10 @@ it("maps source words after a middle cut and clips them to timeline bounds", () 
   const words = [{ text: " gone", start: 2, end: 3 }, { text: " after", start: 4, end: 4.5 }, { text: " last", start: 6.5, end: 8 }];
   expect(timelineWords(p, c, words, 2.1, 4.8)).toEqual([{ text: "after", start: 2.1, end: 2.5 }, { text: "last", start: 4.5, end: 4.8 }]);
 });
+
+// Film 5: Whisper repeated a word across a 28 s window boundary.
+it("merges the reported planet overlap into one monotonic source word", () => {
+  const h = merge(undefined, 0, 60, [w("planet.", 27.5, 28), w("planet", 27.77, 28.55), w("Next", 28.4, 29)]);
+  expect(h.words.map(x => x.text)).toEqual(["planet.", "Next"]);
+  expect(h.words.every((x, i) => x.end > x.start && (!i || x.start >= h.words[i - 1].end))).toBe(true);
+});

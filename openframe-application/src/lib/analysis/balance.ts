@@ -181,3 +181,8 @@ export function combinedLoudness(parts: { lufs: number; seconds: number }[]): nu
   const energy = parts.reduce((n, p) => n + (Number.isFinite(p.lufs) ? p.seconds * 10 ** (p.lufs / 10) : 0), 0);
   return seconds > 0 && energy > 0 ? 10 * Math.log10(energy / seconds) : -Infinity;
 }
+
+/** Whether the measured lines satisfy both requested bounds. */
+export function lineMarginsMet(margins: (number | null)[], min?: number, max?: number): boolean {
+  return margins.length > 0 && margins.every(m => m !== null && Number.isFinite(m) && (min === undefined || m >= min - 0.05) && (max === undefined || m <= max + 0.05));
+}

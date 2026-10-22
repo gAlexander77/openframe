@@ -15,7 +15,7 @@ import { audioCrossfade, wholeSoundEffect } from "../lib/audio";
 import { edgeReport, ownOnset, silentJoinTarget, type AudioEdge, type EdgeReport } from "../lib/analysis/edges";
 import { isolateTracks } from "../lib/analysis/balance";
 import { applyLimiter } from "../lib/analysis/loudness";
-import { stemsOf } from "../lib/audioRoles";
+import { assetsOf, trackRole, stemsOf } from "../lib/audioRoles";
 import { EXPORT_SAMPLE_RATE } from "../lib/export";
 import { projectDuration, rollBounds } from "../lib/project/ops";
 import type { AudioClip, Id, Project, TrackRole } from "../lib/project/types";
@@ -174,7 +174,7 @@ async function edgesOf(p: Project, heard: Project, start: number, end: number, s
       }
     }
   }
-  return out.sort((a, b) => a.at - b.at);
+  return out.map(e => ({ ...e, role: trackRole(heard.tracks.find(t => t.clips.some(c => c.id === e.clips[0]))!, assetsOf(p)) })).sort((a, b) => a.at - b.at);
 }
 
 /** [start, end) of `p` rendered as export renders it, stereo at 48 kHz. */

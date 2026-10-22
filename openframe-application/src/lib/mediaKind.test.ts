@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatName, isImageName, looksLikeMedia, sniffFormat, sourceName } from "./mediaKind";
+import { formatName, isImageName, looksLikeMedia, mediaName, sniffFormat, sourceName } from "./mediaKind";
 
 const bytes = (...parts: (string | number[])[]) => {
   const out: number[] = [];
@@ -15,6 +15,15 @@ describe("sourceName", () => {
     expect(sourceName("1a2b3c4d-launch.mp4")).toBe("1a2b3c4d-launch.mp4");
     expect(sourceName("https://example.com/download?id=3")).toBe("download");
   });
+});
+
+it("resolves missing, empty or invalid display names before a source is copied", () => {
+  const src = "http://localhost:1420/fixtures/media/color-bars.png";
+  for (const name of [undefined, null, "", "   ", 42]) expect(mediaName({ name, src })).toBe("color-bars.png");
+  expect(mediaName({ src: "https://example.com/launch%20day.mp4?v=2" })).toBe("launch day.mp4");
+  expect(mediaName({ src: "C:\\Footage\\launch.mp4" })).toBe("launch.mp4");
+  expect(mediaName({ src: "https://example.com/" })).toBe("Media");
+  expect(mediaName({ name: "Launch", src })).toBe("Launch");
 });
 
 describe("sniffFormat", () => {
