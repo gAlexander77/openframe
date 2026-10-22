@@ -329,6 +329,8 @@ export interface Transform {
 }
 
 export interface Crop {
+  /** Inward softness, pixels at a 1080-tall render. Absent: hard edges. */
+  feather?: number;
   /** Fractions of the source trimmed from each edge. */
   left: number;
   top: number;
@@ -452,10 +454,22 @@ export interface Animation {
   order?: "forward" | "backward" | "center" | "random";
 }
 
+export interface MaskPoint {
+  x: number;
+  y: number;
+  in?: [number, number];
+  out?: [number, number];
+}
+
 export interface Mask {
+  /** Path anchors in the mask's own frame, in layer fractions. Width and
+   * height multiply them before rigid rotation and translation. */
+  points?: MaskPoint[];
+  /** Absent: closed. An open path is a draft and has no filled coverage. */
+  closed?: boolean;
   /** heart and star came later (ADR-049): readers that predate them draw
    * no mask for them. */
-  shape: "linear" | "mirror" | "circle" | "rectangle" | "heart" | "star";
+  shape: "linear" | "mirror" | "circle" | "rectangle" | "heart" | "star" | "path";
   /** Center, as an offset from the layer center in layer fractions. */
   x: number;
   y: number;
@@ -945,7 +959,7 @@ export type ColorClip = ClipBase & Visual & { type: "color"; color: string; shap
 /** Applies its color, filter and effects to everything composited below it
  * (Premiere's adjustment layer, CapCut's effect/filter tracks). */
 export type AdjustmentClip = ClipBase &
-  Pick<Visual, "opacity" | "adjust" | "filter" | "effects"> & {
+  Pick<Visual, "opacity" | "adjust" | "filter" | "effects" | "mask"> & {
     type: "adjustment";
   };
 

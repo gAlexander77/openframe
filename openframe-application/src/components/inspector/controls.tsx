@@ -1,3 +1,4 @@
+import { dialAngle, pointerAngle } from "../../lib/angleControl";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Pipette, RotateCcw } from "../../icons";
 import { getPath, paramAt } from "../../lib/keyframes";
@@ -62,6 +63,7 @@ export function Section(props: { title: string; id?: string; children: ReactNode
 
 export interface SliderProps {
   clip: Clip;
+  dial?: boolean;
   path: string;
   label: string;
   min: number;
@@ -161,14 +163,14 @@ export function SliderRow(p: SliderProps) {
     const n = parseTyped(raw);
     setText(null);
     if (n === null) return;
-    const v = toStore(Math.min(p.max, Math.max(p.min, n)));
+    const v = toStore(p.dial ? n : Math.min(p.max, Math.max(p.min, n)));
     store.edit(`Set ${p.label.toLowerCase()}`, set(v));
   };
   useCommitOnLeave(text, commit);
   return (
     <div className="insp-row">
       <label className="insp-label">{p.label}</label>
-      <input
+      {p.dial ? <Dial label={p.label} value={shown} onChange={(v) => store.previewGesture(set(toStore(v)), `Set ${p.label.toLowerCase()}`)} onReset={() => store.edit(`Reset ${p.label.toLowerCase()}`, set(p.reset ?? 0))} /> : <input
         type="range"
         className="insp-slider"
         min={p.min}
@@ -180,7 +182,7 @@ export function SliderRow(p: SliderProps) {
         onChange={(e) => store.previewGesture(set(toStore(Number(e.target.value))), `Set ${p.label.toLowerCase()}`)}
         onDoubleClick={() => p.reset !== undefined && store.edit(`Reset ${p.label.toLowerCase()}`, set(p.reset))}
         aria-label={p.label}
-      />
+      />}
       <span className="insp-num">
         <input
           className="field num"
@@ -206,6 +208,43 @@ export function SliderRow(p: SliderProps) {
       {p.keyframes !== false ? <KeyCluster clip={p.clip} path={p.path} value={value} /> : <span className="insp-keys" />}
     </div>
   );
+}
+
+/** Continuous rotation, with numeric entry supplied by SliderRow beside it.
+ * The unsnapped accumulator is separate from the shown value so slow pointer
+ * travel while snapping never gets stuck between two 15 degree stops. */
+export function Dial({ value, label, onChange, onReset }: { value: number; label: string; onChange: (v: number) => void; onReset: () => void }) {
+  const drag = useRef<{ angle: number; value: number } | null>(null);
+  const angle = (e: React.PointerEvent) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return pointerAngle(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2);
+  };
+  const end = () => { drag.current = null; store.endGesture(`Set ${label.toLowerCase()}`); };
+  return <div className="insp-dial" role="slider" tabIndex={0} aria-label={label} aria-valuenow={value} aria-valuetext={`${value} degrees`}
+    onPointerDown={(e) => {
+      if (e.button !== 0) return;
+      e.preventDefault(); e.currentTarget.focus(); e.currentTarget.setPointerCapture(e.pointerId);
+      drag.current = { angle: angle(e), value }; store.beginGesture();
+    }}
+    onPointerMove={(e) => {
+      const d = drag.current;
+      if (!d) return;
+      const a = angle(e);
+      d.value = dialAngle(d.value, d.angle, a); d.angle = a;
+      onChange(e.shiftKey ? Math.round(d.value / 15) * 15 : d.value);
+    }}
+    onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end} onBlur={end} onDoubleClick={onReset}
+    onKeyDown={(e) => {
+      const direction = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
+      if (!direction) return;
+      e.preventDefault(); e.stopPropagation();
+      if (!e.repeat) store.beginGesture();
+      onChange(value + direction * (e.shiftKey ? 10 : 1));
+    }} onKeyUp={(e) => {
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key) && !drag.current) end();
+    }}>
+    <span style={{ transform: `rotate(${value}deg)` }} />
+  </div>;
 }
 
 /** CapCut's ‹ ◇ › cluster: previous keyframe, add/remove at the playhead,

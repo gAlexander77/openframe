@@ -56,6 +56,31 @@ open or closed as you left them, across clips and reloads. A section with
 a switch in its header (Border, Shadow, Colorize, a title's Glow) opens
 when you switch it on, so its settings show.
 
+To soften a picture's crop, open **Video > Basic > Crop** and raise
+**Softness**, or use the Softness slider beneath the viewer in crop mode.
+Done applies the crop and softness together; Cancel drops the draft. The
+soft edge stays inside the crop, so it reveals the pictures underneath.
+
+**Transform > Rotate** has a dial beside its number. Drag around its center
+(Shift snaps to 15 degrees), type an angle, or focus the dial and use arrows
+for one degree (Shift for ten). It keeps complete turns, has the usual
+keyframe diamond, and resets on double-click.
+
+For a custom cutout, open **Video > Mask > Pen**. Click anchors around the
+region to keep; drag while placing an anchor for a curved edge, and click
+its first point to close. Drag a point or one of its round handles to refine
+it. Alt-click a point for smooth or corner; Delete removes the selected
+point. Choosing Pen again starts a new path. Position, size, rotation,
+Feather and Invert affect the whole path; key the numeric controls to move
+it over time. Individual anchors do not animate.
+
+To grade one region, add an **adjustment layer**, open its **Mask** tab, and
+choose a circle, rectangle or Pen path on the canvas. Set its exposure to
+darken a sky, or add Blur to soften a face. Only the masked region receives
+the adjustment's grade and effects. Feather softens the boundary and Invert
+applies the change outside. Adjustment masks use the whole canvas as their
+coordinate frame, and their numeric controls take keyframes too.
+
 The inspector fits any width its splitter gives it. Narrower than about
 340 px, each slider takes a line of its own, with its keyframe buttons,
 under its label and number; a choice that no longer fits beside its label

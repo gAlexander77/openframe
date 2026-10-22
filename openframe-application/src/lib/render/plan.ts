@@ -144,6 +144,7 @@ export type PlanItem =
     }
   | {
       kind: "adjust";
+      mask?: Mask;
       clipId: Id;
       opacity: number;
       adjust: Adjust;
@@ -190,7 +191,7 @@ const MASK_PARAMS = ["x", "y", "width", "height", "rotation", "feather", "radius
 
 /** The clip's mask at frame r, keyframes applied; the stored object when
  * nothing on it is animated. */
-function resolveMask(clip: VisualClip, r: number): Mask | undefined {
+export function resolveMask(clip: VisualClip | AdjustmentClip, r: number): Mask | undefined {
   const m = clip.mask;
   if (!m || !MASK_PARAMS.some((k) => clip.keyframes?.[`mask.${k}`]?.length)) return m;
   const out = { ...m };
@@ -540,6 +541,7 @@ function planTracks(p: Project, tracks: Track[], f: number, prefix: string, dept
       const { adjust, tone } = resolveAdjust(a, r);
       items.push({
         kind: "adjust",
+        mask: resolveMask(a, r),
         clipId: prefix + a.id,
         opacity: paramAt(a, "opacity", r),
         adjust,

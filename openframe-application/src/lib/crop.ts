@@ -13,6 +13,16 @@ export const NO_CROP: Crop = { left: 0, top: 0, right: 0, bottom: 0 };
 /** The narrowest strip a crop keeps on each axis (the sliders stop at 95%). */
 export const MIN_CROP = 0.05;
 
+/** Alpha inside a cropped rectangle, in its own unscaled pixels. Pixel
+ * sizes follow the render height; rotation and flips do not change them. */
+export function cropFeatherAlpha(x: number, y: number, width: number, height: number, feather = 0, renderHeight = 1080): number {
+  const d = Math.min(x, y, width - x, height - y);
+  if (d < 0) return 0;
+  if (feather <= 0) return 1;
+  const t = Math.max(0, Math.min(1, d / (feather * renderHeight / 1080)));
+  return t * t * (3 - 2 * t);
+}
+
 /** CapCut's crop ratios: free, the source's own shape, then the common
  * delivery shapes. */
 export const CROP_RATIOS = ["free", "original", "16:9", "9:16", "1:1", "4:3", "3:4", "4:5", "21:9"] as const;
@@ -42,6 +52,7 @@ export function ratioCrop(aspect: number, w: number, h: number): Crop {
  * the canvas can drag the edge under the pointer. Its own inverse. */
 export function mirrorCrop(c: Crop, flipX: boolean, flipY: boolean): Crop {
   return {
+    ...c,
     left: flipX ? c.right : c.left,
     right: flipX ? c.left : c.right,
     top: flipY ? c.bottom : c.top,
@@ -55,7 +66,7 @@ export const validCrop = (c: Crop) =>
   c.left + c.right <= 1 - MIN_CROP + 1e-9 &&
   c.top + c.bottom <= 1 - MIN_CROP + 1e-9;
 
-export const sameCrop = (a: Crop, b: Crop) => a.left === b.left && a.top === b.top && a.right === b.right && a.bottom === b.bottom;
+export const sameCrop = (a: Crop, b: Crop) => (a.feather ?? 0) === (b.feather ?? 0) && a.left === b.left && a.top === b.top && a.right === b.right && a.bottom === b.bottom;
 
 export type CropHandle = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw" | "move";
 
@@ -73,7 +84,7 @@ export function dragCrop(start: Crop, handle: CropHandle, du: number, dv: number
   let x0 = start.left, x1 = 1 - start.right, y0 = start.top, y1 = 1 - start.bottom;
   if (handle === "move") {
     const dx = clamp(du, -x0, 1 - x1), dy = clamp(dv, -y0, 1 - y1);
-    return out(x0 + dx, y0 + dy, x1 + dx, y1 + dy);
+    return { ...out(x0 + dx, y0 + dy, x1 + dx, y1 + dy), ...(start.feather !== undefined ? { feather: start.feather } : {}) };
   }
   const east = handle.includes("e"), west = handle.includes("w"), north = handle.includes("n"), south = handle.includes("s");
   if (aspect === null) {
@@ -81,7 +92,7 @@ export function dragCrop(start: Crop, handle: CropHandle, du: number, dv: number
     if (east) x1 = clamp(x1 + du, x0 + MIN_CROP, 1);
     if (north) y0 = clamp(y0 + dv, 0, y1 - MIN_CROP);
     if (south) y1 = clamp(y1 + dv, y0 + MIN_CROP, 1);
-    return out(x0, y0, x1, y1);
+    return { ...out(x0, y0, x1, y1), ...(start.feather !== undefined ? { feather: start.feather } : {}) };
   }
   // In pixels a crop of this shape is t * (aspect, 1); find t, then place it.
   const { w, h } = size;
@@ -93,7 +104,7 @@ export function dragCrop(start: Crop, handle: CropHandle, du: number, dv: number
     const roomW = (east ? 1 - ax : ax) * w, roomH = (south ? 1 - ay : ay) * h;
     const t = clamp((Math.max(0, rw) * aspect + Math.max(0, rh)) / (aspect * aspect + 1), tMin, Math.min(roomW / aspect, roomH));
     const fw = (t * aspect) / w, fh = t / h;
-    return out(east ? ax : ax - fw, south ? ay : ay - fh, east ? ax + fw : ax, south ? ay + fh : ay);
+    return { ...out(east ? ax : ax - fw, south ? ay : ay - fh, east ? ax + fw : ax, south ? ay + fh : ay), ...(start.feather !== undefined ? { feather: start.feather } : {}) };
   }
   if (east || west) {
     const ax = east ? x0 : x1;
@@ -101,14 +112,14 @@ export function dragCrop(start: Crop, handle: CropHandle, du: number, dv: number
     const t = clamp(rw / aspect, tMin, Math.min(((east ? 1 - ax : ax) * w) / aspect, h));
     const fw = (t * aspect) / w, fh = t / h;
     const top = clamp((y0 + y1) / 2 - fh / 2, 0, 1 - fh);
-    return out(east ? ax : ax - fw, top, east ? ax + fw : ax, top + fh);
+    return { ...out(east ? ax : ax - fw, top, east ? ax + fw : ax, top + fh), ...(start.feather !== undefined ? { feather: start.feather } : {}) };
   }
   const ay = south ? y0 : y1;
   const rh = (south ? y1 + dv - ay : ay - (y0 + dv)) * h;
   const t = clamp(rh, tMin, Math.min((south ? 1 - ay : ay) * h, w / aspect));
   const fw = (t * aspect) / w, fh = t / h;
   const left = clamp((x0 + x1) / 2 - fw / 2, 0, 1 - fw);
-  return out(left, south ? ay : ay - fh, left + fw, south ? ay + fh : ay);
+  return { ...out(left, south ? ay : ay - fh, left + fw, south ? ay + fh : ay), ...(start.feather !== undefined ? { feather: start.feather } : {}) };
 }
 
 const out = (x0: number, y0: number, x1: number, y1: number): Crop => ({
@@ -149,7 +160,7 @@ export function cropToRatio(p: Project, ids: Id[], ratio: CropRatio): Project {
     if (!c || !croppable(c) || c.type === "audio" || c.type === "adjustment") continue;
     const src = sourceSize(p, c);
     const aspect = ratioAspect(ratio, src.w, src.h);
-    if (aspect !== null) p = cropClips(p, [id], ratioCrop(aspect, src.w, src.h));
+    if (aspect !== null) p = cropClips(p, [id], { ...ratioCrop(aspect, src.w, src.h), ...(c.crop.feather !== undefined ? { feather: c.crop.feather } : {}) });
   }
   return p;
 }

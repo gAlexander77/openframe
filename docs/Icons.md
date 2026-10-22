@@ -42,6 +42,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Start or end / preferences / new project | SkipBack or SkipForward / Settings / FilePlus2 |
 | Close / add / remove | X / Plus / Minus |
 | Crop / mirror | Crop / FlipHorizontal2 |
+| Pen mask | Spline |
 | Visibility / locked | Eye or EyeOff / Lock or LockOpen |
 | Sound on or muted | Volume2 / VolumeX |
 | Transitions / filters / color | Blend / Palette / PaintBucket |

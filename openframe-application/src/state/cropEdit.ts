@@ -38,7 +38,7 @@ export function pickCropRatio(ratio: CropRatio) {
   if (!s || !c || c.type === "audio" || c.type === "adjustment") return;
   const src = sourceSize(store.get().project, c);
   const aspect = ratioAspect(ratio, src.w, src.h);
-  store.set({ cropEdit: { ...s, ratio, crop: aspect === null ? s.crop : ratioCrop(aspect, src.w, src.h) } });
+  store.set({ cropEdit: { ...s, ratio, crop: aspect === null ? s.crop : { ...ratioCrop(aspect, src.w, src.h), ...(s.crop.feather !== undefined ? { feather: s.crop.feather } : {}) } } });
 }
 
 /** Back to the whole picture, shape free. */

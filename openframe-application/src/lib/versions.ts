@@ -408,7 +408,7 @@ function scalePixels(c: Clip, g: number, a: Frame, b: Frame): Clip {
   const kh = +((g * a.h) / b.h).toFixed(4), kw = +((g * a.w) / b.w).toFixed(4);
   const fx = c.effects.filter((e) => Object.keys(e.params).some((k) => EFFECTS[e.type]?.params[k]?.pixels));
   const shake = (["x", "y"] as const).filter((t) => c.wiggle?.[t]);
-  if ((!fx.length && !shake.length) || (kh === 1 && kw === 1)) return c;
+  if ((!fx.length && !shake.length && !c.crop.feather) || (kh === 1 && kw === 1)) return c;
   const r = (v: number, k: number) => +(v * k).toFixed(5);
   const keyed: Record<string, Keyframe[]> = {};
   const keys = (path: string, k: number) => {
@@ -431,7 +431,7 @@ function scalePixels(c: Clip, g: number, a: Frame, b: Frame): Clip {
     wiggle[t] = { ...wiggle[t]!, amplitude: r(wiggle[t]!.amplitude, k) };
     keys(`wiggle.${t}.amplitude`, k);
   }
-  return { ...c, effects, ...(shake.length ? { wiggle } : {}), ...(Object.keys(keyed).length ? { keyframes: { ...c.keyframes, ...keyed } } : {}) } as Clip;
+  return { ...c, effects, ...(c.crop.feather ? { crop: { ...c.crop, feather: r(c.crop.feather, kh) } } : {}), ...(shake.length ? { wiggle } : {}), ...(Object.keys(keyed).length ? { keyframes: { ...c.keyframes, ...keyed } } : {}) } as Clip;
 }
 
 /** How many times larger clip `c` (now `v`) is drawn in pixels in q than
@@ -478,7 +478,7 @@ function asPicture(p: Project, a: Frame, b: Frame, c: Clip): Clip {
     // A solid fills the canvas: keep only the part the old frame covered.
     const { left, right, top, bottom } = v.crop;
     const ex = (1 - kx) / 2, ey = (1 - ky) / 2;
-    return { ...v, crop: { left: ex + left * kx, right: ex + right * kx, top: ey + top * ky, bottom: ey + bottom * ky } };
+    return { ...v, crop: { ...v.crop, left: ex + left * kx, right: ex + right * kx, top: ey + top * ky, bottom: ey + bottom * ky } };
   }
   return v;
 }
@@ -588,7 +588,7 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
       const kw = (a.w / b.w) * (short(b) / short(a)), kh = (a.h / b.h) * (short(b) / short(a));
       const cx = (left + 1 - right) / 2, cy = (top + 1 - bottom) / 2;
       const w = Math.min(1, (1 - left - right) * kw), h = Math.min(1, (1 - top - bottom) * kh);
-      out = { ...c, crop: { left: Math.max(0, cx - w / 2), right: Math.max(0, 1 - cx - w / 2), top: Math.max(0, cy - h / 2), bottom: Math.max(0, 1 - cy - h / 2) } };
+      out = { ...c, crop: { ...c.crop, left: Math.max(0, cx - w / 2), right: Math.max(0, 1 - cx - w / 2), top: Math.max(0, cy - h / 2), bottom: Math.max(0, 1 - cy - h / 2) } };
     }
     if (c.shape) {
       // A shape's box is fractions of the frame and its stroke pixels at a

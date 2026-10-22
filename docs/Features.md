@@ -308,7 +308,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   starts at 2 flashes a second: more than 3 can trigger seizures (WCAG
   2.3.1), so keep it there.
 - **Masks** (Video > Mask, CapCut's shapes): linear, mirror, circle,
-  rectangle with round corners, heart and star, with feather and invert;
+  rectangle with round corners, heart, star and a freeform Pen path, with
+  feather and invert;
   every number takes keyframes, and a rotated mask turns rigidly on any
   picture shape ([[ADR-049 Masks turn rigidly and grow shapes without new fields]]).
   While the Mask tab is open the viewer draws the mask's outline on the
@@ -318,6 +319,27 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   it. Each drag is one undo step and keys animated numbers. `set_mask`
   with `at` keys the values it is given there, from what the mask held at
   the clip's start ([[ADR-120 Callouts and overlays pinned to footage, and frame_region moves]]).
+- **Pen masks:** in Video > Mask choose Pen, click anchors on the viewer,
+  drag while adding an anchor to pull out paired bezier handles, and click
+  the first anchor to close. Drag anchors or handles to refine a path;
+  Alt-click an anchor switches between smooth and corner, and Delete removes
+  the selected anchor. Each gesture is one undo step. Position, width,
+  height, rotation, feather and invert work on the whole path; the numeric
+  transform takes keyframes, while individual points stay static. `set_mask`
+  accepts `shape: "path"`, `points` and `closed`. Paths fill with nonzero
+  winding, including where they cross themselves.
+- **Masks on adjustment layers:** the adjustment's Mask tab uses the same
+  shapes and viewer handles, in fractions of the canvas. Its color grade
+  and effects blend with the original picture through the mask, so one
+  adjustment can blur a face, darken a sky or brighten a subject without
+  affecting the rest. Feather blends the boundary, invert selects the
+  outside, and transform keyframes can follow a subject. `set_mask` accepts
+  adjustment clip IDs ([[ADR-133 Crop softness, continuous rotation and regional masks]]).
+- **Rotation dial:** Transform > Rotate turns continuously under the pointer,
+  keeping complete turns (370 degrees stays 370). Shift snaps to 15 degrees;
+  focused arrows step one degree, or ten with Shift. The adjacent number
+  accepts typing, the diamond keeps rotation keyframes, and double-click
+  resets. A drag is one undo step.
 - On-canvas handles: move, scale, rotate. A moved picture snaps its edges
   and center to the canvas's and to other visible pictures', and to the
   safe margins and thirds while those viewer guides show, with a guide at
@@ -340,6 +362,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   keep it while dragging. Reset, Cancel (or Escape) and Done (or Enter);
   Done is one undo step. Works on rotated and mirrored pictures
   ([[ADR-048 Crop is cut from the source and edited on a copy]]).
+  **Softness** in the Crop section and under the viewer fades inward from
+  the cropped edges, in pixels at a 1080-tall render. It stays with the
+  picture through scale, rotation and flips, and scales with delivery size;
+  zero preserves the hard edge. `set_crop` accepts `feather`, including
+  alongside a ratio.
 - **Fit / Fill / Stretch** under Transform (Resolve's and Premiere's
   framing; `frame_clips`): fit shows the whole picture, fill covers the
   canvas and crops the overflow, stretch covers it exactly; each centers.

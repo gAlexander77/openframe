@@ -1,3 +1,4 @@
+import { cleanMask } from "../mask";
 import { cleanRuns } from "../textRuns";
 // Factories for every project object, and `normalizeProject`, the trust
 // boundary for project JSON. Whatever comes in — a file saved by an older
@@ -295,7 +296,12 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
   if (VISUAL_TYPES.has(type)) {
     const base = visual();
     c.transform = { ...base.transform, ...(isObj(c.transform) ? c.transform : {}) };
-    c.crop = { ...base.crop, ...(isObj(c.crop) ? c.crop : {}) };
+    const crop = { ...base.crop, ...(isObj(c.crop) ? c.crop : {}) };
+    if (crop.feather !== undefined) {
+      if (typeof crop.feather === "number" && Number.isFinite(crop.feather) && crop.feather >= 0) crop.feather = Math.min(1080, crop.feather);
+      else delete crop.feather;
+    }
+    c.crop = crop;
     c.adjust = normalizeAdjust(c.adjust, where, lutIds);
     c.opacity = num(c.opacity, 1);
     c.blend = typeof c.blend === "string" ? c.blend : "normal";
@@ -310,6 +316,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     optional(c, "shadow", cleanShadow(c.shadow));
     optional(c, "border", cleanBorder(c.border));
   }
+  if (VISUAL_TYPES.has(type) || type === "adjustment") optional(c, "mask", cleanMask(c.mask));
   if (type === "adjustment") {
     c.adjust = normalizeAdjust(c.adjust, where, lutIds);
     c.opacity = num(c.opacity, 1);

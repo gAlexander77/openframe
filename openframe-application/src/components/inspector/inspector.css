@@ -86,7 +86,7 @@
   .insp-row:not(.plain) { grid-template-columns: minmax(0, 1fr) 74px; row-gap: 0; }
   .insp-row:not(.plain) > .insp-label { grid-area: 1 / 1; }
   .insp-row:not(.plain) > .insp-num { grid-area: 1 / 2; }
-  .insp-row:not(.plain) > .insp-slider { grid-area: 2 / 1; }
+  .insp-row:not(.plain) > :is(.insp-slider, .insp-dial) { grid-area: 2 / 1; }
   .insp-row:not(.plain) > .insp-keys { grid-area: 2 / 2; }
   /* A wide control has no number: its keys take the label's line. */
   .insp-row:not(.plain) > .insp-wide { grid-area: 2 / 1 / 3 / -1; }
@@ -377,3 +377,11 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .match-reference { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 8px 0; }
 .match-reference img { width: 60px; height: 36px; object-fit: contain; background: var(--bg-inset); }
 .match-reference span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.insp-dial { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; position: relative; cursor: grab; touch-action: none; justify-self: center; }
+.insp-dial:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.insp-dial span { position: absolute; inset: 3px; pointer-events: none; }
+.insp-dial span::after { content: ""; position: absolute; width: 3px; height: 10px; background: var(--accent); top: 0; left: calc(50% - 1.5px); border-radius: 2px; }
+.crop-softness { display: flex; gap: 5px; align-items: center; min-width: 0; font-size: 11px; }
+.crop-softness input { width: 72px; min-width: 35px; }
+.crop-bar { flex-wrap: wrap; }
