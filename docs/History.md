@@ -1748,3 +1748,139 @@ merge into `main`.
   desktop page left `list_projects` hanging and Claude Code's connection
   timing out at 30 s; the server should answer that the editor is not
   responding.
+
+## 2026-10-22 — The seventh improvements branch: what other editors have, built by Codex lanes (Claude Code)
+
+The owner asked for as many improvements as possible: features the major
+editors have and OpenFrame lacked, everything tested, professional test
+edits with voiceovers made through the MCP tools, Codex used for the work
+to spare Claude usage, and finished work merged into `main` through pull
+requests. Branch `improvements-7` took the work.
+
+**How the round ran.** Claude Code wrote specs, reviewed, ran the drives
+and merged; Codex (`codex exec`, from those specs, in its own worktree)
+wrote the code and the unit tests. Codex's sandbox could not launch the
+browser or vitest's default pool, so every drive was run here; it fixed
+its own drive bugs from the results it was given. A read-only Codex audit
+first checked thirty features of CapCut, Premiere, Resolve, Final Cut and
+VEGAS against the code (five already existed) and ranked the rest.
+
+- **Features** (each a lane, ADR-127 to ADR-137):
+  - a timeline clip index and `find_clips`; default transitions on the
+    selected cuts; monitor mute and mute/solo keys (ADR-127);
+  - fade curve shapes, pitch apart from speed, eight voice-changer presets
+    (ADR-128);
+  - match color between shots; before/after and reference compare in the
+    viewer (ADR-129);
+  - crop softness, a rotate dial, masks on adjustment layers, pen masks
+    (ADR-133);
+  - playback proxies on demand, used by preview only (ADR-131);
+  - edit points and Extend Edit, three- and four-point edits with fit to
+    fill, range markers and real MP4 chapters (ADR-132);
+  - track inserts and a gate, de-esser, limiter and parametric EQ (ADR-134);
+  - timeline interchange: OTIO import, FCPXML both ways, CMX 3600 EDL
+    (ADR-137).
+- **A stream-clipping workflow** (the owner's new direction, for a
+  clipping channel run with the streamers' permission):
+  `find_highlights` ranks the moments of a multi-hour VOD from the
+  streamer's excitement over a rolling baseline, speech, sparse scenes,
+  an optional chat replay and viewer-clip times, refined by Whisper on the
+  candidates only (ADR-140); `apply_stream_layout` (facecam over
+  gameplay), `create_clips` (a project per moment with pop captions, a
+  hook and the streamer's credit) and `export_projects` (a batch) turn
+  them into shorts (ADR-141). On a 45-minute public-domain NASA landing
+  broadcast standing in for a VOD, the touchdown celebration came first;
+  the first full analysis took about ten minutes, longer than an MCP call
+  waits (see the lessons). The app gained no downloader: a clip channel
+  starts from VOD files it has permission to use.
+- **The MCP server answers at once when the editor page is not listening**
+  (ADR-126): a blank page after a dependency re-bundle had left every
+  request hanging for five minutes.
+- **Films through MCP.** Two by Claude Code (a 23 s travel ad in three
+  shapes, a 34 s documentary short around a NASA interview) and three by
+  Codex as a blind tester (a vertical travel tutorial, a beat-synced
+  montage, an interview-led documentary), from openly licensed footage and
+  music Codex gathered (listed with licenses beside it, never committed).
+  What they found became lanes: `auto_captions` for agents, filler removal
+  on the shared transcript, snake_case answers everywhere, end-card
+  wordmarks and fitted headlines, version title spacing, playable audio
+  previews on the desktop, beat montages that reach their end, and more
+  (ADR-130, ADR-135, ADR-139).
+- **What the full sweep found** after the merges: three layout faults
+  (cut voice-preset chips, the transport's total timecode pushed out at
+  1366x768, the trim preview in a short panel) and drives grown stale
+  with the product (a thirteenth and then fourteenth library tab, new
+  undo labels, a pop-in preview, a linear true peak read as dB). A
+  low-memory stop ended the first full sweep at 198 of 220.
+- **The final sweep** (233 drives, one at a time, on the finished branch)
+  passed 220. The thirteen failures were rerun alone and each bisected
+  across the round's merges: a sentence's pause one frame short (voice
+  lines placed on raw lengths, now on the frame clock), and drives gone
+  stale with intended changes (a sample on a color bar's border, a dial
+  measured before the panel settled, a second Cancel in the job toasts,
+  answers that became jobs, Home holding no project, ADR-139's ducking
+  and focus rules, a staged slider, a recorded take timed by the wall
+  clock). All thirteen pass on the merge, with 1,937 tests.
+- **What the clipping blind test found** (a Codex tester working a
+  45-minute VOD like a clip channel's day, stopped by low memory before it
+  exported): every slow tool timed out the same way, captions on a 40 s
+  clip heard the whole 45-minute file, the hook covered the streamer's
+  face, the credit sat in the apps' button area, a speech WAV came in as
+  music, and the app's WebView2 grew to 14.6 GB. Long tools now answer
+  `running` with a job id inside 45 s (`job_status`, `cancel_job`) and
+  captions hear only the clip's window (ADR-142); clip templates pass
+  their own checks and imports judge speech from the audio (ADR-143);
+  caches have byte budgets and owners and a closed project gives its
+  memory back: one highlight run on the VOD still peaks at about 5.5 GB,
+  but switching projects returns the app to 2.0 GB, where only a page
+  reload did before (ADR-144). Scene sampling now spans the file coarse to
+  fine: sampled from the start, a slow run covered only its first 16
+  minutes and favored early moments.
+- **Leftovers from earlier rounds** (ADR-136): a split compound clip's
+  compressor stays continuous, wide glows use the blur pyramid, versions
+  follow callouts inside compound clips and lift burned captions over
+  rings, tall end cards use their column, silent-join hints work without a
+  beat grid.
+
+### Lessons paid for in this round
+
+- **Codex is a good implementer and a blind tester, and cheap for the lead.**
+  A detailed spec (files, data model, command, UI, tests, drives) came back
+  as working code with mutation-checked tests nearly every time. Its blind
+  films found 30-odd real problems the drives had passed.
+- **Codex's sandbox cannot launch a browser or vitest's process pool**
+  (`spawn EPERM`): it runs vitest with `--pool threads` and leaves drives to
+  the lead. Its MCP calls need `--approve-for-me` (approvals "never" refuses
+  any tool not marked read-only).
+- **Keep the app under test off the integration branch.** A merge into the
+  checkout the desktop app runs from reloaded the page under a tester; the
+  app now runs from its own branch, fast-forwarded between tests, and merges
+  happen in an integration worktree. (The reload was also the first real
+  test of ADR-126: the tester was told what happened instead of waiting.)
+- **Merged test files lose a closing brace.** When two lanes append tests at
+  the end of one file, git keeps the shared `});` outside the conflict;
+  keeping both sides leaves the first test open. The union helper closes it.
+- **Two lanes, one component.** Proxies and interchange each added submenus
+  to the menu, one drilling down, one flying out; the merge kept one design.
+  Give lanes the shared components they may not change.
+- **A drive's number is a claim about units.** The mixer reports true
+  peak linear; read as dBTP it looked like normalization clipping by
+  0.9 dB, and the fix lane first set out to change correct code.
+- **A long analysis must not ride one MCP call.** The HTTP server waits
+  300 s; a first highlight pass over 45 minutes took about ten. Long
+  tools answer "running" and report through a status tool, as exports do.
+- **Every desktop-only path needs the desktop.** Auto captions passed in the
+  browser (the clip was already heard) and failed at once in the app; the
+  English-only model refuses a language.
+- **The app's WebView2 grew to about 6 GB** over a session of ten projects
+  with exports, voices, Whisper, music and proxies, and with parallel drives
+  and Codex lanes the machine ran out of memory: Claude Code stopped the
+  sweep. Size parallel work to what is left after the app, and look into
+  the app's memory over a long session.
+- **Releasing memory changes what reads see.** The first memory fix
+  zeroed the compositor's size on project close; the next save read the
+  viewer for the Home card, got no pixels and failed, so `open_project`
+  refused to switch. Before, that read returned the previous project's
+  frame: a wrong thumbnail nobody noticed.
+- **A budget that stops early must stop evenly.** A time-boxed pass that
+  walks a file from its start biases every score toward the start.
