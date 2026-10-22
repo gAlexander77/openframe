@@ -34,3 +34,9 @@ finishing in foreign editors. Portraits and recognition still need review;
 no face detector is implied. The chapter reader supports OpenFrame's Nero
 MP4 table, not QuickTime chapter tracks or other containers. External-editor
 import and desktop behavior still need the lead's validation.
+
+**2026-10-22 sweep:** Updated older drives to this decision: sound-joins
+requires `met: false` and the infeasible-ceiling note for a line over 15 LU
+at zero dip, even with speech at 12 LU. versions-subject expects no
+saliency report for explicit focus and verifies the saved framing moves
+only the requested shot. Existing balance/reframe unit tests cover both.

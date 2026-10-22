@@ -166,3 +166,9 @@ its first word to its last, together) and **line** (each line alone).
   (or a per-token duration input) is the upgrade.
 - Listening tests: naturalness is measured by proxies (words a second,
   pitch range, pauses), not by people.
+
+**2026-10-22 sweep:** Line placement now counts whole audio frames before
+adding the gap (12 frames after a sentence, three after a comma at 30 fps).
+Rounding the next start from raw speech seconds shortened a pause by one
+frame; frame-bound answers exposed it. Pinned lines and captions use the
+same placed clock; speech `seconds` stays the file length.

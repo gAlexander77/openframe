@@ -48,9 +48,15 @@ async (page) => {
   details.voices = { ok: L[0].voice === "af_heart" && L[1].voice === "am_michael" && L[2].voice === "am_michael" && L[3].voice === "af_heart:70,af_bella:30" && L.every((l) => l.speed_chosen && l.speed >= 0.6 && l.speed <= 1.3), voices: L.map((l) => l.voice), speeds: L.map((l) => [l.speed, l.words_per_second]) };
   // The gaps follow each line's ending: 0.4 after a sentence, 0.1 after a
   // comma; the third line's own pause_after sends nothing past the pinned 16 s.
+  const frameGaps = await page.evaluate((ids) => {
+    const clips = window.videoEditor.project().tracks.flatMap((t) => t.clips);
+    const lines = ids.map((id) => clips.find((c) => c.id === id));
+    return lines.slice(1).map((c, i) => c.start - lines[i].start - lines[i].duration);
+  }, L.slice(0, 3).map((l) => l.voice_clip));
   details.timing = {
-    ok: L[0].start === 0 && near(L[1].start - L[0].end, 0.4) && near(L[2].start - L[1].end, 0.1) && L[3].start === 16,
+    ok: L[0].start === 0 && near(L[1].start - L[0].end, 0.4) && near(L[2].start - L[1].end, 0.1) && L[3].start === 16 && frameGaps[0] === 12 && frameGaps[1] === 3,
     gaps: [L[1].start - L[0].end, L[2].start - L[1].end].map((x) => +x.toFixed(3)),
+    frameGaps,
   };
   details.pause = { ok: L[0].pauses?.length === 1 && L[0].pauses[0].seconds === 0.6, pauses: L[0].pauses };
   let p = await doc();
