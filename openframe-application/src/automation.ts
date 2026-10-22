@@ -31,7 +31,7 @@ import { clipTranscript } from "./state/transcript";
 import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, keepFilterLoudness, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
 import { importLuts } from "./state/luts";
 import { importEach, importFiles } from "./state/media";
-import { sourceName } from "./lib/mediaKind";
+import { mediaName, sourceName } from "./lib/mediaKind";
 import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
@@ -48,6 +48,7 @@ import { sourceFrames } from "./engine/analyze";
 import { checkProject, type CheckKind } from "./lib/designCheck";
 import { measureForCheck } from "./state/check";
 import { staleDuckNote, staleDucks } from "./lib/analysis/duck";
+import { readFileChapters } from "./lib/chapters";
 import { probe } from "./engine/media";
 import type { Asset } from "./lib/project/types";
 
@@ -127,9 +128,9 @@ const automation = {
   },
   select: (ids: string[]) => store.select(ids),
   /** Import files by URL (web) or path (desktop). */
-  async import(srcs: { name: string; src: string; size?: number }[]) {
+  async import(srcs: { name?: string; src: string; size?: number }[]) {
     needProject();
-    return importFiles(srcs.map((s) => ({ name: s.name, src: s.src, size: s.size ?? 0 })));
+    return importFiles(srcs.map((s) => ({ name: mediaName(s), src: s.src, size: s.size ?? 0 })));
   },
   /** Import .cube LUTs by URL (web) or path (desktop) into project.luts;
    * apply_lut then puts one on a clip. Returns the new entries. */
@@ -337,7 +338,11 @@ const mcpHost: McpHost = {
     const times = info.kind === "image" ? [0] : given ?? Array.from({ length: count }, (_, i) => +((info.duration * (i + 0.5)) / count).toFixed(2));
     const pics = info.kind === "image" ? [await createImageBitmap(await platform.blobFor(src))] : await sourceFrames(asset, times, tileWidth);
     const image = await tiles(times.map((t, i) => ({ src: pics[i], label: info.kind === "image" ? `${info.width}x${info.height}` : `${+t.toFixed(2)} s`, w: info.width || 16, h: info.height || 9 })), tileWidth, info.kind === "image" ? 1 : columns);
-    return { image, file: { file: src, kind: info.kind, seconds: +info.duration.toFixed(3), width: info.width, height: info.height, ...(info.fps ? { fps: info.fps } : {}), audio: info.hasAudio, frames: times } };
+    let chapters: Awaited<ReturnType<typeof readFileChapters>> = [];
+    let chapterNote = "Chapter inspection reads Nero MP4/MOV chapter tables (as OpenFrame writes); other containers and QuickTime chapter tracks are not inspected.";
+    try { chapters = await readFileChapters((at, bytes) => platform.head(src, bytes, at)); }
+    catch (e) { chapterNote += ` Could not inspect chapters: ${e instanceof Error ? e.message : String(e)}`; }
+    return { image, file: { chapters, chapters_note: chapterNote, file: src, kind: info.kind, seconds: +info.duration.toFixed(3), width: info.width, height: info.height, ...(info.fps ? { fps: info.fps } : {}), audio: info.hasAudio, frames: times } };
   },
   audition: async (options) => {
     const r = await previewAudio(options as AuditionRequest);

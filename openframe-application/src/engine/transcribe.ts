@@ -4,7 +4,7 @@
 // Everything runs on this machine; only the model weights are downloaded,
 // once.
 
-import { quietCuts, rms10ms, type Word } from "../lib/captions";
+import { monotonicWords, quietCuts, rms10ms, type Word } from "../lib/captions";
 import { projectDuration } from "../lib/project/ops";
 import type { Project } from "../lib/project/types";
 import { framesToSeconds } from "../lib/time";
@@ -115,5 +115,5 @@ export async function transcribePcm(
     words.push(...r.words);
   }
   onProgress({ stage: "transcribing", progress: 1 });
-  return words;
+  return monotonicWords(words);
 }

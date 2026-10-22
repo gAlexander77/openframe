@@ -208,3 +208,10 @@ describe("a cut inside a ring-out (film test 2, ADR-114)", () => {
     }
   });
 });
+
+it("film 5: a voice join names speech, never music or a new bar", () => {
+  const m = Float32Array.from({ length: 96000 }, (_, i) => Math.sin(i * 0.1) * (i < 48000 ? 0.01 : 0.15));
+  const r = edgeReport(m, m, RATE, 0, [{ at: 1, kind: "join", clips: ["a", "b"], faded: 0.08, cameIn: -23.5, role: "dialog" }])[0];
+  expect(r.step_note).toMatch(/speech/);
+  expect(JSON.stringify(r)).not.toMatch(/music|new bar|ring-out/);
+});

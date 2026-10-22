@@ -93,6 +93,7 @@ export type JsonSchema = {
   items?: JsonSchema;
   minimum?: number;
   maximum?: number;
+  maxItems?: number;
   additionalProperties?: boolean;
 };
 
@@ -192,6 +193,7 @@ export function validate(value: unknown, schema: JsonSchema, path = "args"): str
   }
   if (t === "array") {
     if (!Array.isArray(value)) return [`${path} must be an array`];
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) errs.push(`${path} accepts at most ${schema.maxItems} items`);
     value.forEach((v, i) => schema.items && errs.push(...validate(v, schema.items, `${path}[${i}]`)));
     return errs;
   }
@@ -630,12 +632,13 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_media_clip",
-    description: "Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.",
+    description: "Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Default fit shows the whole source with transparent bands; use fit fill for cutaways that cover an interview, or blur for a covering blurred background.",
     input: S.obj(
       {
         asset_id: S.str("Asset id, from import_media or describe_project"),
         start: S.num("Timeline position in seconds", { minimum: 0 }),
         duration: S.num("Length in seconds; defaults to the whole source (one loop for animated images, 5 s for stills)", { minimum: 0.001 }),
+        fit: S.str("Picture fitting: fit (default) shows the whole image, fill covers the canvas by cropping edges, blur fits over a covering blurred copy", { enum: ["fit", "fill", "blur"] }),
         in: S.num("Seconds into the source where the clip begins", { minimum: 0 }),
         track_id: S.str("Track id"),
         mode: S.str("overwrite replaces what is under the clip; insert pushes later clips right", { enum: ["overwrite", "insert"] }),
@@ -645,12 +648,19 @@ export const COMMANDS: Command[] = [
     run: (p, a, report) => {
       const asset = ops.getAsset(p, String(a.asset_id));
       if (!asset) throw new CommandError(`no asset with id ${a.asset_id}`);
+      if (a.fit !== undefined && asset.kind === "audio") throw new CommandError("fit applies to video and images, not audio");
       let clip = clipForAsset(asset, f(p, a.start), p.fps);
       if (a.in !== undefined && clip.type === "image" && asset.animated) clip = { ...clip, imageIn: Number(a.in) };
       if (a.in !== undefined && "in" in clip) clip = { ...clip, in: Number(a.in) } as Clip;
       const room = ops.roomRight(p, { ...clip, duration: 0 } as Clip);
       const wanted = a.duration !== undefined ? span(p, a.start, a.duration) : clip.duration;
       clip = { ...clip, duration: Math.max(1, Math.min(wanted, room === Infinity ? wanted : room)) } as Clip;
+      if ((clip.type === "video" || clip.type === "image") && asset.width && asset.height) {
+        const cover = Math.max(p.width / asset.width, p.height / asset.height) / Math.min(p.width / asset.width, p.height / asset.height);
+        if (a.fit === "fill") clip = { ...clip, transform: { ...clip.transform, scale: cover } };
+        else if (a.fit === "blur") clip = { ...clip, canvas: { type: "blur", amount: 40 } };
+        else if (cover > 1.005 && report) (report.notes ??= []).push("Default fit shows the whole source; its transparent bands can expose lower tracks. Use add_media_clip fit fill for a covering cutaway, fit blur for a covering background, or frame_region mode fill on this clip.");
+      }
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return closeFrameGap(ops.addClip(q, trackId, clip, a.mode === "insert" ? "insert" : "overwrite"), trackId, clip.id, a, report);
     },

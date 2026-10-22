@@ -2,7 +2,7 @@
 // source seconds; deleting words cuts their time with cut_ranges. Pure.
 
 import type { Range } from "./analysis/silence";
-import type { Word } from "./captions";
+import { monotonicWords, type Word } from "./captions";
 import { frameOfSource } from "./project/cut";
 import type { AudioClip, Project, VideoClip } from "./project/types";
 import { framesToSeconds } from "./time";
@@ -59,7 +59,7 @@ export function merge(h: Heard | undefined, from: number, to: number, words: Wor
   const touching = (h?.spans ?? []).filter((r) => r.end >= from && r.start <= to);
   const joined = { start: Math.min(from, ...touching.map((r) => r.start)), end: Math.max(to, ...touching.map((r) => r.end)) };
   const spans = [...(h?.spans ?? []).filter((r) => !touching.includes(r)), joined].sort((a, b) => a.start - b.start);
-  return { words: [...kept, ...words].sort((a, b) => a.start - b.start), spans };
+  return { words: monotonicWords([...kept, ...words]), spans };
 }
 
 /** The words a clip window [from, to) plays, by their middle. */

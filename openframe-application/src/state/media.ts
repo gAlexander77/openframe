@@ -4,7 +4,7 @@ import { createProxies, proxyAction } from "./proxies";
 // the media panel, OS drag and drop, and the automation API.
 
 import { probe } from "../engine/media";
-import { formatName, isImageName, SNIFF_BYTES, sourceName } from "../lib/mediaKind";
+import { formatName, isImageName, mediaName, SNIFF_BYTES, sourceName } from "../lib/mediaKind";
 import { prepare } from "../engine/thumbs";
 import { uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
@@ -88,8 +88,9 @@ type Probed = { file: ImportedFile; asset: Asset } | { file: ImportedFile; lutFi
  */
 async function probeEach(files: ImportedFile[], signal: AbortSignal): Promise<Probed[]> {
   const out: Probed[] = [];
-  for (const given of files) {
+  for (const file of files) {
     if (signal.aborted) return [];
+    const given = { ...file, name: mediaName(file) };
     // Answers name the file as it was given, whatever copy is made of it.
     const fail = (error: string) => {
       toast(`${given.name}: ${error}`, "error");

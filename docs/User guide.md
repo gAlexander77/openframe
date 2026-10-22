@@ -364,7 +364,10 @@ does not detach it. Turn on **Chapter** to include its start and note in an
 MP4 export with **Chapters from markers** enabled. Only chapter-marked notes
 are included. Partial exports start the preceding chapter at zero.
 MP4 supports up to 255 chapters, and titles use at most 255 UTF-8 bytes.
-Chapter exports put their movie metadata at the end of the file.
+Chapter exports put their movie metadata at the end of the file. Export
+answers list the chapter titles and seconds written. To verify the delivered
+file, use `preview_media` with `file`; it reads OpenFrame's Nero MP4 chapter
+table and says which other chapter formats it does not inspect.
 
 Use **Export shown markers** to preview and save just the notes shown by
 the current search and color filter. **Timecoded notes** keeps frame-exact
@@ -500,7 +503,13 @@ default, or `words_per_caption: 2` and `look: "pop"` for a short. Set
 `start`/`end` to caption a stretch, `track_ids` to choose the speech tracks,
 and `replace: false` to keep earlier captions. Imported audio intended as
 speech should have the Dialog role; music and effects roles are skipped.
-`detail: "full"` lists the caption times. This is one undoable edit.
+`detail: "full"` lists the caption times. Whole-line captions use phrase
+breaks, up to two lines, at least 0.83 s and at most 20 characters a second
+where the available speech window allows. The answer's `readability` names
+cues that still need repair. For difficult source speech, choose Accurate
+(English), or pass `model: "onnx-community/whisper-small.en_timestamped"`;
+review names and technical terms even with that model. This is one undoable
+edit.
 
 **Ask the AI assistant for an edit:** click **AI assistant** in the title
 bar. It opens as a column at the right of the editor, which makes room for
@@ -881,8 +890,13 @@ Choose **File > Export timeline > OpenTimelineIO, FCPXML or EDL** to save
 an editable timeline for another editor. FCPXML is version 1.10; EDL is
 CMX 3600 and writes the main video track plus one file per audio track.
 EDL omits overlays and markers and represents compounds as black.
-OpenFrame titles and color clips become gaps in FCPXML in other editors;
-OpenFrame can recover their basic text and color from its metadata.
+FCPXML carries basic editable titles, clip and track levels, ducking volume
+keys, linear audio fades, dissolves, markers and chapter starts. Color clips
+and shapes become gaps; OpenFrame can recover their color from metadata.
+Use the finished video and a final WAV mix as references for the colleague:
+cleanup/inserts, grading, picture transforms, advanced title styling and
+animation need finishing in the receiving editor. OTIO's OpenFrame metadata
+also needs OpenFrame to reproduce those elements.
 The export result names each saved file and any format limitations.
 Keep the original source files available: these exports do not collect
 or render media. Other editors' interpretation still needs checking.
@@ -925,3 +939,24 @@ On repeating texture without a distinct subject, automatic reframing stays
 centered and says so; give `focus` to choose a region yourself. An adapted
 title whose fade measures unevenly ends with a cut instead, named in
 `options`; the master keeps its original animation.
+
+## Interview cutaways and portrait review
+
+A fitted picture shows its whole source and leaves transparent bands when
+its shape differs from the canvas. For a cutaway over an interview, agents
+can add the clip with `fit: "fill"` to cover the frame, or `fit: "blur"` to
+show the whole source over a covering blurred copy. For an existing clip,
+use `frame_region` with `mode: "fill"`, or enlarge it in the Video inspector.
+Solid **Canvas fill** covers the entire frame even when the picture is cropped.
+
+Review `export_versions` with `check: true` before exporting. `check_times`
+and `check_at` accept up to eight moments per call; request another check
+for additional moments. Read `options`: automatic subject framing uses
+visual saliency and can favor a background monitor over an interviewee.
+Use `preview_media` to locate the speaker in the original picture, then give
+`focus: [{clip_id: "the-shot-id", x: 0.68, y: 0.5}]` with that person's
+coordinates, measured from the source's top-left corner. An explicit focus
+wins over the saliency candidate. Portrait identifiers move out of the
+framed subject's box where space permits, and unresolved placements are
+reported. Use `overrides` to move a title by hand, or save the portrait as
+a project to refine its layout. Inspect the resulting frames again.

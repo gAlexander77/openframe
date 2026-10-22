@@ -24,6 +24,12 @@ export function sourceName(src: string): string {
   }
 }
 
+/** Imports may omit the library label. Resolve it before the browser copies
+ * the source to a storage key, and when reading older unnamed assets. */
+export function mediaName(file: { name?: unknown; src: string }): string {
+  return typeof file.name === "string" && file.name.trim() ? file.name : sourceName(file.src) || "Media";
+}
+
 const ascii = (b: Uint8Array, at: number, n: number) => String.fromCharCode(...b.subarray(at, at + n));
 const has = (b: Uint8Array, text: string, within = b.length) => ascii(b, 0, Math.min(within, b.length)).includes(text);
 

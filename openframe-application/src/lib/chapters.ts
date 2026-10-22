@@ -51,3 +51,57 @@ export function appendChapters(moov: Uint8Array, chapters: Chapter[]): Uint8Arra
   }
   return box("moov", join(moov.subarray(8), box("udta", chpl)));
 }
+
+/** The Nero chapter table in a complete MP4 moov or chpl box.
+ * Counts, lengths, timestamps and UTF-8 are checked before exposure. */
+export function readChapterBox(data: Uint8Array): Chapter[] {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const walk = (from: number, end: number): Chapter[] => {
+    for (let at = from; at + 8 <= end;) {
+      const size = view.getUint32(at), type = String.fromCharCode(...data.subarray(at + 4, at + 8));
+      if (size < 8 || at + size > end) throw new Error("Invalid chapter metadata box.");
+      if (type === "chpl") {
+        if (size < 17 || data[at + 8] !== 1) throw new Error("Unsupported chapter table.");
+        const chapters: Chapter[] = []; let pos = at + 17;
+        for (let i = 0; i < data[at + 16]; i++) {
+          if (pos + 9 > at + size) throw new Error("Truncated chapter table.");
+          const seconds = Number(view.getBigUint64(pos)) / 1e7, n = data[pos + 8]; pos += 9;
+          if (pos + n > at + size || (chapters.length && seconds <= chapters.at(-1)!.seconds)) throw new Error("Invalid chapter table.");
+          const title = new TextDecoder("utf-8", { fatal: true }).decode(data.subarray(pos, pos + n)); pos += n;
+          chapters.push({ seconds, title });
+        }
+        return chapters;
+      }
+      if (type === "moov" || type === "udta") { const found = walk(at + 8, at + size); if (found.length) return found; }
+      at += size;
+    }
+    return [];
+  };
+  return walk(0, data.length);
+}
+
+/** Inspect top-level headers by range, skipping mdat. No whole movie read.
+ * ponytail: Nero chpl only (OpenFrame's writer); QuickTime chapter tracks
+ * and other containers need separate demux adapters. */
+export async function readFileChapters(read: (at: number, bytes: number) => Promise<Uint8Array>): Promise<Chapter[]> {
+  let at = 0;
+  for (let boxes = 0; boxes < 10000; boxes++) {
+    const header = await read(at, 16);
+    if (header.length < 8) return [];
+    const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+    const type = String.fromCharCode(...header.subarray(4, 8));
+    if (at === 0 && !["ftyp", "moov", "mdat", "free", "wide"].includes(type)) return [];
+    const small = view.getUint32(0), size = small === 1 && header.length >= 16 ? Number(view.getBigUint64(8)) : small;
+    if (!Number.isSafeInteger(size) || size < (small === 1 ? 16 : 8) || !Number.isSafeInteger(at + size)) return [];
+    if (type === "moov") {
+      if (size > 32 * 1024 * 1024) throw new Error("Movie metadata exceeds the 32 MiB inspection limit.");
+      const data = await read(at, size);
+      if (data.length !== size) throw new Error("Truncated movie metadata.");
+      // Extended-size containers are converted to the bounded 32-bit form.
+      if (small === 1) return readChapterBox(box("moov", data.subarray(16)));
+      return readChapterBox(data);
+    }
+    at += size;
+  }
+  throw new Error("Too many movie boxes to inspect chapters.");
+}

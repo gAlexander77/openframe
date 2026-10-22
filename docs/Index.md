@@ -27,6 +27,7 @@ of the documentation and how agents use it as shared working memory.
 
 ## Map of content
 
+- [[Film 5 remediation]] — all thirteen blind-test findings, fixes and validation evidence
 - [[Development pass 2026-10-16]] — approved workflow additions, decisions and verification
 - [[User guide]] — setup, a first editing session, storage and platform limits
 - [[AI development]] — the Claude Code/Codex experiment, documentation purpose,
@@ -578,3 +579,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-137 Timeline interchange shares one import boundary]] — OTIO/FCPXML imports, FCPXML and CMX EDL exports, frame clocks, connected lanes and relinkable media.
 
 - [[ADR-136 Split compound sound, wide glow and version details keep their continuity]] — continuous compound compression, smooth wide glows, nested callouts, captions above rings, larger tall end cards and nearby silent joins.
+
+- [[ADR-139 Film finishing reports measured limits and preserves portable elements]] - native FCPXML titles/audio, chapter readback, honest checks and conservative portrait/caption repair.

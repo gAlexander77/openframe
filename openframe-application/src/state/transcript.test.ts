@@ -104,3 +104,14 @@ it("shares simultaneous transcript and filler requests for one asset", async () 
   expect(fillers.words).toEqual(["um,"]);
   expect(transcribePcm).toHaveBeenCalledTimes(1);
 });
+
+it("reports whole-line readability from exact frames before rounding answer timestamps", async () => {
+  const p = createProject({ fps: { num: 30, den: 1 } });
+  const asset = { id: "short-caption-source", kind: "audio" as const, name: "short.wav", src: "short.wav", duration: 25 / 30, hasAudio: true, hasVideo: false };
+  const c = clipForAsset(asset, 0, p.fps);
+  vi.mocked(transcribePcm).mockResolvedValueOnce([{ text: "Hello.", start: 0, end: 0.4 }]);
+  state.project = { ...p, assets: [asset], tracks: [{ ...createTrack("audio", "Dialog"), role: "dialog", clips: [c] }] };
+  const result = await autoCaptions("", { detail: "full" });
+  expect(result.last.end).toBe(0.833);
+  expect(result.readability?.met).toBe(true);
+});

@@ -4,7 +4,7 @@
 // produce the same clips.
 
 import { transcribeTimeline, type TranscribeProgress } from "../engine/transcribe";
-import { currentCaptions, type Caption, DEFAULT_LINES, parseSubtitles, toSrt, toVtt, wordsToCaptions } from "../lib/captions";
+import { captionReading, currentCaptions, type Caption, DEFAULT_LINES, parseSubtitles, toSrt, toVtt, readableCaptions, wordsToCaptions } from "../lib/captions";
 import { runCommand } from "../lib/commands";
 import { trackRole, assetsOf } from "../lib/audioRoles";
 import { timelineWords } from "../lib/transcript";
@@ -53,7 +53,7 @@ export async function generateCaptions(opts: { model: string; language: string |
     // its script: Whisper only times it (ADR-092).
     const words = withScripts(project, heard);
     // One word at a time (CapCut's short-form style): no line can hold two.
-    const caps = wordsToCaptions(words, opts.oneWord ? { ...DEFAULT_LINES, maxChars: 1, minDuration: 0.25 } : DEFAULT_LINES);
+    const caps = opts.oneWord ? wordsToCaptions(words, { ...DEFAULT_LINES, maxChars: 1, minDuration: 0.25 }) : readableCaptions(words, DEFAULT_LINES, framesToSeconds(ops.projectDuration(project), project.fps));
     if (!caps.length) {
       toast("No speech found in the timeline's audio", "info");
       return;
@@ -138,7 +138,7 @@ export async function autoCaptions(_target: string, opts: { replace?: boolean; w
     const words = timelineWords(p, c, clipWords(p, c) ?? [], start, end);
     heard += words.length;
     const limit = Math.min(end, framesToSeconds(c.start + c.duration, p.fps));
-    caps.push(...wordsToCaptions(words, { ...DEFAULT_LINES, ...(opts.words_per_caption ? { maxWords: opts.words_per_caption, minDuration: 0.25 } : {}) }).map((x) => ({ ...x, end: Math.min(x.end, limit) })));
+    caps.push(...(opts.words_per_caption ? wordsToCaptions(words, { ...DEFAULT_LINES, maxWords: opts.words_per_caption, minDuration: 0.25 }).map(x => ({ ...x, end: Math.min(x.end, limit) })) : readableCaptions(words, DEFAULT_LINES, limit)));
   }
   signal.throwIfAborted();
   if (store.get().project !== p) throw new Error("The project changed while listening; run auto_captions again");
@@ -156,7 +156,9 @@ export async function autoCaptions(_target: string, opts: { replace?: boolean; w
     }
     return next;
   });
-  const made = store.get().project.tracks.flatMap((t) => t.clips.filter((c) => !old.has(c.id) && c.type === "text" && c.caption).map((c) => ({ track_id: t.id, text: c.type === "text" ? c.text : "", start: +framesToSeconds(c.start, p.fps).toFixed(3), end: +framesToSeconds(c.start + c.duration, p.fps).toFixed(3) }))).sort((a, b) => a.start - b.start);
-  const brief = ({ text, start, end }: typeof made[number]) => ({ text, start, end });
-  return { count: made.length, track_id: made[0].track_id, first: brief(made[0]), last: brief(made.at(-1)!), seconds: +made.reduce((n, c) => n + c.end - c.start, 0).toFixed(3), words: heard, ...(opts.detail === "full" ? { captions: made.map(brief) } : {}) };
+  const made = store.get().project.tracks.flatMap((t) => t.clips.filter((c) => !old.has(c.id) && c.type === "text" && c.caption).map((c) => ({ id: c.id, track_id: t.id, text: c.type === "text" ? c.text : "", start: framesToSeconds(c.start, p.fps), end: framesToSeconds(c.start + c.duration, p.fps) }))).sort((a, b) => a.start - b.start);
+  const brief = ({ text, start, end }: typeof made[number]) => ({ text, start: +start.toFixed(3), end: +end.toFixed(3) });
+  const unreadable = made.filter(c => !captionReading(c).met).map(c => ({ ...brief(c), characters_per_second: +captionReading(c).cps.toFixed(1) }));
+  const readability = opts.words_per_caption ? undefined : { met: !unreadable.length, ...(unreadable.length ? { findings: unreadable, note: "Some cues still miss the reading-time rule; review these cues and shorten the text or extend the available time." } : {}) };
+  return { readability, count: made.length, track_id: made[0].track_id, first: brief(made[0]), last: brief(made.at(-1)!), seconds: +made.reduce((n, c) => n + c.end - c.start, 0).toFixed(3), words: heard, ...(opts.detail === "full" ? { captions: made.map(brief) } : {}) };
 }

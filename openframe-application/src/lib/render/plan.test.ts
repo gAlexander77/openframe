@@ -180,3 +180,15 @@ describe("masks", () => {
     expect(at(70)).toBe(mask);
   });
 });
+
+it("film 5: cropped transformed solid canvas fill covers the whole canvas", () => {
+  let p = createProject({ width: 1080, height: 1920 });
+  p = { ...p, assets: [{ id: "a", kind: "video", name: "Saturn", src: "v", duration: 10, width: 1920, height: 1080, hasVideo: true, hasAudio: false }] };
+  const c = clipForAsset(p.assets[0], 0, p.fps);
+  if (c.type !== "video") throw Error("video");
+  p = addClip(p, p.tracks[0].id, { ...c, crop: { left: 0.09, right: 0.54, top: 0.04, bottom: 0.59 }, transform: { ...c.transform, scale: 2.5, scaleY: 1.8, y: 0.1152 }, canvas: { type: "color", color: "#071322" } });
+  const item = planFrame(p, 0)[0];
+  if (item.kind !== "layer") throw Error("layer");
+  expect(item.layer).toMatchObject({ x: 0, y: 0, scale: 1, crop: { left: 0, right: 0, top: 0, bottom: 0 }, source: { kind: "color", color: "#071322" } });
+  expect(item.layer.scaleY).toBeUndefined();
+});
