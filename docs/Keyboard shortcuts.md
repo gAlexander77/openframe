@@ -143,3 +143,8 @@ Solo track act on the tracks of selected clips.
   the line). Shortcuts stay off while typing.
 - **Selected keyframes** take Delete, Copy, Paste and Escape before clips
   do.
+- **Rotation dial:** focused arrows step one degree, or ten with Shift;
+  Shift while dragging snaps to 15 degrees. Double-click resets. These
+  are local control keys, like the numeric fields' arrows.
+- **Pen mask editor:** Delete removes the selected anchor while the mask
+  editor has focus; Alt-click toggles a point between smooth and corner.

@@ -77,6 +77,9 @@ export function CropBar({ session }: { session: CropSession }) {
           </button>
         ))}
       </div>
+      <label className="crop-softness">Softness
+        <input type="range" min={0} max={540} value={session.crop.feather ?? 0} aria-label="Crop softness" onChange={(e) => setCropDraft({ ...session.crop, feather: Number(e.target.value) })} />
+      </label>
       <div className="crop-actions">
         <button className="btn ghost" onClick={resetCrop}>Reset</button>
         <button className="btn ghost" onClick={cancelCrop}>Cancel</button>

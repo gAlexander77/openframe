@@ -6,7 +6,7 @@
 
 import { paramAt } from "./keyframes";
 import { findClip, setParam, setUniformScale, updateClip } from "./project/ops";
-import type { Clip, Ease, Id, Project, VisualClip } from "./project/types";
+import type { Clip, Ease, Id, Project, VisualClip, AdjustmentClip } from "./project/types";
 import { anchorShift, layerAt, type Layer } from "./render/plan";
 
 export type Align = "left" | "center" | "right" | "top" | "middle" | "bottom";
@@ -55,7 +55,8 @@ export function layerBox(p: Project, c: VisualClip, layer: Layer): Box {
 
 /** The visible picture's width over its height at a frame (crop and
  * Scale Y included): what a mask's fractions are measured against. */
-export function pictureAspect(p: Project, c: VisualClip, frame: number): number {
+export function pictureAspect(p: Project, c: VisualClip | AdjustmentClip, frame: number): number {
+  if (c.type === "adjustment") return p.width / p.height;
   const layer = layerAt(p, c, frame);
   const b = layer && layerBox(p, c, layer);
   return b && b.h > 0 ? b.w / b.h : p.width / p.height;

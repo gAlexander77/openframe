@@ -4,7 +4,7 @@ import { layerBox, otherBoxes, SNAP, snapBox, snapLines, tidy, type Box } from "
 import { paramAt } from "../lib/keyframes";
 import { findClip, setParam } from "../lib/project/ops";
 import type { Project, VisualClip } from "../lib/project/types";
-import { anchorShift, layerAt } from "../lib/render/plan";
+import { anchorShift, layerAt, resolveMask } from "../lib/render/plan";
 import { store, useEditor } from "../state/store";
 import { editOnCanvas } from "../state/textEdit";
 import { CropOverlay } from "./CropOverlay";
@@ -44,9 +44,13 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
   if (sel.length > 1) return playing || W === 0 ? null : <GroupOverlay ids={sel} width={W} />;
   const loc = sel.length === 1 ? findClip(project, sel[0]) : null;
   const clip = loc?.clip;
-  if (!clip || playing || W === 0 || clip.type === "audio" || clip.type === "adjustment") return null;
+  if (!clip || playing || W === 0 || clip.type === "audio") return null;
   if (frame < clip.start || frame >= clip.start + clip.duration || loc!.track.hidden) return null;
 
+  if (clip.type === "adjustment") {
+    const mask = resolveMask(clip, frame - clip.start);
+    return maskTab && mask ? <MaskOverlay project={project} clip={clip} mask={mask} k={W / project.width} /> : null;
+  }
   const layer = layerAt(project, clip, frame);
   if (!layer) return null;
   if (clip.type === "text" && editing === clip.id) {

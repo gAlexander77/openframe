@@ -1155,7 +1155,7 @@ Mirror pictures: horizontal flips left-right, vertical flips upside down. A dire
 
 ### set_crop
 
-Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions of the source trimmed from each edge (0 keeps the edge; each pair must leave at least 5% of the picture); edges left out keep their value. Or give ratio instead for the largest centered crop of that shape on each clip's source (original: uncropped). The crop is cut from the source before flips, scale and rotation, and the part kept stays where it was.
+Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions of the source trimmed from each edge (0 keeps the edge; each pair must leave at least 5% of the picture); edges left out keep their value. Or give ratio instead for the largest centered crop of that shape on each clip's source (original: uncropped). feather softens inward in pixels at a 1080-tall render (0 is hard). The crop is cut from the source before flips, scale and rotation, and the part kept stays where it was.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1164,16 +1164,17 @@ Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions 
 | `top` | number |  | Fraction trimmed from the top (0..0.95) |
 | `right` | number |  | Fraction trimmed from the right (0..0.95) |
 | `bottom` | number |  | Fraction trimmed from the bottom (0..0.95) |
+| `feather` | number |  | Inward edge softness, pixels at a 1080-tall render (0..1080) |
 | `ratio` | "original" \| "16:9" \| "9:16" \| "1:1" \| "4:3" \| "3:4" \| "4:5" \| "21:9" |  | Crop to this shape, centered |
 
 ### set_mask
 
-CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs. With at (timeline seconds), the values given are keyed there: one with no keys yet first gets a key at the clip's start holding what it was, so two calls (the same values at the moment it leaves, the new ones where it lands) move the mask; on a mask this call makes, at is not used (the answer says so). A spotlight that follows a screen recording's zooms is add_callout.
+Masks on pictures and adjustment layers (canvas fractions on an adjustment): shape linear (keeps above a line), mirror (a band), circle, rectangle, heart, star or path; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square); a path starts at unit width and height. A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs. With at (timeline seconds), the values given are keyed there: one with no keys yet first gets a key at the clip's start holding what it was, so two calls (the same values at the moment it leaves, the new ones where it lands) move the mask; on a mask this call makes, at is not used (the answer says so). For path, points are anchors in the mask's own frame as layer fractions; width/height multiply them before rotation and position. in/out are two-number bezier handle offsets; closed defaults true (false leaves an unfilled draft). Points do not animate; at keys only the mask transform. A spotlight that follows a screen recording's zooms is add_callout.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `clip_ids` | string[] | yes | Visual clips |
-| `shape` | "none" \| "linear" \| "mirror" \| "circle" \| "rectangle" \| "heart" \| "star" |  | Mask shape |
+| `clip_ids` | string[] | yes | Visual or adjustment clips |
+| `shape` | "none" \| "linear" \| "mirror" \| "circle" \| "rectangle" \| "heart" \| "star" \| "path" |  | Mask shape |
 | `x` | number |  | Center offset, fraction of the picture's width (-1..1) |
 | `y` | number |  | Center offset, fraction of the picture's height (-1..1) |
 | `width` | number |  | Fraction of the picture's width (0.01..2) |
@@ -1181,6 +1182,12 @@ CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), c
 | `rotation` | number |  | Degrees, clockwise (-360..360) |
 | `feather` | number |  | Edge softness (0..1) |
 | `radius` | number |  | Rectangle corner roundness (0..1) |
+| `points` | { x, y, in, out }[] |  | Path anchors (maximum 256), local layer fractions; absent handles are straight corners |
+| `points[].x` | number | yes | Anchor X, fraction of the layer width (-4..4) |
+| `points[].y` | number | yes | Anchor Y, fraction of the layer height (-4..4) |
+| `points[].in` | number[] |  | Incoming bezier handle offset [x,y] |
+| `points[].out` | number[] |  | Outgoing bezier handle offset [x,y] |
+| `closed` | boolean |  | Close the path (default true); false keeps an unfilled draft |
 | `invert` | boolean |  | Keep the outside instead |
 | `aspect` | number |  | The mask's width over its height in pixels (1: a round circle, a square); its height follows from width, or its width from a height given alone (0.05..20) |
 | `at` | number |  | Timeline seconds, for animated values |

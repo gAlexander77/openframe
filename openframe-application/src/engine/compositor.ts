@@ -1,3 +1,4 @@
+import { rasterMaskPath } from "./maskPath";
 // WebGL2 compositor: draws a frame plan (src/lib/render/plan.ts) into a
 // canvas. One GL context, a small pool of canvas-sized framebuffers, and a
 // fixed pass order:
@@ -30,7 +31,7 @@ import type { GradeParams } from "../lib/grade";
 import { fit1d, type Lut } from "../lib/lut";
 import { lutFor } from "./luts";
 import type { Placement } from "../lib/motionBlur";
-import type { BlendMode, Border, DropShadow, MatteMode } from "../lib/project/types";
+import type { BlendMode, Border, DropShadow, MatteMode, Mask } from "../lib/project/types";
 import { floodSteps } from "../lib/border";
 import type { Layer, PlanItem, ResolvedEffect, Tone } from "../lib/render/plan";
 import { featherReach, parseColor, shapeExtent, strokePx } from "../lib/shapes";
@@ -100,7 +101,7 @@ interface RenderedSource {
 type DrawSource = SourceImage | RenderedSource;
 const isRendered = (s: DrawSource | null): s is RenderedSource => !!s && "rendered" in s;
 
-const MASK_SHAPES = { linear: 1, mirror: 2, circle: 3, rectangle: 4, heart: 5, star: 6 } as const;
+const MASK_SHAPES = { linear: 1, mirror: 2, circle: 3, rectangle: 4, heart: 5, star: 6, path: 7 } as const;
 const SHAPE_IDS = { rectangle: 1, ellipse: 2, line: 3 } as const;
 
 /** A CSS color as straight RGBA for a uniform, parsed once. */
@@ -169,6 +170,8 @@ function hexToRgb(hex: string): [number, number, number] {
 
 export class Compositor {
   private disposed = false;
+  private usedPathMasks = new Set<string>();
+  private pathMasks = new Map<string, { key: string; tex: WebGLTexture; bounds: { left: number; top: number; right: number; bottom: number } }>();
   readonly gl: WebGL2RenderingContext;
   private quad: WebGLBuffer;
   private vao: WebGLVertexArrayObject;
@@ -567,6 +570,50 @@ export class Compositor {
 
   // ---- color uniforms ------------------------------------------------------------
 
+  private setMaskUniforms(u: (n: string) => WebGLUniformLocation | null, mask: Mask | undefined, id: string, lw: number, lh: number) {
+    const gl = this.gl;
+    const old = this.pathMasks.get(id);
+    if (old && mask?.shape !== "path") { gl.deleteTexture(old.tex); this.pathMasks.delete(id); }
+    gl.uniform1i(u("u_maskShape"), mask ? (MASK_SHAPES[mask.shape] ?? 0) : 0);
+    gl.activeTexture(gl.TEXTURE5);
+    // A sampler must always be complete, even when its branch is disabled.
+    let tex = this.blank();
+    if (mask) {
+      gl.uniform2f(u("u_maskCenter"), mask.x, mask.y);
+      gl.uniform2f(u("u_maskSize"), mask.width, mask.height);
+      gl.uniform1f(u("u_maskRotation"), mask.rotation * Math.PI / 180);
+      gl.uniform1f(u("u_maskFeather"), mask.feather);
+      gl.uniform1f(u("u_maskRadius"), mask.shape === "rectangle" ? Math.max(0, Math.min(1, mask.radius ?? 0)) : 0);
+      gl.uniform1i(u("u_maskInvert"), mask.invert ? 1 : 0);
+      if (mask.shape === "path") {
+        this.usedPathMasks.add(id);
+        const key = JSON.stringify([mask.points, mask.closed, mask.width, mask.height, mask.feather, lw, lh]);
+        let hit = this.pathMasks.get(id);
+        if (hit?.key !== key) {
+          if (hit) gl.deleteTexture(hit.tex);
+          this.pathMasks.delete(id);
+          const { canvas, bounds } = rasterMaskPath(mask, lw, lh);
+          tex = this.makeTexture();
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+          hit = { key, tex, bounds };
+        }
+        // Bounded LRU: eight masks, at most 4 MiB apiece, across compounds.
+        this.pathMasks.delete(id);
+        this.pathMasks.set(id, hit);
+        while (this.pathMasks.size > 8) {
+          const first = this.pathMasks.keys().next().value!;
+          gl.deleteTexture(this.pathMasks.get(first)!.tex);
+          this.pathMasks.delete(first);
+        }
+        tex = hit.tex;
+        const b = hit.bounds;
+        gl.uniform4f(u("u_pathBounds"), b.left, b.top, b.right, b.bottom);
+      }
+    }
+    this.bindTex(5, tex, u("u_maskPath"));
+  }
+
   private setColorUniforms(u: (n: string) => WebGLUniformLocation | null, adjust: Layer["adjust"], tone: Tone | undefined, time: number, grade: GradeParams | undefined) {
     const gl = this.gl;
     const k = (v: number) => v / 100;
@@ -819,6 +866,8 @@ export class Compositor {
       gl.uniform1f(u("u_maskAspect"), Math.abs(g.visH) > 1e-6 ? Math.abs(g.visW / g.visH) : 1);
     };
     gl.uniform4f(u("u_crop"), left, top, 1 - right, 1 - bottom);
+    gl.uniform1f(u("u_cropFeather"), (layer.crop.feather ?? 0) * H / 1080);
+    gl.uniform2f(u("u_cropSize"), sw * fit * (1 - left - right), sh * fit * (1 - top - bottom));
     gl.uniformMatrix3fv(u("u_uv"), false, uvMatrix(src && !isRendered(src) ? src.rotation : 0, isRendered(src)));
     gl.uniform1i(u("u_fbo"), isRendered(src) ? 1 : 0);
     gl.uniform1i(u("u_solid"), solid || shape || !src ? 1 : 0);
@@ -864,16 +913,7 @@ export class Compositor {
       gl.uniform1f(u("u_keySmoothness"), key.smoothness);
       gl.uniform1f(u("u_keySpill"), key.spill);
     }
-    const mask = layer.mask;
-    gl.uniform1i(u("u_maskShape"), mask ? (MASK_SHAPES[mask.shape] ?? 0) : 0);
-    if (mask) {
-      gl.uniform2f(u("u_maskCenter"), mask.x, mask.y);
-      gl.uniform2f(u("u_maskSize"), mask.width, mask.height);
-      gl.uniform1f(u("u_maskRotation"), (mask.rotation * Math.PI) / 180);
-      gl.uniform1f(u("u_maskFeather"), mask.feather);
-      gl.uniform1f(u("u_maskRadius"), mask.shape === "rectangle" ? Math.max(0, Math.min(1, mask.radius ?? 0)) : 0);
-      gl.uniform1i(u("u_maskInvert"), mask.invert ? 1 : 0);
-    }
+    this.setMaskUniforms(u, layer.mask, layer.clipId, sw * fit * (1 - left - right), sh * fit * (1 - top - bottom));
     this.setColorUniforms(u, layer.adjust, layer.tone, layer.time, layer.grade);
 
     if (!samples || !acc) {
@@ -1021,7 +1061,11 @@ export class Compositor {
    */
   render(plan: PlanItem[], sources: (l: Layer) => SourceImage | null, background: string) {
     const gl = this.gl;
+    this.usedPathMasks.clear();
     const accum = this.composite(plan, sources, 0, { n: 0 });
+    for (const [id, cached] of this.pathMasks) if (!this.usedPathMasks.has(id)) {
+      gl.deleteTexture(cached.tex); this.pathMasks.delete(id);
+    }
     this.bindTarget(null);
     const u = this.use(this.program("present", FULLSCREEN_VS, PRESENT_FS));
     this.bindTex(0, accum.tex, u("u_tex"));
@@ -1212,6 +1256,8 @@ export class Compositor {
         this.bindTex(0, accum.tex, m("u_a"));
         this.bindTex(1, graded.tex, m("u_b"));
         gl.uniform1f(m("u_t"), item.opacity);
+        gl.uniform1f(m("u_maskAspect"), this.width / this.height);
+        this.setMaskUniforms(m, item.mask, item.clipId, this.width, this.height);
         this.draw();
         [accum, spare] = [spare, accum];
       }
@@ -1277,6 +1323,8 @@ export class Compositor {
     this.clearCompare();
     for (const tex of [...this.sourceTextures.values(), ...this.slotTextures, ...this.matteTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
     for (const { tex } of this.lutTextures.values()) gl.deleteTexture(tex);
+    for (const { tex } of this.pathMasks.values()) gl.deleteTexture(tex);
+    this.pathMasks.clear();
     if (this.blank2d) gl.deleteTexture(this.blank2d);
     if (this.blank3d) gl.deleteTexture(this.blank3d);
     this.blank2d = this.blank3d = null;

@@ -3,7 +3,7 @@ import { LayoutsSection } from "./LayoutsSection";
 import { runStyle } from "../../lib/textRuns";
 import { EmptyState } from "../EmptyState";
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Bold, CaseLower, CaseSensitive, CaseUpper, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Italic, Loader2, Pin, PinOff, Plus, Ratio, RotateCcw, WandSparkles, Sparkles, Star, Trash2, Underline, X } from "../../icons";
+import { ArrowDown, ArrowUp, Bold, CaseLower, CaseSensitive, CaseUpper, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Italic, Loader2, Pin, PinOff, Plus, Ratio, RotateCcw, WandSparkles, Sparkles, Spline, Star, Trash2, Underline, X } from "../../icons";
 import { EQ_BANDS, fromDb, soundingClips, toDb } from "../../lib/audio";
 import { COMPRESSOR_PRESETS, compressorPreset } from "../../lib/compressor";
 import { crossfadeJoin } from "../../lib/crossfadeJoin";
@@ -64,7 +64,7 @@ import { LEVELS, type StabilizeLevel } from "../../lib/analysis/stabilize";
 import { canListSystemFonts, importFonts, loadSystemFonts, pickFontFiles, useFonts } from "../../state/fonts";
 import "./inspector.css";
 
-export type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "effects" | "text" | "captions" | "transition";
+export type Tab = "mask" | "video" | "audio" | "speed" | "animation" | "adjust" | "effects" | "text" | "captions" | "transition";
 
 // The clip menu's Speed opens that tab: a request waits for the clip's
 // inspector if it is not showing yet (the menu selects the clip first).
@@ -78,6 +78,7 @@ export function showInspectorTab(t: Tab) {
 
 const TAB_LABEL: Record<Tab, string> = {
   video: "Video",
+  mask: "Mask",
   audio: "Audio",
   speed: "Speed",
   animation: "Animation",
@@ -103,7 +104,7 @@ function tabsFor(c: Clip, p: Project): Tab[] {
     case "audio":
       return ["audio", "speed"];
     case "adjustment":
-      return ["adjust", "effects"];
+      return ["adjust", "effects", "mask"];
     case "compound":
       return ["video", "audio", "speed", "animation", "adjust", "effects", ...tr];
   }
@@ -149,6 +150,7 @@ function ClipInspector({ id }: { id: Id }) {
       </nav>
       <div className="insp-body" key={active}>
         <AttributeClipboard clip={clip} />
+        {active === "mask" && <AdjustmentMaskTab clip={clip} />}
         {active === "video" && <VideoTab clip={clip} />}
         {active === "audio" && <AudioTab clip={clip} />}
         {active === "speed" && <SpeedTab clip={clip as ops.TimedClip} />}
@@ -186,7 +188,7 @@ function TransformSection({ clip }: { clip: Clip }) {
       </Row>
       <SliderRow clip={clip} path="transform.x" label="Position X" min={-w} max={w} unit="px" reset={0} show={(v) => v * w} store={(v) => v / w} />
       <SliderRow clip={clip} path="transform.y" label="Position Y" min={-h} max={h} unit="px" reset={0} show={(v) => -v * h} store={(v) => -v / h} />
-      <SliderRow clip={clip} path="transform.rotation" label="Rotate" min={-360} max={360} step={0.1} digits={1} unit="°" reset={0} />
+      <SliderRow dial clip={clip} path="transform.rotation" label="Rotate" min={-360} max={360} step={0.1} digits={1} unit="°" reset={0} />
       {/* Perspective tilt (ADR-070): a floating window turned in depth. */}
       <SliderRow clip={clip} path="transform.rotateX" label="Tilt X" min={-80} max={80} step={0.5} digits={1} unit="°" reset={0} />
       <SliderRow clip={clip} path="transform.rotateY" label="Tilt Y" min={-80} max={80} step={0.5} digits={1} unit="°" reset={0} />
@@ -398,9 +400,12 @@ function CropSection({ clip }: { clip: Clip }) {
       {cropping ? (
         <p className="insp-hint">Drag the handles on the viewer or pick a ratio under it. Done keeps the crop; Cancel leaves it as it was.</p>
       ) : (
-        (["left", "top", "right", "bottom"] as const).map((k) => (
-          <SliderRow key={k} clip={clip} path={`crop.${k}`} label={k[0].toUpperCase() + k.slice(1)} min={0} max={95} unit="%" reset={0} keyframes={false} {...pct} />
-        ))
+        <>
+          <SliderRow clip={clip} path="crop.feather" label="Softness" min={0} max={540} unit="px" reset={0} keyframes={false} />
+          {(["left", "top", "right", "bottom"] as const).map((k) => (
+            <SliderRow key={k} clip={clip} path={`crop.${k}`} label={k[0].toUpperCase() + k.slice(1)} min={0} max={95} unit="%" reset={0} keyframes={false} {...pct} />
+          ))}
+        </>
       )}
     </Section>
   );
@@ -469,16 +474,21 @@ function CanvasSection({ clip }: { clip: Clip }) {
 }
 
 /** The mask's shapes as CapCut lists them; heart and star wear icons. */
-const MASK_ICONS: Partial<Record<MaskShape, React.ReactNode>> = { heart: <Heart size={16} />, star: <Star size={16} /> };
+const MASK_ICONS: Partial<Record<MaskShape, React.ReactNode>> = { heart: <Heart size={16} />, star: <Star size={16} />, path: <Spline size={16} /> };
+
+function AdjustmentMaskTab({ clip }: { clip: Clip }) {
+  useEffect(() => { store.set({ maskHandles: true }); return () => store.set({ maskHandles: false }); }, []);
+  return <MaskSection clip={clip} />;
+}
 
 function MaskSection({ clip }: { clip: Clip }) {
-  if (!("transform" in clip)) return null;
+  if (clip.type === "audio") return null;
   const m = clip.mask;
   const setShape = (shape: MaskShape | "none") =>
     patchClip(clip.id, "Mask", (c) => {
       const next = { ...c } as Clip & { mask?: Mask };
       if (shape === "none") delete next.mask;
-      else next.mask = m ? { ...m, shape } : newMask(shape, pictureAspect(store.get().project, c as VisualClip, store.get().playhead));
+      else next.mask = m && shape !== "path" ? { ...m, shape } : newMask(shape, pictureAspect(store.get().project, c as VisualClip, store.get().playhead));
       return next;
     });
   const sized = m && m.shape !== "linear" && m.shape !== "mirror";

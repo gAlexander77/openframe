@@ -388,7 +388,7 @@ describe("set_mask", () => {
     expect(() => runCommand(p, "set_mask", { clip_ids: [id], shape: "triangle" })).toThrow(/must be one of/);
     const q = runCommand(p, "add_adjustment_clip", { start: 0, duration: 2 });
     const adj = q.tracks.flatMap((t) => t.clips).find((c) => c.type === "adjustment")!;
-    expect(() => runCommand(q, "set_mask", { clip_ids: [adj.id], shape: "circle" })).toThrow(/no picture/);
+    expect(runCommand(q, "set_mask", { clip_ids: [adj.id], shape: "circle" }).tracks.flatMap((t) => t.clips).find((c) => c.id === adj.id)).toMatchObject({ mask: { shape: "circle" } });
   });
 });
 

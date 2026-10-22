@@ -1,4 +1,5 @@
 import { FADE_CURVES, type FadeCurve } from "./project/types";
+import { cleanMaskPoints } from "./maskPath";
 import { moveMotionPoint } from "./motionPoint";
 import { transformGroup } from "./groupTransform";
 import { applyLayout, LAYOUTS, type Layout, type LayoutOptions } from "./layouts";
@@ -28,7 +29,7 @@ import {
 import * as ops from "./project/ops";
 import { assetRole, assetsOf, roleTrack, trackRole } from "./audioRoles";
 import { TRACK_ROLES } from "./project/defaults";
-import type { Adjust, Anchor, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextRun, TextStyle, Track, TrackMatte, Transform, VisualClip, WheelName, Wiggle, WiggleTarget } from "./project/types";
+import type { Adjust, Anchor, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextRun, TextStyle, Track, TrackMatte, Transform, WheelName, Wiggle, WiggleTarget } from "./project/types";
 import { anchorOf, anchorProblem, anchorSummary, followAnchors } from "./anchors";
 import { placeSounds } from "./sfx";
 import { addCallout, CALLOUT_SHAPES, CALLOUT_STROKE, CalloutError, type CalloutShape } from "./callouts";
@@ -240,9 +241,9 @@ function trimStopReason(p: Project, c: Clip, edge: ops.Edge, why: ops.TrimStop):
  * stays inside, is inverted, or is a line or a band (Claude film test 2: a
  * porthole's circle ran past the picture's bottom edge in silence). */
 function maskEdgeNote(p: Project, id: Id, rel: number, at: number): string | undefined {
-  const c = ops.findClip(p, id)?.clip as VisualClip | undefined;
+  const c = ops.findClip(p, id)?.clip;
   const m = c && "mask" in c ? c.mask : undefined;
-  if (!c || !m || m.invert) return undefined;
+  if (!c || c.type === "audio" || !m || m.invert) return undefined;
   const v = (k: string) => paramAt(c, `mask.${k}`, rel);
   const now = { ...m, x: v("x"), y: v("y"), width: v("width"), height: v("height"), rotation: v("rotation") };
   const r = maskReach(now, pictureAspect(p, c, at));
@@ -1370,7 +1371,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_crop",
-    description: `Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions of the source trimmed from each edge (0 keeps the edge; each pair must leave at least ${MIN_CROP * 100}% of the picture); edges left out keep their value. Or give ratio instead for the largest centered crop of that shape on each clip's source (original: uncropped). The crop is cut from the source before flips, scale and rotation, and the part kept stays where it was.`,
+    description: `Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions of the source trimmed from each edge (0 keeps the edge; each pair must leave at least ${MIN_CROP * 100}% of the picture); edges left out keep their value. Or give ratio instead for the largest centered crop of that shape on each clip's source (original: uncropped). feather softens inward in pixels at a 1080-tall render (0 is hard). The crop is cut from the source before flips, scale and rotation, and the part kept stays where it was.`,
     input: S.obj(
       {
         clip_ids: S.ids("Visual clips"),
@@ -1378,31 +1379,32 @@ export const COMMANDS: Command[] = [
         top: S.num("Fraction trimmed from the top", { minimum: 0, maximum: 1 - MIN_CROP }),
         right: S.num("Fraction trimmed from the right", { minimum: 0, maximum: 1 - MIN_CROP }),
         bottom: S.num("Fraction trimmed from the bottom", { minimum: 0, maximum: 1 - MIN_CROP }),
+        feather: S.num("Inward edge softness, pixels at a 1080-tall render", { minimum: 0, maximum: 1080 }),
         ratio: S.str("Crop to this shape, centered", { enum: CROP_RATIOS.filter((r) => r !== "free") }),
       },
       ["clip_ids"],
     ),
     run: (p, a) => {
       const ids = a.clip_ids as Id[];
-      const edges = Object.fromEntries((["left", "top", "right", "bottom"] as const).filter((k) => a[k] !== undefined).map((k) => [k, Number(a[k])])) as Partial<Crop>;
+      const edges = Object.fromEntries((["left", "top", "right", "bottom", "feather"] as const).filter((k) => a[k] !== undefined).map((k) => [k, Number(a[k])])) as Partial<Crop>;
       for (const id of ids) {
         const { clip } = clipOrThrow(p, id);
         if (!("crop" in clip)) throw new CommandError(`${clip.type} clips have no picture to crop`);
         if (a.ratio === undefined && !validCrop({ ...clip.crop, ...edges })) throw new CommandError(`the crop on ${id} must leave at least ${MIN_CROP * 100}% of the picture each way`);
       }
       if (a.ratio !== undefined) {
-        if (Object.keys(edges).length) throw new CommandError("give either edges or a ratio, not both");
-        return cropToRatio(p, ids, a.ratio as CropRatio);
+        if (Object.keys(edges).some((k) => k !== "feather")) throw new CommandError("give either edges or a ratio, not both");
+        return cropClips(cropToRatio(p, ids, a.ratio as CropRatio), ids, a.feather !== undefined ? { feather: Number(a.feather) } : {});
       }
       return cropClips(p, ids, edges);
     },
   },
   {
     name: "set_mask",
-    description: "CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs. With at (timeline seconds), the values given are keyed there: one with no keys yet first gets a key at the clip's start holding what it was, so two calls (the same values at the moment it leaves, the new ones where it lands) move the mask; on a mask this call makes, at is not used (the answer says so). A spotlight that follows a screen recording's zooms is add_callout.",
+    description: "Masks on pictures and adjustment layers (canvas fractions on an adjustment): shape linear (keeps above a line), mirror (a band), circle, rectangle, heart, star or path; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square); a path starts at unit width and height. A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs. With at (timeline seconds), the values given are keyed there: one with no keys yet first gets a key at the clip's start holding what it was, so two calls (the same values at the moment it leaves, the new ones where it lands) move the mask; on a mask this call makes, at is not used (the answer says so). For path, points are anchors in the mask's own frame as layer fractions; width/height multiply them before rotation and position. in/out are two-number bezier handle offsets; closed defaults true (false leaves an unfilled draft). Points do not animate; at keys only the mask transform. A spotlight that follows a screen recording's zooms is add_callout.",
     input: S.obj(
       {
-        clip_ids: S.ids("Visual clips"),
+        clip_ids: S.ids("Visual or adjustment clips"),
         shape: S.str("Mask shape", { enum: ["none", ...MASK_SHAPES] }),
         x: S.num("Center offset, fraction of the picture's width", { minimum: -1, maximum: 1 }),
         y: S.num("Center offset, fraction of the picture's height", { minimum: -1, maximum: 1 }),
@@ -1411,6 +1413,13 @@ export const COMMANDS: Command[] = [
         rotation: S.num("Degrees, clockwise", { minimum: -360, maximum: 360 }),
         feather: S.num("Edge softness", { minimum: 0, maximum: 1 }),
         radius: S.num("Rectangle corner roundness", { minimum: 0, maximum: 1 }),
+        points: { type: "array", description: "Path anchors (maximum 256), local layer fractions; absent handles are straight corners", items: S.obj({
+          x: S.num("Anchor X, fraction of the layer width", { minimum: -4, maximum: 4 }),
+          y: S.num("Anchor Y, fraction of the layer height", { minimum: -4, maximum: 4 }),
+          in: { type: "array", description: "Incoming bezier handle offset [x,y]", items: S.num("Handle offset in layer fractions", { minimum: -4, maximum: 4 }) },
+          out: { type: "array", description: "Outgoing bezier handle offset [x,y]", items: S.num("Handle offset in layer fractions", { minimum: -4, maximum: 4 }) },
+        }, ["x", "y"]) },
+        closed: S.bool("Close the path (default true); false keeps an unfilled draft"),
         invert: S.bool("Keep the outside instead"),
         aspect: S.num("The mask's width over its height in pixels (1: a round circle, a square); its height follows from width, or its width from a height given alone", { minimum: 0.05, maximum: 20 }),
         at: S.num("Timeline seconds, for animated values"),
@@ -1421,7 +1430,7 @@ export const COMMANDS: Command[] = [
       if (a.aspect !== undefined && a.width !== undefined && a.height !== undefined) throw new CommandError("give width or height with aspect, not both: aspect sets the other");
       for (const id of a.clip_ids as Id[]) {
         const { clip } = clipOrThrow(p, id);
-        if (clip.type === "audio" || clip.type === "adjustment") throw new CommandError(`${clip.type} clips have no picture to mask`);
+        if (clip.type === "audio") throw new CommandError(`${clip.type} clips have no picture to mask`);
         // The mask and its keys: kept, they animated the next mask (ADR-108).
         if (a.shape === "none") {
           p = ops.updateClip(p, clip.id, (c) => withoutKeys(omit(c as Clip & { mask?: unknown }, "mask") as Clip, MASK_PARAMS.map((k) => `mask.${k}`)));
@@ -1432,6 +1441,15 @@ export const COMMANDS: Command[] = [
         if (!now && a.shape === undefined) throw new CommandError(`clip ${id} has no mask yet: give a shape`);
         const shape = (a.shape as MaskShape | undefined) ?? now!.shape;
         let mask: Mask = now ? { ...now, shape } : newMask(shape, pictureAspect(p, clip, clip.start));
+        if (a.points !== undefined) {
+          const points = cleanMaskPoints(a.points);
+          if (!points) throw new CommandError("path points need finite anchors and two-number handles, at most 256 points");
+          if (shape !== "path") throw new CommandError("points require a path mask");
+          // ponytail: individual anchors are static; animate the mask transform
+          // with at today, add topology-aware point keys for morphing later.
+          mask = { ...mask, points, closed: a.closed !== false };
+        }
+        if (a.closed !== undefined) mask = { ...mask, closed: a.closed === true };
         if (a.invert !== undefined) mask = { ...mask, invert: a.invert === true };
         p = ops.updateClip(p, clip.id, (c) => ({ ...c, mask }) as Clip);
         const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
@@ -1440,7 +1458,7 @@ export const COMMANDS: Command[] = [
         // pixels wide for each tall on this picture (ADR-116).
         const sizes: Record<string, unknown> = { ...a };
         if (a.aspect !== undefined) {
-          const now = ops.findClip(p, clip.id)!.clip as VisualClip;
+          const now = ops.findClip(p, clip.id)!.clip as Exclude<Clip, { type: "audio" }>;
           const width = a.width !== undefined ? Number(a.width) : a.height !== undefined ? undefined : paramAt(now, "mask.width", rel ?? 0);
           const s = sizeForAspect({ width, height: a.height !== undefined ? Number(a.height) : undefined }, Number(a.aspect), pictureAspect(p, now, at));
           sizes.width = +s.width.toFixed(5);
@@ -3446,10 +3464,22 @@ function placement(t: Transform) {
   return Object.keys(out).length ? { transform: out } : {};
 }
 
+/** Masks on pictures and adjustments share the command's inspectable shape. */
+function maskSummary(m: Mask | undefined) {
+  if (!m) return {};
+  const r = (v: number) => +v.toFixed(4);
+  return { mask: { shape: m.shape, x: r(m.x), y: r(m.y), width: r(m.width), height: r(m.height),
+    ...(m.rotation ? { rotation: r(m.rotation) } : {}), ...(m.feather ? { feather: r(m.feather) } : {}),
+    ...(m.radius ? { radius: r(m.radius) } : {}), ...(m.invert ? { invert: true } : {}),
+    ...(m.shape === "path" ? { points: m.points ?? [], closed: m.closed !== false } : {}),
+  } };
+}
+
 /** Shapes, mattes, motion blur, edges and wiggles, for describeProject
  * (ADR-056 to ADR-059, ADR-062): what an agent needs to check its graphics. */
 function graphicsSummary(c: Clip) {
-  if (!("transform" in c)) return {};
+  if (c.type === "audio") return {};
+  if (c.type === "adjustment") return maskSummary(c.mask);
   const r = (v: number) => +v.toFixed(4);
   const s = c.type === "color" ? c.shape : undefined;
   return {
@@ -3469,16 +3499,12 @@ function graphicsSummary(c: Clip) {
           },
         }
       : {}),
-    // A mask and a crop, as set_mask and set_crop take them, so a framed
-    // picture (a round picture-in-picture, a split screen's half) can be checked.
-    ...("mask" in c && c.mask ? { mask: { shape: c.mask.shape, x: r(c.mask.x), y: r(c.mask.y), width: r(c.mask.width), height: r(c.mask.height), ...(c.mask.rotation ? { rotation: r(c.mask.rotation) } : {}), ...(c.mask.feather ? { feather: r(c.mask.feather) } : {}), ...(c.mask.radius ? { radius: r(c.mask.radius) } : {}), ...(c.mask.invert ? { invert: true } : {}) } } : {}),
-    ...("crop" in c && c.crop && c.crop.left + c.crop.right + c.crop.top + c.crop.bottom > 0 ? { crop: { left: r(c.crop.left), top: r(c.crop.top), right: r(c.crop.right), bottom: r(c.crop.bottom) } } : {}),
+    // The same fields set_mask/set_crop accept, so agents can inspect them.
+    ...maskSummary(c.mask),
+    ...("crop" in c && c.crop && c.crop.left + c.crop.right + c.crop.top + c.crop.bottom + (c.crop.feather ?? 0) > 0 ? { crop: { left: r(c.crop.left), top: r(c.crop.top), right: r(c.crop.right), bottom: r(c.crop.bottom), ...(c.crop.feather ? { feather: r(c.crop.feather) } : {}) } } : {}),
     ...(c.trackMatte ? { track_matte: { mode: c.trackMatte.mode, matte: c.trackMatte.clipId ?? "above" } } : {}),
     ...(c.motionBlur ? { motion_blur: { shutter_angle: c.motionBlur.shutter } } : {}),
     ...(c.edge ? { edge: c.edge } : {}),
-    // The mask as set_mask takes it: describe_project left it out, so a
-    // model could not see the masks it had set (ADR-099).
-    ...(c.mask ? { mask: { shape: c.mask.shape, x: r(c.mask.x), y: r(c.mask.y), width: r(c.mask.width), height: r(c.mask.height), ...(c.mask.rotation ? { rotation: r(c.mask.rotation) } : {}), ...(c.mask.feather ? { feather: r(c.mask.feather) } : {}), ...(c.mask.radius ? { radius: r(c.mask.radius) } : {}), ...(c.mask.invert ? { invert: true } : {}) } } : {}),
     ...(c.shadow ? { shadow: c.shadow } : {}),
     ...(c.border ? { border: c.border } : {}),
     ...(c.wiggle ? { wiggle: Object.fromEntries(Object.entries(c.wiggle).map(([k, w]) => [k, { frequency: w.frequency, amplitude: r(w.amplitude), ...(w.strength !== undefined ? { strength: w.strength } : {}), seed: w.seed }])) } : {}),
