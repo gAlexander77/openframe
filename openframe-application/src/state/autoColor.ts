@@ -1,3 +1,4 @@
+import { projectWork } from "./projectWork";
 // Auto adjust (CapCut's Auto adjust): draw the clip's own picture at the
 // playhead with its Basic adjustments, filter and effects off, measure it,
 // and set exposure, white balance and levels to correct it
@@ -30,6 +31,7 @@ export async function sampleColorFrames(p: Project, frames: number[], w: number,
 }
 
 export async function autoAdjustClip(clipId?: Id): Promise<AutoAdjust> {
+  const signal = projectWork.capture();
   const s = store.get();
   const p = s.project;
   const id = clipId ?? s.selection[0];
@@ -46,7 +48,8 @@ export async function autoAdjustClip(clipId?: Id): Promise<AutoAdjust> {
   for (const key of ["filter", "mask", "chromaKey", "animIn", "animOut", "animLoop", "transitionOut", "canvas", "cutout"]) delete plain[key];
   const solo: Project = { ...p, width: w, height: h, tracks: [{ ...createTrack("video", "Main", true), clips: [plain as Clip] }] };
   const f = Math.min(Math.max(s.playhead, c.start), c.start + c.duration - 1);
-  const [pixels] = await sampleColorFrames(solo, [f], w, h);
+  const [pixels] = await sampleColorFrames(solo, [f], w, h, undefined, signal);
+  signal.throwIfAborted();
   const v = autoAdjust(frameStats(pixels));
   if (!findClip(store.get().project, c.id)) throw new Error("The clip was removed meanwhile");
   store.edit("Auto adjust", (q) => updateClip(q, c.id, (x) => ("adjust" in x ? ({ ...x, adjust: { ...x.adjust, ...v } } as Clip) : x)));

@@ -9,7 +9,18 @@ async (page) => {
     const call = async (name, args = {}) => {
       const r = await ve.mcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } });
       if (r.result.isError) throw new Error(r.result.content[0].text);
-      return JSON.parse(r.result.content[0].text);
+      const answer = JSON.parse(r.result.content[0].text);
+      if (!answer.job_id) return answer;
+      let job = answer;
+      const deadline = Date.now() + 20 * 60_000;
+      while (job.state === "running" && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const poll = await window.videoEditor.mcp({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "job_status", arguments: { job_id: answer.job_id } } });
+        if (poll.error || poll.result?.isError) throw new Error(JSON.stringify(poll));
+        job = JSON.parse(poll.result.content[0].text);
+      }
+      if (job.state !== "done") throw new Error(`${name}: ${JSON.stringify(job)}`);
+      return job.result;
     };
     const [a] = await ve.import([{ name: "speech-test.wav", src: location.origin + "/fixtures/media/speech-test.wav" }]);
     ve.exec("add_media_clip", { asset_id: a.id, start: 0 });

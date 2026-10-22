@@ -1,8 +1,7 @@
 import type { AudioClip } from "./project/types";
-import { timelineWords } from "./transcript";
 import { createProject, clipForAsset } from "./project/defaults";
 import { expect, it } from "vitest";
-import { merge, missing, wordRanges, wordsIn } from "./transcript";
+import { merge, missing, speechWindow, timelineWords, wordRanges, wordsIn } from "./transcript";
 
 const w = (text: string, start: number, end: number) => ({ text, start, end });
 const words = [w("So", 0, 0.3), w("this", 0.4, 0.6), w("part", 0.65, 0.9), w("goes", 0.95, 1.2), w("away", 1.25, 1.5), w("now", 2.5, 2.8)];
@@ -40,4 +39,17 @@ it("merges the reported planet overlap into one monotonic source word", () => {
   const h = merge(undefined, 0, 60, [w("planet.", 27.5, 28), w("planet", 27.77, 28.55), w("Next", 28.4, 29)]);
   expect(h.words.map(x => x.text)).toEqual(["planet.", "Next"]);
   expect(h.words.every((x, i) => x.end > x.start && (!i || x.start >= h.words[i - 1].end))).toBe(true);
+});
+
+
+it("hears a trimmed middle clip plus sentence margins, bounded by the asset", () => {
+  const p = createProject({ fps: { num: 30, den: 1 } });
+  const asset = { id: "vod", kind: "audio" as const, name: "VOD", src: "vod.wav", duration: 360, hasAudio: true, hasVideo: false };
+  p.assets = [asset];
+  const clip = { ...clipForAsset(asset, 0, p.fps), in: 180, duration: 900 } as import("./project/types").AudioClip;
+  expect(speechWindow(p, clip)).toEqual([177, 213]);
+  expect(speechWindow(p, clip, 10, 20)).toEqual([187, 203]);
+  expect(speechWindow(p, { ...clip, in: 0 })).toEqual([0, 33]);
+  expect(speechWindow(p, { ...clip, in: 340, duration: 600 })).toEqual([337, 360]);
+  expect(speechWindow(p, { ...clip, speed: 2 }, 10, 20)).toEqual([197, 223]);
 });

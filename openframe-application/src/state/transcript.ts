@@ -12,7 +12,7 @@ import { runCommand } from "../lib/commands";
 import { frameOfSource } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project, Track } from "../lib/project/types";
-import { merge, missing, wordRanges, wordsIn, type Heard } from "../lib/transcript";
+import { merge, missing, speechWindow, wordRanges, wordsIn, type Heard } from "../lib/transcript";
 import { assetWords } from "../lib/scriptWords";
 import { edit } from "./actions";
 import { projectWork } from "./projectWork";
@@ -70,82 +70,65 @@ export function clipWords(p: Project, c: SpeechClip): Word[] | null {
 /** The timeline frame a word of `c` starts at. */
 export const wordFrame = (p: Project, c: SpeechClip, w: Word) => Math.max(c.start, frameOfSource(c, w.start, p.fps));
 
-/** Hear the whole source once, so trimmed clips keep the same context and
- * filler words as get_transcript. An explicit different model re-hears it. */
+/** Model and language belong to the cached source windows. */
 const models = new Map<Id, string>();
 const languages = new Map<Id, string | null>();
-const listening = new Map<string, Promise<void>>();
 let hearing: Promise<void> = Promise.resolve();
-/** Highlight refinement shares the per-asset words and ASR queue, but only
- * decodes/hears the candidate plus its small context margin. */
+export interface Hearing { audio_seconds: number; elapsed_seconds: number; model: string; cached: boolean }
+
+/** Highlight refinement and clip tools share the same window cache and ASR
+ * queue. Words always remain in source seconds. */
 export async function hearWindow(p: Project, assetId: Id, from: number, to: number, signal: AbortSignal, onProgress: (s: import("../engine/transcribe").TranscribeProgress) => void): Promise<Word[]> {
+  await hearAsset(p, assetId, { from, to, model: TRANSCRIPT_MODEL, language: null }, signal, onProgress);
+  return wordsIn(heard.get(assetId)?.words ?? [], from, to);
+}
+export async function hearAsset(p: Project, assetId: Id, opts: { model?: string; language?: string | null; from?: number; to?: number } = {}, signal = projectWork.capture(), onProgress: (s: import("../engine/transcribe").TranscribeProgress) => void = () => {}): Promise<Hearing> {
+  const started = performance.now();
   const asset = ops.getAsset(p, assetId);
-  if (!asset?.hasAudio) return [];
+  if (!asset?.hasAudio) throw new Error("The media has no speech audio");
+  const from = Math.max(0, opts.from ?? 0), to = Math.min(asset.duration, opts.to ?? asset.duration);
+  const model = opts.model ?? models.get(assetId) ?? TRANSCRIPT_MODEL;
+  const language = opts.language === undefined ? languages.get(assetId) ?? null : opts.language;
   const task = hearing.catch(() => {}).then(async () => {
     signal.throwIfAborted();
-    const compatible = models.get(assetId) === TRANSCRIPT_MODEL && (languages.get(assetId) ?? "en") === "en";
-    if (!compatible || missing(heard.get(assetId), from, to)) {
-      const pcm = await decodeMono(asset, from, to, 16000, progress => onProgress({ stage: "mixing", progress }), signal);
-      const words = await transcribePcm(pcm, from, { model: TRANSCRIPT_MODEL, language: null }, onProgress, signal);
-      signal.throwIfAborted();
-      const previous = compatible ? heard.get(assetId) : undefined;
-      heard.set(assetId, merge(previous, from, to, assetWords(p, assetId, from, to, words)));
-      models.set(assetId, TRANSCRIPT_MODEL); languages.set(assetId, null); changed();
-    }
-    return wordsIn(heard.get(assetId)!.words, from, to);
+    const compatible = models.get(assetId) === model && (languages.get(assetId) ?? "en") === (language ?? "en");
+    if (compatible && !missing(heard.get(assetId), from, to)) return { audio_seconds: 0, elapsed_seconds: (performance.now() - started) / 1000, model, cached: true };
+    const pcm = await decodeMono(asset, from, to, 16000, progress => onProgress({ stage: "mixing", progress }), signal);
+    const words = await transcribePcm(pcm, from, { model, language }, onProgress, signal);
+    signal.throwIfAborted();
+    heard.set(assetId, merge(compatible ? heard.get(assetId) : undefined, from, to, assetWords(p, assetId, from, to, words)));
+    models.set(assetId, model); languages.set(assetId, language); changed();
+    return { audio_seconds: pcm.length / 16000, elapsed_seconds: (performance.now() - started) / 1000, model, cached: false };
   });
   hearing = task.then(() => {}, () => {});
-  // Cancel promptly even while another tool owns the ASR queue. The queued
-  // task still checks the signal before it starts and never runs inference.
-  return new Promise<Word[]>((resolve, reject) => {
+  // Cancel promptly while queued; the queued task checks again before ASR.
+  return new Promise<Hearing>((resolve, reject) => {
     const abort = () => reject(signal.reason);
-    if (signal.aborted) abort();
-    else signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort(); else signal.addEventListener("abort", abort, { once: true });
     task.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
   });
 }
-export async function hearAsset(p: Project, assetId: Id, opts: { model?: string; language?: string | null; from?: number; to?: number } = {}, signal = projectWork.signal(), onProgress: (s: import("../engine/transcribe").TranscribeProgress) => void = () => {}) {
-  const asset = ops.getAsset(p, assetId);
-  if (!asset?.hasAudio) throw new Error("The media has no speech audio");
-  const from = opts.from ?? 0, to = opts.to ?? asset.duration;
-  const model = opts.model ?? models.get(assetId) ?? TRANSCRIPT_MODEL;
-  const language = opts.language ?? languages.get(assetId) ?? null;
-  if (!missing(heard.get(assetId), from, to) && models.get(assetId) === model && (languages.get(assetId) ?? "en") === (language ?? "en")) return;
-  const key = `${assetId}:${model}:${language ?? "en"}:${from}:${to}`;
-  const pending = listening.get(key);
-  if (pending) return pending;
-  // The ASR worker has one model/session. Share simultaneous requests for
-  // one source and serialize different hearings, including model changes.
-  const task = hearing.catch(() => {}).then(async () => {
-    signal.throwIfAborted();
-    const pcm = await decodeMono(asset, from, to, 16000, (progress) => onProgress({ stage: "mixing", progress }), signal);
-    const words = await transcribePcm(pcm, from, { model, language }, onProgress, signal);
-    signal.throwIfAborted();
-    heard.set(assetId, merge(models.get(assetId) === model && languages.get(assetId) === language ? heard.get(assetId) : undefined, from, to, assetWords(p, assetId, from, to, words)));
-    models.set(assetId, model);
-    languages.set(assetId, language);
-    changed();
-  });
-  listening.set(key, task);
-  hearing = task;
-  try { await task; }
-  finally { if (listening.get(key) === task) listening.delete(key); }
+
+export async function hearClip(p: Project, c: SpeechClip, opts: { model?: string; language?: string | null; start?: number; end?: number } = {}, signal = projectWork.capture(), onProgress: (s: import("../engine/transcribe").TranscribeProgress) => void = () => {}) {
+  const [from, to] = speechWindow(p, c, opts.start, opts.end);
+  const hearing = await hearAsset(p, c.assetId, { ...opts, model: opts.model ?? TRANSCRIPT_MODEL, language: opts.language ?? null, from, to }, signal, onProgress);
+  return { ...hearing, words: wordsIn(heard.get(c.assetId)?.words ?? [], c.in, ops.sourceTimeAt(c, c.start + c.duration, p.fps)) };
 }
 
 /** Hear every clip of `track` not heard yet. */
 export async function transcribeTrack(trackId: Id) {
   if (busy) return;
   busy = new AbortController();
-  const signal = AbortSignal.any([busy.signal, projectWork.signal()]);
+  const signal = AbortSignal.any([busy.signal, projectWork.capture()]);
   changed();
-  const id = toast("Listening…", "progress");
+  const id = toast("Listening…", "progress", undefined, { label: "Cancel", run: cancelTranscript });
   try {
     const p = store.get().project;
     const track = ops.findTrack(p, trackId);
     const todo = track ? speechClips(p, track).filter((c) => !clipWords(p, c)) : [];
     for (const [k, c] of todo.entries()) {
       const asset = ops.getAsset(p, c.assetId)!;
-      await hearAsset(p, c.assetId, {}, signal, (s) => {
+      await hearClip(p, c, {}, signal, (s) => {
         updateToast(id, { text: s.stage === "downloading" ? "Downloading the speech model\u2026" : `Listening to ${asset.name}\u2026`, progress: (k + s.progress) / todo.length });
       });
     }
@@ -162,13 +145,18 @@ export const cancelTranscript = () => busy?.abort();
 
 /** For agents: hear the clip's track if needed and return the clip's words
  * in source seconds, ready for cut_ranges. */
-export async function clipTranscript(clipId: Id, opts: { model?: string } = {}): Promise<{ clipId: Id; words: Word[] }> {
-  const loc = ops.findClip(store.get().project, clipId);
-  if (!loc || (loc.clip.type !== "video" && loc.clip.type !== "audio")) throw new Error("Select a video or audio clip with speech");
-  await hearAsset(store.get().project, loc.clip.assetId, opts);
-  const p = store.get().project;
-  const c = ops.findClip(p, clipId)?.clip as SpeechClip | undefined;
-  return { clipId, words: (c && clipWords(p, c)) ?? [] };
+export async function clipTranscript(clipId: Id, opts: { model?: string } = {}) {
+  const signal = projectWork.capture();
+  const notice = toast("Listening to clip\u2026", "progress");
+  try {
+    const loc = ops.findClip(store.get().project, clipId);
+    if (!loc || (loc.clip.type !== "video" && loc.clip.type !== "audio")) throw new Error("Select a video or audio clip with speech");
+    const hearing = await hearClip(store.get().project, loc.clip, opts, signal, s => updateToast(notice, { progress: s.progress, text: `${s.stage} speech\u2026` }));
+    signal.throwIfAborted();
+    const p = store.get().project;
+    const c = ops.findClip(p, clipId)?.clip as SpeechClip | undefined;
+    return { clipId, ...hearing, words: (c && clipWords(p, c)) ?? [] };
+  } finally { dismiss(notice); }
 }
 
 /** Cut the chosen words (by clip and index into clipWords) and close the

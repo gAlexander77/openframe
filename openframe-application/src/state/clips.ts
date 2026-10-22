@@ -22,7 +22,7 @@ export const createdClipProjects = () => [...latest];
 
 /** Shared by Make clips and create_clips. It builds a detached document;
  * the open document, its selection, nested view and undo stay untouched. */
-export async function makeClipProject(source: Project, asset: Asset, plan: ClipPlan, template: ClipTemplate, signal: AbortSignal): Promise<{ project: Project; captions: number; notes: string[] }> {
+export async function makeClipProject(source: Project, asset: Asset, plan: ClipPlan, template: ClipTemplate, signal: AbortSignal, onProgress?: (fraction: number, stage: string) => void): Promise<{ project: Project; captions: number; notes: string[] }> {
   let p = createProject({ name: plan.name, width: plan.width, height: plan.height, fps: source.fps });
   // References only, including playbackProxy. Brand logos also share files.
   p.assets = source.assets.filter(a => a.id === asset.id || Object.values(source.brand?.logos ?? {}).includes(a.id));
@@ -35,7 +35,7 @@ export async function makeClipProject(source: Project, asset: Asset, plan: ClipP
   if (plan.steps.includes("captions")) {
     if (!asset.hasAudio) notes.push("Source has no audio; no captions were generated.");
     else {
-      await hearAsset(p, asset.id, { from: plan.sourceIn, to: plan.sourceIn + plan.seconds }, signal);
+      await hearAsset(p, asset.id, { from: plan.sourceIn, to: plan.sourceIn + plan.seconds }, signal, s => onProgress?.(s.progress * 0.7, `${s.stage}: captions for ${plan.name}`));
       signal.throwIfAborted();
       const words = timelineWords(p, video, clipWords(p, video) ?? []);
       const opts = template.captions || {};
@@ -54,7 +54,7 @@ export async function makeClipProject(source: Project, asset: Asset, plan: ClipP
     p = runCommand(p, "add_ad_element", { element: "end_card", start: plan.seconds, duration: 2, headline: `Follow ${name} on ${site}`, cta: handle || `Follow ${name}`, url: "", logo: "none" });
   }
   if (asset.hasAudio) {
-    const m = await measureMix(p, 0, plan.seconds, { signal });
+    const m = await measureMix(p, 0, plan.seconds, { signal, onProgress: x => onProgress?.(0.7 + x * 0.3, `Measuring dialog for ${plan.name}`) });
     signal.throwIfAborted();
     if (Number.isFinite(m.integrated)) {
       const n = normalizeGain(m.integrated, template.loudness ?? -14, m.truePeak);
@@ -71,15 +71,16 @@ export async function createClips(request: CreateClipsRequest) {
   if (!asset || asset.kind !== "video") throw new Error("Choose an imported video VOD");
   const template = request.template ?? {};
   const plans = planClips(asset, request.clips, template, source.fps);
-  const signal = projectWork.signal();
+  const cancel = new AbortController();
+  const signal = AbortSignal.any([cancel.signal, projectWork.capture()]);
   signal.throwIfAborted();
   const made: MadeClip[] = [];
   running = true;
-  const tid = toast(`Making ${plans.length} clips`, "progress");
+  const tid = toast(`Making ${plans.length} clips`, "progress", undefined, { label: "Cancel", run: () => cancel.abort() });
   try {
     for (const [i, plan] of plans.entries()) {
       updateToast(tid, { text: `Making ${i + 1} of ${plans.length}: ${plan.name}`, progress: i / plans.length });
-      const { project, captions, notes } = await makeClipProject(source, asset, plan, template, signal);
+      const { project, captions, notes } = await makeClipProject(source, asset, plan, template, signal, (fraction, stage) => updateToast(tid, { progress: (i + fraction) / plans.length, text: stage }));
       signal.throwIfAborted();
       await platform.saveProject(project, projectSummary(project));
       latest.push(project.id);

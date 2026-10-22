@@ -526,7 +526,20 @@ Turn on **Hear candidates** for local Whisper quotes and sentence boundaries;
 only candidates plus five seconds of context are heard, and first use may
 download a speech model. Agents use `find_highlights` (source-second times,
 optional viewer clip times and transcript keywords), `preview_media` to
-review, and `add_highlight_markers` to mark a reviewed reading.
+review, and `add_highlight_markers` to mark a reviewed reading. Long videos
+sample scenes every four seconds after 20 minutes; the answer reports
+sampling coverage if its 75-second scene budget runs out.
+
+**Long operations:** a progress toast names the current stage; use its
+**Cancel** button to stop. Agents get a job ID if a tool takes over
+45 seconds (or immediately with `wait: 0`). Call `job_status` with
+`job_id` until `state` is `done`, then read `result` as the tool's original
+answer; `failed` includes an error, and `canceled` stays canceled. Without
+an ID, `job_status` lists running and recent jobs. `cancel_job` stops a
+specific ID. Results remain for 30 minutes after finishing, in this app
+session; switching projects cancels running jobs. `elapsed_seconds` and
+`quiet_seconds` show total time and time since the last progress update.
+The existing `export_status` also keeps following the latest export.
 
 **Remove a background:** select a video clip, open Video > Remove BG and
 turn on Auto removal (or use the AI tools card). The first time downloads
@@ -554,7 +567,11 @@ default, or `words_per_caption: 2` and `look: "pop"` for a short. Set
 `start`/`end` to caption a stretch, `track_ids` to choose the speech tracks,
 and `replace: false` to keep earlier captions. Imported audio intended as
 speech should have the Dialog role; music and effects roles are skipped.
-`detail: "full"` lists the caption times. Whole-line captions use phrase
+`detail: "full"` lists the caption times. Captions, `get_transcript` and
+filler removal hear the clip's source window with three seconds of context
+on each side and reuse cached words from that file. Their answers report
+`audio_seconds` heard (zero when reused), hearing `elapsed_seconds` and
+`model`; English uses base.en unless another model is chosen. Whole-line captions use phrase
 breaks, up to two lines, at least 0.83 s and at most 20 characters a second
 where the available speech window allows. The answer's `readability` names
 cues that still need repair. For difficult source speech, choose Accurate

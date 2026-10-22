@@ -236,7 +236,7 @@ export async function readLine(text: string, o: ReadOptions, signal: AbortSignal
  * project: the caller's edit adds them, so one undo removes them. */
 async function takeAssets(takes: Take[], signal: AbortSignal): Promise<Asset[]> {
   const files = takes.map((t) => new File([encodeWav([t.audio], t.rate)], speechFileName(t.written), { type: "audio/wav" }));
-  const assets = await adoptAndProbe(files);
+  const assets = await adoptAndProbe(files, signal);
   signal.throwIfAborted();
   if (assets.length !== takes.length) throw new Error("A speech file could not be read back");
   return assets.map((a, i) => ({ ...a, speech: takes[i].info }));
@@ -261,8 +261,8 @@ export async function textToSpeech(clipId?: Id, opts: ReadOptions = {}): Promise
   if (!loc || loc.clip.type !== "text") throw new Error("Select a title to speak");
   if (!speechText(loc.clip.text)) throw new Error("The title has no words to speak");
   const abort = new AbortController();
-  const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
-  const tid = toast("Making the voice", "progress");
+  const signal = AbortSignal.any([abort.signal, projectWork.capture()]);
+  const tid = toast("Making the voice", "progress", undefined, { label: "Cancel", run: () => abort.abort() });
   set({ clipId: loc.clip.id, progress: 0, abort });
   try {
     // The first run downloads the model; then it is cached.
@@ -349,8 +349,8 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
   if (!lines.length) throw new Error("Every line needs words to speak");
   for (const l of [opts, ...lines]) if (l.voice !== undefined) checkVoice(l.voice);
   const abort = new AbortController();
-  const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
-  const tid = toast(`Making the voiceover: ${lines.length} lines`, "progress");
+  const signal = AbortSignal.any([abort.signal, projectWork.capture()]);
+  const tid = toast(`Making the voiceover: ${lines.length} lines`, "progress", undefined, { label: "Cancel", run: () => abort.abort() });
   set({ clipId: "", progress: 0, abort });
   try {
     const takes: Take[] = [];
@@ -467,8 +467,8 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
   const text = o.text ?? was?.text;
   if (!text) throw new Error(`${clipId} was not spoken from a script (it was recorded or imported): give text to read in its place`);
   const abort = new AbortController();
-  const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
-  const tid = toast("Reading the line again", "progress");
+  const signal = AbortSignal.any([abort.signal, projectWork.capture()]);
+  const tid = toast("Reading the line again", "progress", undefined, { label: "Cancel", run: () => abort.abort() });
   set({ clipId, progress: 0, abort });
   let ran = false;
   try {

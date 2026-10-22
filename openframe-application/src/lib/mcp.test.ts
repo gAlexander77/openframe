@@ -353,7 +353,7 @@ describe("what a blind test of the tools found", () => {
   it("checks app tools' arguments too, naming the ones it knows", async () => {
     const r = await call(host(), "tools/call", { name: "preview_frame", arguments: { time: 0.7 } });
     expect(r!.result).toMatchObject({ isError: true });
-    expect(text(r)).toBe("args.at is required; args.time is not a known argument; did you mean at? (known: before, before_clip_ids, at, max_width)");
+    expect(text(r)).toBe("args.at is required; args.time is not a known argument; did you mean at? (known: before, before_clip_ids, at, max_width, wait)");
   });
 
   it("says what set_filter and a picture's set_animation changed", async () => {
@@ -915,4 +915,37 @@ it("passes an explicit preview format and preserves the fallback audio MIME and 
   expect(content[0]).toMatchObject({ type: "audio", mimeType: "audio/wav" });
   expect(JSON.parse(content[1].text!)).toEqual({ format: "wav", seconds: 1 });
   expect((await call(h, "tools/call", { name: "preview_audio", arguments: { start: 0, format: "flac" } }))!.result).toMatchObject({ isError: true });
+});
+
+
+it("returns a running job, reuses retries, and collects the complete finished answer", async () => {
+  const h: McpHost = host();
+  let finish!: (value: unknown) => void, calls = 0;
+  h.ai = async () => { calls++; return new Promise(resolve => { finish = resolve; }); };
+  const invoke = async (name: string, args: object) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
+  const first = await invoke("auto_captions", { wait: 0 });
+  expect(first).toMatchObject({ state: "running", tool: "auto_captions", progress: 0, note: "call job_status with job_id; cancel_job stops it" });
+  const retry = await invoke("auto_captions", {});
+  expect(retry.job_id).toBe(first.job_id);
+  expect(calls).toBe(1);
+  const answer = { words: ["Every", "word"], audio_seconds: 36, elapsed_seconds: 12 };
+  finish(answer);
+  // Let registry completion and the original MCP answer settle.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(await invoke("job_status", { job_id: first.job_id })).toMatchObject({ state: "done", result: answer });
+  expect(await invoke("job_status", {})).toEqual([expect.objectContaining({ job_id: first.job_id, state: "done" })]);
+});
+
+it("cancel_job aborts the host work and job_status never publishes its late answer", async () => {
+  const base = host();
+  let signal!: AbortSignal, finish!: (value: unknown) => void;
+  const h: McpHost = { ...base, runJob: async (context, work) => { signal = context.signal; return work(); }, ai: async () => new Promise(resolve => { finish = resolve; }) };
+  const invoke = async (name: string, args: object) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
+  const first = await invoke("get_transcript", { clip_id: "c1", wait: 0 });
+  expect(await invoke("cancel_job", { job_id: first.job_id })).toMatchObject({ state: "canceled" });
+  expect(signal.aborted).toBe(true);
+  finish({ words: ["late"] });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(await invoke("job_status", { job_id: first.job_id })).toMatchObject({ state: "canceled" });
+  expect((await invoke("job_status", { job_id: first.job_id })).result).toBeUndefined();
 });

@@ -3,9 +3,20 @@
 
 import type { Range } from "./analysis/silence";
 import { monotonicWords, type Word } from "./captions";
+import { sourceTimeAt } from "./project/ops";
+import { secondsToFrames } from "./time";
 import { frameOfSource } from "./project/cut";
 import type { AudioClip, Project, VideoClip } from "./project/types";
 import { framesToSeconds } from "./time";
+
+/** Only hear the played source window, with sentence context at either edge.
+ * Timeline ranges are intersected before mapping through the clip's speed. */
+export function speechWindow(p: Project, c: AudioClip | VideoClip, start = 0, end = Infinity, margin = 3): [number, number] {
+  const first = Math.max(c.start, secondsToFrames(start, p.fps));
+  const last = Math.min(c.start + c.duration, Number.isFinite(end) ? secondsToFrames(end, p.fps) : c.start + c.duration);
+  const duration = p.assets.find(a => a.id === c.assetId)?.duration ?? Infinity;
+  return [Math.max(0, sourceTimeAt(c, first, p.fps) - margin), Math.min(duration, sourceTimeAt(c, last, p.fps) + margin)];
+}
 
 /** Source words on a plain-speed clip's cut timeline, clipped to its edges
  * and the requested timeline window. Never carries a word across a cut. */

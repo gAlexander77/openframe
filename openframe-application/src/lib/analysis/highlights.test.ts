@@ -1,3 +1,4 @@
+import { sceneSampling, SCENE_BUDGET_SECONDS } from "./highlights";
 import { describe, expect, it } from "vitest";
 import { findHighlights, HighlightAudio, highlightWindow, refineHighlight, rollingBaseline, type HighlightFeature } from "./highlights";
 
@@ -112,4 +113,12 @@ describe("long VOD highlight ranking", () => {
     expect(found).toHaveLength(3);
     expect(found.map(h => h.peak).sort((a, b) => a - b)).toEqual([3600.25, 10800.25, 20000.25]);
   });
+});
+
+
+it("samples long files sparsely within a bounded scene-reading budget", () => {
+  expect(sceneSampling(1200)).toEqual({ interval_seconds: 1 });
+  expect(sceneSampling(1201)).toEqual({ interval_seconds: 4 });
+  expect(sceneSampling(45 * 60)).toEqual({ interval_seconds: 4 });
+  expect(SCENE_BUDGET_SECONDS).toBe(75);
 });

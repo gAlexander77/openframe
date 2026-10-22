@@ -1,3 +1,4 @@
+import { sceneSampling, SCENE_BUDGET_SECONDS } from "../lib/analysis/highlights";
 import { proxySource } from "../lib/proxyPolicy";
 import { imageFor } from "./media";
 // Decoding for the local AI tools: a clip's source range as mono PCM at a
@@ -64,9 +65,9 @@ export async function streamMono(asset: Asset, consume: (pcm: Float32Array) => v
   } finally { input.dispose(); }
 }
 
-/** One low-resolution frame per second. Seeking skips intervening pictures;
+/** Sparse low-resolution frames (1 or 4 s). Seeking skips intervening pictures;
  * codecs may still decode dependency frames within a GOP. */
-export async function sparseSceneCuts(asset: Asset, onProgress?: Progress, signal?: AbortSignal): Promise<number[]> {
+export async function sparseSceneCuts(asset: Asset, onProgress?: Progress, signal?: AbortSignal): Promise<{ cuts: number[]; sampling: { interval_seconds: number; samples: number; covered_seconds: number; complete: boolean; elapsed_seconds: number } }> {
   const input = await openInput(asset);
   try {
     const track = await input.getPrimaryVideoTrack();
@@ -75,10 +76,17 @@ export async function sparseSceneCuts(asset: Asset, onProgress?: Progress, signa
     const sink = new CanvasSink(track, { width: 96 });
     let previous: Uint8Array | undefined;
     const cuts: number[] = [], report = throttle(onProgress);
-    for (let t = 0; t < asset.duration; t++) {
+    const started = performance.now(), { interval_seconds } = sceneSampling(asset.duration);
+    let samples = 0, covered_seconds = 0;
+    for (let t = 0; t < asset.duration; t += interval_seconds) {
+      // ponytail: bound costly long-GOP seeking to 75 s; a worker with a
+      // keyframe scene index could cover the full file within this budget.
+      if ((performance.now() - started) / 1000 >= SCENE_BUDGET_SECONDS) break;
       signal?.throwIfAborted();
       const wrapped = await sink.getCanvas(origin + t);
+      covered_seconds = Math.min(asset.duration, t + interval_seconds);
       if (!wrapped) continue;
+      samples++;
       const { canvas } = wrapped;
       const ctx = canvas.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
       const hsv = rgbaToHsv(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
@@ -86,7 +94,7 @@ export async function sparseSceneCuts(asset: Asset, onProgress?: Progress, signa
       previous = hsv;
       report(t / asset.duration);
     }
-    return cuts;
+    return { cuts, sampling: { interval_seconds, samples, covered_seconds, complete: covered_seconds >= asset.duration, elapsed_seconds: (performance.now() - started) / 1000 } };
   } finally { input.dispose(); }
 }
 
@@ -375,7 +383,7 @@ export async function frameScores(
  * wide: what an agent looks at to choose the moments to cut. A time past
  * the end gives the last frame; a file without picture gives nulls.
  */
-export async function sourceFrames(asset: Asset, times: number[], width: number): Promise<(CanvasImageSource | null)[]> {
+export async function sourceFrames(asset: Asset, times: number[], width: number, signal?: AbortSignal): Promise<(CanvasImageSource | null)[]> {
   if (asset.kind === "image") return Promise.all(times.map(t => imageFor(asset, t)));
   const input = await openInput(asset);
   try {
@@ -384,7 +392,10 @@ export async function sourceFrames(asset: Asset, times: number[], width: number)
     const t0 = await mediaOrigin(track, await input.getPrimaryAudioTrack());
     const sink = new CanvasSink(track, { width, fit: "contain" });
     const out: (CanvasImageSource | null)[] = [];
-    for (const t of times) out.push((await sink.getCanvas(t0 + Math.max(0, Math.min(t, asset.duration - 1e-3))))?.canvas ?? null);
+    for (const t of times) {
+      signal?.throwIfAborted();
+      out.push((await sink.getCanvas(t0 + Math.max(0, Math.min(t, asset.duration - 1e-3))))?.canvas ?? null);
+    }
     return out;
   } finally {
     input.dispose();

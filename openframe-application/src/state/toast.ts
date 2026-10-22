@@ -22,8 +22,29 @@ let agentCalls = 0;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
+type Observer = { report: (fraction: number, stage?: string) => void; action: Toast["action"] };
+let progressOwner: Observer | undefined;
+const progressOwners = new Map<number, Observer>();
+/** Bind only toast creation, synchronously; later progress is routed by ID. */
+export function observeProgress(report: Observer["report"], action: Toast["action"]) {
+  const owner = { report, action };
+  return {
+    bind<T>(work: () => T): T {
+      const previous = progressOwner;
+      progressOwner = owner;
+      try { return work(); } finally { progressOwner = previous; }
+    },
+    dispose() { for (const [id, o] of progressOwners) if (o === owner) progressOwners.delete(id); },
+  };
+}
+
 export function toast(text: string, kind: Toast["kind"] = "info", ms = kind === "error" ? 6000 : 2600, action?: Toast["action"]): number {
   const id = next++;
+  if (kind === "progress" && progressOwner) {
+    progressOwners.set(id, progressOwner);
+    action = progressOwner.action;
+    progressOwner.report(0, text);
+  }
   toasts = [...toasts.slice(-3), { id, text, kind, ...(agentCalls ? { agent: true } : {}), ...(action ? { action } : {}) }];
   emit();
   if (kind !== "progress") setTimeout(() => dismiss(id), ms);
@@ -59,11 +80,14 @@ export function agentNotice(text: string) {
 }
 
 export function updateToast(id: number, patch: Partial<Toast>) {
+  const owner = progressOwners.get(id);
+  if (owner) owner.report(patch.progress ?? toasts.find(t => t.id === id)?.progress ?? 0, patch.text);
   toasts = toasts.map((t) => (t.id === id ? { ...t, ...patch } : t));
   emit();
 }
 
 export function dismiss(id: number) {
+  progressOwners.delete(id);
   toasts = toasts.filter((t) => t.id !== id);
   emit();
 }

@@ -906,7 +906,13 @@ element rows stay private, and captions stay on top.
   transcript, so words after a cut shift with their clip and a voiceover
   keeps its script's spelling, such as "20% off." The compact answer gives
   the count, track, first and last caption, seconds covered and words heard;
-  `detail: "full"` lists every caption. Existing captions are replaced
+  `detail: "full"` lists every caption. Clip hearing uses only its played
+  source window plus three seconds of sentence context on each side,
+  bounded by the file. Transcript, captions and filler removal merge and
+  reuse heard windows; a 30-second cut no longer hears an entire VOD.
+  Answers report `audio_seconds` actually heard (zero for cached words),
+  `elapsed_seconds` for hearing and the Whisper `model`; English stays
+  base.en by default. Existing captions are replaced
   unless `replace: false` ([[ADR-130 Film tools share speech and preserve readable layouts]]).
 - **Find and replace** in captions (Captions tab; CapCut's;
   `replace_caption_text`): fix a misheard name everywhere, whole words
@@ -1027,6 +1033,19 @@ makes a 13 s one). Times are timeline seconds.
 
 ## AI tools (all on this machine)
 
+- **Long jobs an agent can follow** (`job_status`, `cancel_job`): analysis,
+  speech, music, tracking, background removal, clip batches, measurements,
+  imports, previews and exports answer when done or within 45 seconds.
+  A running answer gives a job ID, progress and stage; retries return that
+  job instead of starting another. `wait: 0` returns immediately. Poll the
+  ID for the finished tool's complete answer, or omit it to list running
+  and recent jobs. Finished results remain for 30 minutes in this app
+  session; closing or switching projects cancels unfinished work. Elapsed
+  time and `quiet_seconds` since the last progress callback help an agent
+  judge a slow stage. A progress toast names the stage and offers Cancel.
+  `export_status` continues to follow the latest export alongside jobs
+  ([[ADR-142 Long tools return retained session jobs and hear source windows]]).
+
 - **Find highlights**: choose a long stream VOD in the AI tools card, add
   an optional chat replay, set Count and the minimum/maximum Length, then
   Run. Ranked moments show a score, numeric reasons and optional quotes;
@@ -1036,7 +1055,11 @@ makes a 13 s one). Times are timeline seconds.
   weights and candidate-only Whisper refinement. Audio streams at 16 kHz
   into compact features: a three-minute median discounts sustained loud
   gameplay; chat spikes, emotes and clip requests add evidence. Scene
-  sampling is one small frame per second, automatic only up to two hours.
+  sampling is one small frame per second, or every four seconds past
+  20 minutes, automatic only up to two hours. A 75-second scene budget
+  keeps expensive codec seeking bounded; `scene_sampling` reports the
+  interval, samples, source coverage, completion and elapsed time. Audio
+  and chat still cover the whole source when scene coverage is incomplete.
   Vocal excitement is a heuristic; review candidates before making clips
   ([[ADR-140 Highlight discovery streams features and refines candidates]]).
 - **Readable automatic captions:** whole-line generation chooses phrase and

@@ -3,6 +3,11 @@ import { chatCue, type ChatMessage } from "../chatReplay";
 import { fft } from "./beats";
 import { LoudnessMeter } from "./loudness";
 
+/** Long files trade fine scene timing for a bounded reading. Audio and
+ * supplied times still cover the full file when scene sampling runs out. */
+export const sceneSampling = (seconds: number) => ({ interval_seconds: seconds > 20 * 60 ? 4 : 1 });
+export const SCENE_BUDGET_SECONDS = 75;
+
 export const HIGHLIGHT_STEP = 0.5;
 export const HIGHLIGHT_WEIGHTS = { audio: 0.5, speech: 0.1, chat: 0.25, scenes: 0.05, times: 0.8, keywords: 0.3 };
 export type HighlightWeights = typeof HIGHLIGHT_WEIGHTS;
