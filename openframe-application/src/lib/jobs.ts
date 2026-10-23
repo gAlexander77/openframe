@@ -25,7 +25,7 @@ export interface JobStatus<T = unknown> {
 }
 export function createJobRegistry<T = unknown>(now = Date.now, retention = 30 * 60_000, resultBudget = 32 * 2 ** 20) {
   let next = 0;
-  const jobs = new Map<string, { status: JobStatus<T>; controller: AbortController; finished?: number; done: Promise<void> }>();
+  const jobs = new Map<string, { status: JobStatus<T>; controller: AbortController; key: string; finished?: number; done: Promise<void> }>();
   const releaseResult = (status: JobStatus<T>) => { if (status.result !== undefined) { delete status.result; status.result_released = true; } };
   const prune = () => {
     for (const [id, j] of jobs) if (j.finished !== undefined && now() - j.finished >= retention) jobs.delete(id);
@@ -66,14 +66,14 @@ export function createJobRegistry<T = unknown>(now = Date.now, retention = 30 * 
     },
     all: () => { prune(); return [...jobs.keys()].map(status); },
     cancel,
-    start(tool: string, project: string, scope: AbortSignal | undefined, work: (context: JobContext) => Promise<T>) {
+    start(tool: string, project: string, scope: AbortSignal | undefined, work: (context: JobContext) => Promise<T>, key = tool) {
       prune();
       // Tools with singleton engines must return their existing job even
       // when a retry sends different arguments.
-      const existing = [...jobs.values()].find(j => j.status.tool === tool && j.status.project_id === project && j.status.state === "running");
+      const existing = [...jobs.values()].find(j => j.key === key && j.status.tool === tool && j.status.project_id === project && j.status.state === "running");
       if (existing) return existing.status.job_id;
       const id = `job_${now().toString(36)}_${++next}`, controller = new AbortController();
-      const j = { status: { job_id: id, tool, project_id: project, started_at: now(), updated_at: now(), state: "running", progress: 0, stage: "Starting", elapsed_seconds: 0, quiet_seconds: 0 } as JobStatus<T>, controller, finished: undefined as number | undefined, done: Promise.resolve() };
+      const j = { status: { job_id: id, tool, project_id: project, started_at: now(), updated_at: now(), state: "running", progress: 0, stage: "Starting", elapsed_seconds: 0, quiet_seconds: 0 } as JobStatus<T>, controller, key, finished: undefined as number | undefined, done: Promise.resolve() };
       jobs.set(id, j);
       const abort = () => cancel(id);
       scope?.addEventListener("abort", abort, { once: true });

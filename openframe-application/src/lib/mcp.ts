@@ -72,6 +72,7 @@ export interface McpHost {
   jobs?: JobRegistry;
   jobScope?(): { project: string; signal: AbortSignal };
   runJob?<T>(context: JobContext, work: () => Promise<T>): Promise<T>;
+  shotLog?(name: string, args: Record<string, unknown>): Promise<unknown>;
   createClips?(request: CreateClipsRequest): Promise<unknown>;
   exportProjects?(request: ExportProjectsRequest): Promise<unknown>;
   /** False where export_video and export_versions cannot write files (the
@@ -512,6 +513,32 @@ export const CLIP_TEMPLATE_SCHEMA: JsonSchema = { ...obj({
 
 /** Tools that touch the outside world or the session, not just the document. */
 export const APP_TOOLS: AppTool[] = [
+  ...["analyze_footage", "get_shot_log", "find_shots", "suggest_edit_points", "describe_moment"].map((name): AppTool => {
+    const target = {
+      asset_id: { type: "string", description: "Imported video asset ID; give exactly one asset_id or clip_id" },
+      clip_id: { type: "string", description: "Video clip ID; get_shot_log defaults to its source window. Times are source seconds" },
+    } satisfies Record<string, JsonSchema>;
+    const wait = { type: "number", minimum: 0, maximum: 45, description: "Seconds to wait for a long job (default 45); 0 returns immediately. Poll job_status and cancel with cancel_job" } satisfies JsonSchema;
+    const schemas: Record<string, JsonSchema> = {
+      analyze_footage: obj({ ...target, interval: { type: "number", minimum: 4, maximum: 30, description: "Maximum moment length in source seconds (default 8); refresh to change an existing log's spacing" }, describe: { type: "boolean", description: "Describe frames with the local model (default true); false measures only" }, refresh: { type: "boolean", description: "Discard the saved reading and measure again (default false); otherwise resume undescribed moments" }, wait }),
+      get_shot_log: obj({ ...target, from: { type: "number", minimum: 0, description: "Source start seconds; default clip's In or 0" }, to: { type: "number", minimum: 0, description: "Exclusive source end seconds; default clip's Out or duration; past the end reads to the end" }, detail: { type: "string", enum: ["full", "brief"], description: "full: every field of each moment; brief: one line per moment, alike moments in a shot folded (default for windows over 10 minutes)" }, format: { type: "string", enum: ["text", "json"], description: "Screenplay text (default) or structured log JSON" }, speech: { type: "boolean", description: "Include already-heard speech (default true); never starts transcription" } }),
+      find_shots: obj({ query: { type: "string", description: "Words in action, description or on-screen text; quoted phrases must match" }, asset_id: { type: "string", description: "Search this video asset only; omit for every analyzed video in the project" }, limit: { type: "integer", minimum: 1, maximum: 100, description: "Maximum matches, ranked by weighted word overlap (default 10)" } }, ["query"]),
+      suggest_edit_points: obj({ ...target, ranges: { type: "array", maxItems: 100, description: "Chosen ranges in source seconds, in planned edit order", items: obj({ start: { type: "number", minimum: 0, description: "Source In seconds" }, end: { type: "number", minimum: 0, description: "Exclusive source Out seconds" } }, ["start", "end"]) }, window: { type: "number", minimum: 0, maximum: 30, description: "Search this many seconds around each boundary (default 2)" } }, ["ranges"]),
+      describe_moment: obj({ ...target, time: { type: "number", minimum: 0, description: "Source second at the center of the moment" }, span: { type: "number", minimum: 0, maximum: 30, description: "Seconds before and after time for three frames (default 1)" }, question: { type: "string", description: "Optional question for a plain answer; omitted returns the structured moment description" }, wait }, ["time"]),
+    };
+    const descriptions: Record<string, string> = {
+      analyze_footage: "Measure shots, motion, brightness, color and silence, then write a time-coded visual shot log with a local vision model. Everything runs on this computer; the first description downloads about 2.9 GB once. Returns counts, completeness, model, elapsed_seconds and first_use_download_bytes. A retained session job supports progress, cancellation and resume. One analysis per asset; describe false measures only.",
+      get_shot_log: "Read the second transcript: time-coded picture action, on-screen text, cuts, sound and already-heard speech, or JSON measures and descriptions. Partial logs state their coverage. Long answers come in pages of about 10,000 tokens (150 moments as JSON) and say the from to continue with; skim a long VOD brief, then read a chosen window in full. Run analyze_footage first; no model inference or hearing is started by reading.",
+      find_shots: "Search analyzed footage by what happens or what text appears on screen. Returns asset_id, source start/end, weighted score and matched words. On-screen text and action count most; quoted phrases must match. Reads local logs without starting analysis.",
+      suggest_edit_points: "Suggest the best In and Out plus up to two alternatives near each chosen source range, with measured reasons: shot cuts, silence, completed action and already-heard word/sentence boundaries. Between consecutive ranges, warns of jump cuts, brightness, motion and sound changes, with existing OpenFrame tool calls for joins. Arguments with angle brackets need the placed clip IDs and timeline seconds; verify source handles and preview_frames before cutting.",
+      describe_moment: "Inspect three source frames around a time with the local vision model on this computer: ask a question for plain text or omit it for a structured description. Returns asset_id, source time, sampled frames and answer. Returns a retained job only when the describer needs preparation.",
+    };
+    return { name, description: `${descriptions[name]} Everything runs on this computer. Shot logs need the desktop app; this browser build has no local describer.`, inputSchema: schemas[name], call: async (h, a) => {
+      if (!h.shotLog) throw new Error("Shot logs need the desktop app: it runs a local vision model this browser build cannot.");
+      const answer = await h.shotLog(name, a);
+      return typeof answer === "string" ? { content: [{ type: "text", text: answer }] } : appJson(answer);
+    } };
+  }),
   {
     name: "find_highlights",
     description: "Rank exciting moments in a long VOD using local audio excitement and speech, optional chat replay, scene activity and given viewer-clip times. Results are SOURCE seconds, with score 0-1, numeric reasons, signals used and elapsed_seconds. Read-only unless markers is true (one undoable edit). Only candidate windows are transcribed when requested; keywords then refine ranking and quotes. Defaults: count 10, length 15-60 s, lead-in 4 s, lead-out 3 s, minimum peak gap 20 s. Audio uses a surrounding 3-minute median, 3 s short-term and 400 ms momentary BS.1770 loudness; vocal excitement is heuristic, not laughter recognition. Audio is streamed at 16 kHz and compact features cached per asset. Preview candidates with preview_media before making clips.",

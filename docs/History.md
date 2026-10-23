@@ -1884,3 +1884,53 @@ VEGAS against the code (five already existed) and ranked the rest.
   frame: a wrong thumbnail nobody noticed.
 - **A budget that stops early must stop evenly.** A time-boxed pass that
   walks a file from its start biases every score toward the start.
+
+## 2026-10-23 — The shot log: a second transcript of the picture, written by a local model (Claude Code)
+
+The owner asked for a way to hand footage to an AI and have it know what
+happens in it, "a second transcript" beside the speech one, so it can
+choose what to clip in and out and how to join the pieces; first as a
+separate private repository, then, mid-turn, as part of OpenFrame, running
+on the user's computer with nothing for them to install or start.
+
+**What it is.** The desktop app measures a file in one ffmpeg decode
+(every frame's change for exact cuts; motion, pan, brightness, color and
+sound level) and describes each moment with Qwen3-VL-4B (Apache-2.0),
+which it downloads once (2.98 GB with llama.cpp's Vulkan build, verified
+by SHA-256) and runs itself beside the editor, on the discrete GPU, with a
+private key, stopped when idle (ADR-145). The shot log reads as a
+screenplay (time, shot size, camera, the action, on-screen text, sound,
+speech already heard), searches, and suggests In and Out points with
+reasons and how to join two pieces. Five MCP tools: analyze_footage,
+get_shot_log, find_shots, suggest_edit_points, describe_moment; and a Shot
+log library tab.
+
+**How it was built.** Before writing a spec, Claude Code ran the model on
+this laptop: 3 to 5 s a moment on the RTX 5070, accurate (it read the
+landing's telemetry screen word for word). Two Codex lanes then built the
+Rust side (X1) and the TypeScript side (X2) in parallel to one written
+contract; they merged without a conflict and the command names matched.
+Claude Code fixed an In/Out pair that could cross, a drive fixture longer
+than its 10 s video, and a missing software retry when a hardware decoder
+fails, and added brief reading and pages after the first real log.
+
+**Measured in the desktop app.** The first call downloaded the describer
+in about 110 s; a 5-minute stream read in about 170 s; the 45-minute NASA
+broadcast in 38 minutes (236 shots, 443 moments), matching what is known
+of it (a cut at 30:34.17 to the room cheering, "WE LANDED!" read at 30:39,
+clapping at 27:14 as the parachute is called).
+
+### Lessons paid for in this round
+
+- **Try the model before writing the spec.** Ten minutes on the real
+  machine found what the spec then had to say: the integrated GPU is
+  listed first, and without a maxLength on every string the model loops
+  on its description until the token limit.
+- **Two lanes, one written contract.** Command names, argument spelling
+  and JSON shapes fixed before either lane started let Rust and
+  TypeScript be built at once and merge cleanly.
+- **A full log is too long to read.** 443 moments are about 190,000
+  characters; an agent needs a skim (brief, alike moments folded) and
+  pages, then the full text of the window it chose.
+- **Hugging Face's downloader needs symlinks Windows refuses** without a
+  privilege; download the files directly.

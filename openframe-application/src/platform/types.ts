@@ -49,7 +49,24 @@ export interface ExportTarget {
   replaced?: boolean;
 }
 
+export interface DescriberStatus {
+  state: "missing" | "downloading" | "starting" | "ready" | "stopped" | "error";
+  runtime_installed: boolean; model_installed: boolean; bytes_needed: number; device: string | null; error: string | null;
+}
+export interface PrepareProgress { stage: "runtime" | "model" | "starting"; fraction: number; bytes: number; total: number }
 export interface Platform {
+  describer?: {
+    status(): Promise<DescriberStatus>;
+    prepare(onProgress: (p: PrepareProgress) => void): Promise<DescriberStatus>;
+    ask(request: { images: string[]; prompt: string; schema?: object; maxTokens?: number }): Promise<string>;
+    stop(): Promise<void>;
+  };
+  shotlog?: {
+    measure(src: string, onProgress: (fraction: number) => void, signal?: AbortSignal): Promise<import("../lib/shotlog").Measures>;
+    frames(src: string, times: number[], width: number): Promise<string[]>;
+    load(src: string): Promise<string | null>;
+    save(src: string, json: string): Promise<void>;
+  };
   kind: "desktop" | "web";
   /** Chat replay picker (32 MiB maximum); explicit locations are absolute desktop paths or web URLs. */
   openChatReplay(path?: string, signal?: AbortSignal): Promise<{ name: string; text: string } | null>;

@@ -16,10 +16,10 @@ import { Dialog } from "./Dialog";
 import { FramePreview } from "./FramePreview";
 import "./sourceMonitor.css";
 
-export function SourceMonitor({ asset, onClose }: { asset: Asset; onClose: () => void }) {
+export function SourceMonitor({ asset, onClose, initialTime = 0 }: { asset: Asset; onClose: () => void; initialTime?: number }) {
   const project = useMemo(() => sourceProject(asset), [asset]);
   const total = sourceFrames(asset, project.fps), rate = fpsValue(project.fps);
-  const [frame, setFrame] = useState(0), [markIn, setIn] = useState(0), [markOut, setOut] = useState(total);
+  const [frame, setFrame] = useState(() => Math.max(0, Math.min(total - 1, Math.floor(initialTime * rate)))), [markIn, setIn] = useState(0), [markOut, setOut] = useState(total);
   const timelineIn = useEditor((s) => s.inPoint), timelineOut = useEditor((s) => s.outPoint);
   const [hasIn, setHasIn] = useState(false), [hasOut, setHasOut] = useState(false);
   const [prompt, setPrompt] = useState<PlaceMode | null>(null);

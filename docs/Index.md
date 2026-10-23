@@ -584,3 +584,4 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-142 Long tools return retained session jobs and hear source windows]] - retained MCP jobs, progress and cancellation, bounded source hearing and sparse scene sampling.
 - [[ADR-143 Clip templates repair their checks and imports classify audio conservatively]] - subject-safe hooks, clear-column credit, measured template checks and conservative audio roles.
 - [[ADR-144 Session resources have byte budgets and explicit owners]] - byte LRU caches, borrowed image lifetimes, idle model teardown, session cleanup and memory diagnostics.
+- [[ADR-145 The shot log is a second transcript written locally]] - measured picture and sound, local vision descriptions, resumable coarse-to-fine logs and source edit advice.

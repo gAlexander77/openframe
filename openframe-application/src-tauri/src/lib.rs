@@ -1,5 +1,6 @@
 mod about;
 mod agent_cli;
+mod describer;
 mod export;
 mod ffmpeg;
 mod files;
@@ -9,6 +10,7 @@ mod models;
 mod project;
 mod project_files;
 mod render;
+mod shotlog;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -47,6 +49,7 @@ pub fn run() {
             job: std::sync::Mutex::new(job),
         })
         .setup(move |app| {
+            describer::Describer::idle_timer(app.state::<Arc<describer::Describer>>().inner());
             if headless {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();
@@ -59,6 +62,8 @@ pub fn run() {
         .manage(export::Exports::default())
         .manage(ffmpeg::Ffmpeg::default())
         .manage(mcp::Mcp::default())
+        .manage(Arc::new(describer::Describer::default()))
+        .manage(Arc::new(shotlog::Shotlog::default()))
         .on_page_load(|webview, payload| {
             if webview.label() == "main"
                 && payload.event() == tauri::webview::PageLoadEvent::Started
@@ -104,6 +109,15 @@ pub fn run() {
             agent_cli::agent_cli_install_page,
             about::about_open,
             models::model_request,
+            describer::describer_status,
+            describer::describer_prepare,
+            describer::describer_ask,
+            describer::describer_stop,
+            shotlog::shotlog_measure,
+            shotlog::shotlog_cancel,
+            shotlog::shotlog_frames,
+            shotlog::shotlog_load,
+            shotlog::shotlog_save,
             render::render_job,
             render::render_open_out,
             render::render_progress,
@@ -115,6 +129,8 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 // No ffmpeg outlives the app (ADR-013).
                 app.state::<ffmpeg::Ffmpeg>().kill_all();
+                app.state::<Arc<describer::Describer>>().stop();
+                app.state::<Arc<shotlog::Shotlog>>().kill_all();
             }
         });
 }

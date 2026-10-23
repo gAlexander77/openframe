@@ -17,6 +17,29 @@ Use `npm run dev` to try the secondary browser build at
 is the development priority. Read [[Features]] for the current feature map
 and [[Roadmap]] for what is still planned.
 
+## Read what happens in footage
+
+In the desktop app, open **Library > Shot log**, choose a video (the selected
+video clip supplies the default), and choose **Analyze**. First use downloads
+about 2.9 GB of runtime and vision-model files once; the size and progress
+appear in the panel. The app starts the model on this computer. There is
+nothing to install or start for the describer.
+
+The log lists source time ranges, framing, camera movement, actions and
+on-screen text. Search for words in the action or visible text; click a
+moment to open the source monitor at its start. Gray entries have measured
+motion, brightness and sound but no description yet. **Cancel** keeps the
+finished descriptions; **Continue analysis** resumes them. **Refresh** measures
+and describes the source again. Logs survive app restarts without changing
+your timeline or undo history. The browser build explains why analysis needs
+the desktop app.
+
+Agents use `analyze_footage`, `get_shot_log`, `find_shots`,
+`suggest_edit_points` and `describe_moment`. Cut suggestions include reasons
+and join options, rather than editing the timeline. Speech appears only for
+source windows already heard by the transcript. Review the actual frames
+before choosing cuts; descriptions and camera estimates can be wrong.
+
 ## Make your first edit
 
 ### Turn a stream into clips

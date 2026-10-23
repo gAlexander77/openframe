@@ -1,3 +1,4 @@
+import { shotLogTool } from "./state/shotlog";
 import { releaseAnswerUrl } from "./engine/answerUrls";
 import { memorySnapshot } from "./engine/memory";
 import { jobs, runJob } from "./state/jobs";
@@ -283,6 +284,7 @@ async function agentCall(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
 }
 
 const mcpHost: McpHost = {
+  shotLog: (name, args) => (needProject(), shotLogTool(name, args)),
   jobs, runJob,
   jobScope: () => (needProject(), { project: store.document().id, signal: projectWork.signal() }),
   createClips: request => (needProject(), createClips(request)),

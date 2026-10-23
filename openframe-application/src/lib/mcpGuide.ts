@@ -36,6 +36,7 @@ export interface ToolInfo {
 export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   { name: "Start here", blurb: "Read before editing: the guide, the timeline and the names the tools accept.", tools: ["help", "describe_project", "find_clips", "list_catalog"] },
   { name: "Projects", blurb: "Work in a new project so the user's own stay untouched.", tools: ["list_projects", "open_project", "new_project", "save_project_copy", "open_project_file", "collect_project", "import_timeline", "export_timeline", "set_project"] },
+  { name: "Shot log", blurb: "Read what the picture and sound do, search moments, and choose cuts. Everything runs on this computer in the desktop app.", tools: ["analyze_footage", "get_shot_log", "find_shots", "suggest_edit_points", "describe_moment"] },
   { name: "Clips", blurb: "Find the best moments in a long stream, then turn them into finished clip projects and export the batch.", tools: ["find_highlights", "add_highlight_markers", "apply_stream_layout", "create_clips", "export_projects"] },
   { name: "Media", blurb: "Bring files in and keep the library tidy.", tools: ["import_media", "create_proxies", "delete_proxies", "remove_media", "relink_media", "replace_clip", "rename_media", "edit_media_folder", "organize_media"] },
   {
@@ -78,11 +79,11 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
 export const groupOf = (name: string) => TOOL_GROUPS.find((g) => g.tools.includes(name))?.name ?? "More";
 
 /** Tools that only read: clients may run them without asking. */
-const READ_ONLY = new Set(["plan_music", "help", "describe_project", "find_clips", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "preview_audio", "check_project", "measure_loudness", "export_status", "job_status", "get_transcript", "review_voiceover", "seek"]);
+const READ_ONLY = new Set(["analyze_footage", "get_shot_log", "find_shots", "suggest_edit_points", "describe_moment","plan_music", "help", "describe_project", "find_clips", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "preview_audio", "check_project", "measure_loudness", "export_status", "job_status", "get_transcript", "review_voiceover", "seek"]);
 /** Tools that remove things (all are still undoable, but say so). */
 const DESTRUCTIVE = new Set(["delete_proxies", "delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "cut_music", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
 /** Tools that reach outside the project: files on disk, downloads. */
-const OPEN_WORLD = new Set(["find_highlights", "create_clips", "export_projects", "create_proxies", "delete_proxies", "import_timeline", "export_timeline", "import_media", "export_video", "export_versions", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "retake_voiceover", "review_voiceover", "remove_filler_words", "get_transcript"]);
+const OPEN_WORLD = new Set(["analyze_footage", "describe_moment","find_highlights", "create_clips", "export_projects", "create_proxies", "delete_proxies", "import_timeline", "export_timeline", "import_media", "export_video", "export_versions", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "retake_voiceover", "review_voiceover", "remove_filler_words", "get_transcript"]);
 
 const title = (name: string) => name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
@@ -104,6 +105,11 @@ export function annotations(name: string): { title: string; readOnlyHint?: true;
 /** One realistic call per tool that is easy to get wrong; tests check each
  * against its schema. Ids are placeholders an agent replaces. */
 export const EXAMPLES: Record<string, Record<string, unknown>> = {
+  analyze_footage: { asset_id: "a_vod", interval: 8, wait: 0 },
+  get_shot_log: { asset_id: "a_vod", from: 30, to: 60 },
+  find_shots: { query: '"MISSION CONTROL"', limit: 5 },
+  suggest_edit_points: { asset_id: "a_vod", ranges: [{ start: 30, end: 45 }, { start: 60, end: 70 }] },
+  describe_moment: { asset_id: "a_vod", time: 35, question: "What changes across these frames?" },
   find_highlights: { asset_id: "a_vod", count: 10, transcribe: false, scenes: "auto" },
   add_highlight_markers: { clip_id: "c_vod", ranges: [{ start: 120, end: 150 }] },
   help: { topic: "ad" },
@@ -296,6 +302,12 @@ export const DESIGN = `Design rules (apply them unless the user asks otherwise; 
 export const DESIGN_POINTER = "Design rules: help topic design (hook, pacing, words, type sizes, contrast, color, motion, flashes, sound, loudness, end card), read once for every playbook; check_project measures the result against them.";
 
 export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
+  shot_log: {
+    title: "The shot log, a second transcript",
+    text: `In the desktop app, analyze_footage measures shots and sound with ffmpeg and describes frames with a local vision model. Everything runs on this computer; first use downloads about 2.9 GB once. Cancel preserves partial descriptions; repeat the call to continue. The web build has no describer.
+Read get_shot_log for the picture, sound, cuts and already-heard speech, or find_shots to search actions and on-screen text across analyzed assets. Undescribed moments retain their measurements. Neither read tool starts hearing speech.
+Before cutting chosen ranges, suggest_edit_points gives In/Out alternatives and advice for joins (hard cut, dissolve, punch-in, J- or L-cut). These are measured hints, not an edit. Replace tool placeholders with the placed clip IDs, current scale and timeline seconds; check source handles. Check each chosen range with preview_frames before cutting. describe_moment checks a specific source time or answers a question about it.`,
+  },
   stream_clips: {
     title: "Stream clips, from a long VOD to a batch of shorts",
     text: `1. Import the VOD with import_media. For long files create_proxies for smooth previews; clip projects share the file and playback proxy.
@@ -414,7 +426,7 @@ export function helpText(topic: string | undefined, tools: ToolInfo[], instructi
   if (t === "overview") {
     const groups = TOOL_GROUPS.map((g) => `- ${g.name}: ${g.blurb} ${g.tools.filter((n) => tools.some((x) => x.name === n)).join(", ")}`);
     const more = tools.filter((x) => groupOf(x.name) === "More").map((x) => x.name);
-    return [instructions, "", "For an interview or vlog, auto_captions captions what the people on the timeline say.", "", "Tools by step:", ...groups, ...(more.length ? [`- More: ${more.join(", ")}`] : []), "", `Help topics: ${HELP_TOPICS.join(", ")}, or any tool's name for its parameters and an example.`].join("\n");
+    return [instructions, "", "For an interview or vlog, auto_captions captions what the people on the timeline say.", "The shot log is a second transcript of the picture and sound: analyze_footage, then get_shot_log or find_shots, then suggest_edit_points before cutting. Check chosen ranges with preview_frames. help topic shot_log explains first use and partial logs.", "", "Tools by step:", ...groups, ...(more.length ? [`- More: ${more.join(", ")}`] : []), "", `Help topics: ${HELP_TOPICS.join(", ")}, or any tool's name for its parameters and an example.`].join("\n");
   }
   if (t === "design") return DESIGN;
   if (t === "catalog") return `list_catalog returns every name the tools accept. Sections: ${Object.keys(fullCatalog() as object).filter((k) => k !== "sections" && k !== "note").join(", ")}. Call it with a section for details (effect parameter ranges, template text counts) and with section "stickers" and a query to search stickers.`;

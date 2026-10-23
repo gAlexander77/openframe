@@ -27,6 +27,7 @@ import type { TrimPreviewState } from "../lib/trimPreview";
  * Premiere/VEGAS trim tools CapCut lacks. */
 export type Tool = "select" | "blade" | "ripple" | "roll" | "slip" | "slide" | "stretch";
 export type LeftTab =
+  | "shotlog"
   | "layouts"
   | "media"
   | "audio"

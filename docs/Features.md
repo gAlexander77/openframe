@@ -39,6 +39,18 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 ## Media
 
+- **Shot log** (desktop): a second transcript of what the picture and sound
+  do in a source file. FFmpeg measures cuts, motion, brightness, color and
+  silence; a local vision model describes actions, framing and visible text.
+  Library > Shot log selects a video, analyzes or refreshes it, searches
+  descriptions and opens a moment in the source monitor. First use downloads
+  about 2.9 GB once; the app starts the describer itself. Cancel keeps partial
+  descriptions, and Analyze continues them across the whole file, coarse to
+  fine. Saved logs live beside playback caches, outside project undo, with
+  an 8 MiB idle cache; visible logs are borrowed until the panel closes.
+  Agents read, search and ask for cut/join advice
+  without starting speech recognition. The browser build explains that shot
+  logs need the desktop app ([[ADR-145 The shot log is a second transcript written locally]]).
 - Import from the picker, by dropping files anywhere in the window, or on
   the timeline (which also places them).
 - **Web build: imports by address are kept** in the browser's storage, as

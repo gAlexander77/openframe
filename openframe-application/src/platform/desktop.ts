@@ -10,7 +10,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CustomSource, UrlSource, type StreamTargetChunk } from "mediabunny";
 import type { AgentCliResult } from "../lib/agentSetup";
-import type { AgentEndpoint, ImportedFile, Platform, ProjectSummary, RenderJob } from "./types";
+import type { AgentEndpoint, DescriberStatus, PrepareProgress, ImportedFile, Platform, ProjectSummary, RenderJob } from "./types";
 
 const MEDIA_EXTENSIONS = {
   video: ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "mts", "m2ts", "ts", "mxf", "3gp", "ogv"],
@@ -98,6 +98,37 @@ async function listenForAgents() {
 }
 
 export const desktop: Platform = {
+  describer: {
+    status: () => invoke<DescriberStatus>("describer_status"),
+    prepare(onProgress) {
+      const channel = new Channel<PrepareProgress>(); channel.onmessage = onProgress;
+      return invoke<DescriberStatus>("describer_prepare", { on_progress: channel });
+    },
+    ask: request => invoke<string>("describer_ask", { request: { images: request.images, prompt: request.prompt, schema: request.schema ?? null, max_tokens: request.maxTokens ?? null } }),
+    stop: () => invoke<void>("describer_stop"),
+  },
+  shotlog: {
+    async measure(src, onProgress, signal) {
+      signal?.throwIfAborted();
+      const job = crypto.randomUUID(), channel = new Channel<number>();
+      channel.onmessage = onProgress;
+      // Abort can arrive during probing, before the native job is registered.
+      let timer: ReturnType<typeof setInterval> | undefined;
+      const cancel = () => {
+        const stop = () => void invoke("shotlog_cancel", { job }).catch(() => {});
+        stop(); timer ??= setInterval(stop, 100);
+      };
+      signal?.addEventListener("abort", cancel, { once: true });
+      try {
+        const measured = await invoke<import("../lib/shotlog").Measures>("shotlog_measure", { path: src, job, on_progress: channel });
+        signal?.throwIfAborted();
+        return measured;
+      } finally { clearInterval(timer); signal?.removeEventListener("abort", cancel); }
+    },
+    frames: (path, times, width) => invoke<string[]>("shotlog_frames", { path, times, width }),
+    load: path => invoke<string | null>("shotlog_load", { path }),
+    save: (path, json) => invoke<void>("shotlog_save", { path, json }),
+  },
   async fetchModel(url, init = {}) {
     const [status, body] = await invoke<[number, string]>("model_request", { url, method: init.method ?? "GET", body: init.body ?? null });
     return new Response(body, { status, headers: { "Content-Type": "application/json" } });

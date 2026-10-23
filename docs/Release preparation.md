@@ -57,6 +57,39 @@ is retained verbatim. Do not silently switch to `GPL-3.0-or-later`.
 
 ## Initial dependency inventory
 
+### Shot log runtime and model (first-use downloads)
+
+Downloaded on first use, never bundled: llama.cpp **b11529** (MIT) and
+Qwen3-VL-4B-Instruct GGUF (Apache-2.0), revision
+`1cd86afb9a95c410a6038ab3b40d8b578c892266`. Preserve their upstream license
+and notices with the downloaded files; include this inventory in release
+review. The frontend adds no npm dependency. The native download/verification
+implementation belongs to the describer lane.
+
+Runtime source prefix:
+`https://github.com/ggml-org/llama.cpp/releases/download/b11529/`.
+Each filename below appends to that pinned prefix.
+
+| Platform / file | Bytes | SHA-256 |
+|---|---:|---|
+| Windows x86_64 `llama-b11529-bin-win-vulkan-x64.zip` | 33469593 | `ee9bba6669b018c303a30acc18c41edc9eff540fa75ec54278970ddf134af5c4` |
+| Windows aarch64 `llama-b11529-bin-win-vulkan-arm64.zip` | 26029736 | `570ff8eeaebe56a1a02c77f4425c9c0a1bc232f87f94fbdccecd6bbafbd0bae3` |
+| macOS aarch64 `llama-b11529-bin-macos-arm64.tar.gz` | 12084163 | `da75564de557d5ebcc90ea88e8dead4fd5f4253248ffe2d6340163b97c3a0e96` |
+| macOS x86_64 `llama-b11529-bin-macos-x64.tar.gz` | 11610739 | `4c5ebc90125845747586cd706ced9cb4c0fcf5d49699b04cf10150d69a7b5805` |
+| Linux x86_64 `llama-b11529-bin-ubuntu-vulkan-x64.tar.gz` | 31791256 | `89719c08818b5c69ce79d22aa2dd8d812962eeabc5a7c2bd26854f974aa47423` |
+| Linux aarch64 `llama-b11529-bin-ubuntu-vulkan-arm64.tar.gz` | 24993078 | `431345b39f76d31f94f71b1a4f86a99c5d0ffaccac0d1a39a4eaa8e9a63577e8` |
+
+Model source prefix:
+`https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/1cd86afb9a95c410a6038ab3b40d8b578c892266/`.
+Each filename below appends to that pinned prefix.
+
+| File | Bytes | SHA-256 |
+|---|---:|---|
+| `Qwen3VL-4B-Instruct-Q4_K_M.gguf` | 2497281664 | `66358cb18bb6b3b1b6675aa412c7a88ef01d228f481184d13668e5201c730a0a` |
+| `mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf` | 453974304 | `30ba2c7dd3127a4561b6cba9d13d0f711c91bdb38742e2f56d73c8cb596bd06d` |
+
+### Existing dependencies
+
 The expanded [[Third-party licenses]] inventory records 52 installed
 production npm packages and 420 Cargo dependency packages at `94ea867`,
 including transitive dependencies and declarations flagged for owner review.
