@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 192 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 197 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -43,6 +43,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 
 - **Start here**: `help`, `describe_project`, `find_clips`, `list_catalog`
 - **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `import_timeline`, `export_timeline`, `set_project`
+- **Shot log**: `analyze_footage`, `get_shot_log`, `find_shots`, `suggest_edit_points`, `describe_moment`
 - **Clips**: `find_highlights`, `add_highlight_markers`, `apply_stream_layout`, `create_clips`, `export_projects`
 - **Media**: `import_media`, `create_proxies`, `delete_proxies`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `extend_edit`, `trim_edits`, `edit_from_source`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
@@ -66,7 +67,7 @@ The guide to these tools. topic: overview (the tools by step; start here), ad, e
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `topic` | string |  | overview (default), design, stream_clips, ad, epic_edit, voiceover, social_short, catalog, params, or a tool's name |
+| `topic` | string |  | overview (default), design, shot_log, stream_clips, ad, epic_edit, voiceover, social_short, catalog, params, or a tool's name |
 
 Example:
 
@@ -222,6 +223,102 @@ Example:
 
 ```json
 {"name":"set_project","arguments":{"width":1080,"height":1920,"fps":"30"}}
+```
+
+## Shot log
+
+Read what the picture and sound do, search moments, and choose cuts. Everything runs on this computer in the desktop app.
+
+### analyze_footage
+
+Measure shots, motion, brightness, color and silence, then write a time-coded visual shot log with a local vision model. Everything runs on this computer; the first description downloads about 2.9 GB once. Returns counts, completeness, model, elapsed_seconds and first_use_download_bytes. A retained session job supports progress, cancellation and resume. One analysis per asset; describe false measures only. Everything runs on this computer. Shot logs need the desktop app; this browser build has no local describer.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string |  | Imported video asset ID; give exactly one asset_id or clip_id |
+| `clip_id` | string |  | Video clip ID; get_shot_log defaults to its source window. Times are source seconds |
+| `interval` | number |  | Maximum moment length in source seconds (default 8); refresh to change an existing log's spacing (4..30) |
+| `describe` | boolean |  | Describe frames with the local model (default true); false measures only |
+| `refresh` | boolean |  | Discard the saved reading and measure again (default false); otherwise resume undescribed moments |
+| `wait` | number |  | Seconds to wait for a long job (default 45); 0 returns immediately. Poll job_status and cancel with cancel_job (0..45) |
+
+Example:
+
+```json
+{"name":"analyze_footage","arguments":{"asset_id":"a_vod","interval":8,"wait":0}}
+```
+
+### get_shot_log
+
+Read the second transcript: time-coded picture action, on-screen text, cuts, sound and already-heard speech, or JSON measures and descriptions. Partial logs state their coverage. Run analyze_footage first; no model inference or hearing is started by reading. Everything runs on this computer. Shot logs need the desktop app; this browser build has no local describer.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string |  | Imported video asset ID; give exactly one asset_id or clip_id |
+| `clip_id` | string |  | Video clip ID; get_shot_log defaults to its source window. Times are source seconds |
+| `from` | number |  | Source start seconds; default clip's In or 0 (0..) |
+| `to` | number |  | Exclusive source end seconds; default clip's Out or duration (0..) |
+| `format` | "text" \| "json" |  | Screenplay text (default) or structured log JSON |
+| `speech` | boolean |  | Include already-heard speech (default true); never starts transcription |
+
+Example:
+
+```json
+{"name":"get_shot_log","arguments":{"asset_id":"a_vod","from":30,"to":60}}
+```
+
+### find_shots
+
+Search analyzed footage by what happens or what text appears on screen. Returns asset_id, source start/end, weighted score and matched words. On-screen text and action count most; quoted phrases must match. Reads local logs without starting analysis. Everything runs on this computer. Shot logs need the desktop app; this browser build has no local describer.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `query` | string | yes | Words in action, description or on-screen text; quoted phrases must match |
+| `asset_id` | string |  | Search this video asset only; omit for every analyzed video in the project |
+| `limit` | integer |  | Maximum matches, ranked by weighted word overlap (default 10) (1..100) |
+
+Example:
+
+```json
+{"name":"find_shots","arguments":{"query":"\"MISSION CONTROL\"","limit":5}}
+```
+
+### suggest_edit_points
+
+Suggest the best In and Out plus up to two alternatives near each chosen source range, with measured reasons: shot cuts, silence, completed action and already-heard word/sentence boundaries. Between consecutive ranges, warns of jump cuts, brightness, motion and sound changes, with existing OpenFrame tool calls for joins. Arguments with angle brackets need the placed clip IDs and timeline seconds; verify source handles and preview_frames before cutting. Everything runs on this computer. Shot logs need the desktop app; this browser build has no local describer.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string |  | Imported video asset ID; give exactly one asset_id or clip_id |
+| `clip_id` | string |  | Video clip ID; get_shot_log defaults to its source window. Times are source seconds |
+| `ranges` | { start, end }[] | yes | Chosen ranges in source seconds, in planned edit order |
+| `ranges[].start` | number | yes | Source In seconds (0..) |
+| `ranges[].end` | number | yes | Exclusive source Out seconds (0..) |
+| `window` | number |  | Search this many seconds around each boundary (default 2) (0..30) |
+
+Example:
+
+```json
+{"name":"suggest_edit_points","arguments":{"asset_id":"a_vod","ranges":[{"start":30,"end":45},{"start":60,"end":70}]}}
+```
+
+### describe_moment
+
+Inspect three source frames around a time with the local vision model on this computer: ask a question for plain text or omit it for a structured description. Returns asset_id, source time, sampled frames and answer. Returns a retained job only when the describer needs preparation. Everything runs on this computer. Shot logs need the desktop app; this browser build has no local describer.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string |  | Imported video asset ID; give exactly one asset_id or clip_id |
+| `clip_id` | string |  | Video clip ID; get_shot_log defaults to its source window. Times are source seconds |
+| `time` | number | yes | Source second at the center of the moment (0..) |
+| `span` | number |  | Seconds before and after time for three frames (default 1) (0..30) |
+| `question` | string |  | Optional question for a plain answer; omitted returns the structured moment description |
+| `wait` | number |  | Seconds to wait for a long job (default 45); 0 returns immediately. Poll job_status and cancel with cancel_job (0..45) |
+
+Example:
+
+```json
+{"name":"describe_moment","arguments":{"asset_id":"a_vod","time":35,"question":"What changes across these frames?"}}
 ```
 
 ## Clips

@@ -27,7 +27,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Pin to footage / unpin / callout | Pin / PinOff / Scan |
 | Import / export | Upload / Download |
 | Save frame / export duration | ImageDown / Clock |
-| Home project placeholder | Clapperboard |
+| Home project placeholder / shot log | Clapperboard |
 | Fit timeline or viewer | Maximize2 |
 | Compare looks | Columns2 |
 | Scopes | ChartColumnBig |

@@ -1,3 +1,4 @@
+// Shot logs and the local describer are desktop-only optional platform members.
 // The web build's platform: everything stays in the user's browser. Media
 // and projects live in the origin private file system (OPFS), which the
 // browser keeps per site and never uploads anywhere (ADR-003). A File read

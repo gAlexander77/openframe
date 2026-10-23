@@ -94,3 +94,12 @@ it("bounds retained answers by bytes and releases them when a project closes", a
   jobs.releaseResults();
   expect(jobs.memory().bytes).toBe(0);
 });
+
+it("deduplicates per-asset jobs without blocking a different asset's analysis", async () => {
+  const jobs = createJobRegistry();
+  const a = jobs.start("analyze_footage", "p", undefined, () => new Promise(() => {}), "asset-a");
+  const b = jobs.start("analyze_footage", "p", undefined, () => new Promise(() => {}), "asset-b");
+  expect(a).not.toBe(b);
+  expect(jobs.start("analyze_footage", "p", undefined, async () => "wrong", "asset-a")).toBe(a);
+  jobs.cancel(a); jobs.cancel(b);
+});

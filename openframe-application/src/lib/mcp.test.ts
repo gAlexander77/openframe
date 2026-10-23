@@ -949,3 +949,25 @@ it("cancel_job aborts the host work and job_status never publishes its late answ
   expect(await invoke("job_status", { job_id: first.job_id })).toMatchObject({ state: "canceled" });
   expect((await invoke("job_status", { job_id: first.job_id })).result).toBeUndefined();
 });
+
+describe("MCP shot log surface", () => {
+  it("forwards all five tools, preserving plain screenplay text and job responses", async () => {
+    const h: McpHost = host();
+    const seen: unknown[] = [];
+    h.shotLog = async (name, args) => { seen.push([name, args]); return name === "get_shot_log" ? "00:05.00          CUT" : { asset_id: "a1", complete: false }; };
+    for (const [name, args] of [
+      ["analyze_footage", { asset_id: "a1", interval: 8, wait: 0 }], ["get_shot_log", { clip_id: "clip" }],
+      ["find_shots", { query: "NASA" }], ["suggest_edit_points", { asset_id: "a1", ranges: [{ start: 2, end: 4 }] }], ["describe_moment", { asset_id: "a1", time: 3, span: 1 }],
+    ] as const) {
+      const r = await call(h, "tools/call", { name, arguments: args });
+      expect((r!.result as { isError?: boolean }).isError).not.toBe(true);
+      expect(seen.at(-1)).toEqual([name, args]);
+      if (name === "get_shot_log") expect(text(r)).toBe("00:05.00          CUT");
+    }
+  });
+  it("rejects invalid ranges, intervals and formats before calling the host; hosts without shot logs explain desktop", async () => {
+    const h = host();
+    for (const [name, args] of [["analyze_footage", { asset_id: "a1", interval: 3 }], ["find_shots", { query: "NASA", limit: 101 }], ["get_shot_log", { asset_id: "a1", format: "html" }], ["suggest_edit_points", { ranges: [{ start: -1, end: 3 }] }], ["describe_moment", { time: -1 }]] as const) expect((await call(h, "tools/call", { name, arguments: args }))!.result).toMatchObject({ isError: true });
+    expect(text(await call(h, "tools/call", { name: "analyze_footage", arguments: { asset_id: "a1" } }))).toContain("Shot logs need the desktop app");
+  });
+});

@@ -3,6 +3,44 @@
 How other programs and AI agents make and edit videos with the app — all
 on the user's machine. Three doors, one engine.
 
+## The shot log, beside the speech transcript
+
+In the desktop app, `analyze_footage` takes exactly one `asset_id` or
+`clip_id`, an optional maximum moment interval (4–30 seconds, default 8),
+`describe` (default true), and `refresh` (default false). It returns counts,
+completeness, model, elapsed time and first-use download bytes. Long runs
+return a retained job (`wait: 0` returns immediately); use `job_status` and
+`cancel_job`. Repeating analysis reuses the running job for that asset, then
+resumes missing descriptions from the saved log. `describe: false` measures
+only; `refresh` replaces the reading. First description downloads about
+2.9 GB once and runs the vision model on this computer, without a separate
+installation or server to start.
+
+Read `get_shot_log` in screenplay text or JSON, optionally bounded by `from`
+and `to` source seconds. A clip defaults to its visible source window.
+`find_shots` searches actions and on-screen text across every analyzed video
+(or one `asset_id`); quoted phrases must match. These reads load saved logs
+and use already-heard speech windows, never starting transcription.
+`suggest_edit_points` takes source `ranges` and a boundary `window` (default
+2 seconds), returning In/Out choices, reasons and up to two alternatives,
+plus advice between consecutive ranges. Join calls use existing
+`set_transition` (dissolve, dipBlack, none), `set_param` (transform.scale),
+`detach_audio` and `trim_clip`; replace angle-bracket placeholders with
+placed clip IDs and timeline seconds, and multiply a punch-in by the current
+scale. Confirm audio handles and preview the join. Sound activity alone does
+not prove speech; a J-cut suggestion is conditional on checking the speech.
+`describe_moment` inspects three frames around source `time` (`span` default
+1 second), answering a `question` in plain text or returning the structured
+moment description. It returns a preparation job only when needed.
+
+Order: analyze, read or search, suggest edit points, then check chosen ranges
+with `preview_frames` before cutting. The browser build has no describer;
+all five tools explain that shot logs need the desktop app. Partial logs
+state how many moments are described. See `help` topic `shot_log` and [[MCP tools]].
+
+How other programs and AI agents make and edit videos with the app — all
+on the user's machine. Three doors, one engine.
+
 ## 1. Render a project file (pipelines)
 
 Write a project as JSON ([[Project format]]; the smallest valid file is a
