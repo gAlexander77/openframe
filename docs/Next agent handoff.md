@@ -5,9 +5,9 @@ Claude Code or Codex pickup. Read it before resuming previous tasks.
 
 ## Current state - 2026-10-22 (read first)
 
-- `main` holds all seven improvements rounds (to ADR-144): `improvements-7`
-  merged on 2026-10-22 after a full drive sweep (History, "The seventh
-  improvements branch").
+- `main` holds all seven improvements rounds (to ADR-144) and the shot
+  log (ADR-145, `improvements-8`, 2026-10-23): a second transcript of the
+  picture that a local vision model writes (History, "The shot log").
 - **The owner's standing direction (2026-10-21):** keep finding and fixing
   bugs, add what major editors have that OpenFrame lacks, test the MCP
   tools with real, voiced edits, and merge finished work into `main`
@@ -34,6 +34,11 @@ Claude Code or Codex pickup. Read it before resuming previous tasks.
   `desktop-session-jobs`, and `window-header`, which needs its own runner;
   `music-structure` needs the private promo track. Rerun failures alone
   before reading them as bugs ([[Driving the app]], traps 23 to 26).
+- **The shot log next:** two requests at once on the describer (llama.cpp
+  `-np 2`) for throughput (a 45-minute file takes 38 minutes); let
+  find_highlights and create_clips read the log (visual evidence beyond
+  scene cuts); ask the model for literal on-screen text only (it sometimes
+  names objects there); a web-build describer is not planned.
 - **Then:** rerun the clipping blind test through to exported files (the
   first one was stopped by low memory before it exported); bring the
   highlight peak memory down (the analysis of one long file);
