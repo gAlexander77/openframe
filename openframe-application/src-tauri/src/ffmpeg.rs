@@ -53,7 +53,7 @@ pub fn tool(app: &tauri::AppHandle, name: &str) -> PathBuf {
         .unwrap_or_else(|| exe.into())
 }
 
-fn command(program: &Path) -> Command {
+pub(crate) fn command(program: &Path) -> Command {
     let mut c = Command::new(program);
     c.stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -537,7 +537,7 @@ pub async fn ffmpeg_playback_proxy(
 /// A stable name for a source's proxy: the same file, unchanged, maps to the
 /// same proxy, so reimporting it is instant. FNV-1a, which (unlike std's
 /// hasher) never changes between Rust releases.
-fn cache_key(src: &Path) -> Result<String, String> {
+pub(crate) fn cache_key(src: &Path) -> Result<String, String> {
     let meta = std::fs::metadata(src).map_err(|e| format!("{}: {e}", src.display()))?;
     let modified = meta
         .modified()
@@ -793,7 +793,7 @@ pub async fn ffmpeg_cancel(job: String, ffmpeg: tauri::State<'_, Ffmpeg>) -> Res
 /// when its last handle closes, which happens when this process ends, crash
 /// included. Without it a crashed app leaves ffmpeg.exe burning the GPU.
 #[cfg(windows)]
-mod job {
+pub(crate) mod job {
     use std::{os::windows::io::AsRawHandle, process::Child};
     use windows_sys::Win32::{
         Foundation::{CloseHandle, HANDLE},
