@@ -23,6 +23,12 @@ How an AI model should make a video with OpenFrame's MCP tools. A model gets the
 - End: logo, product, one call to action and where to go, held 2-3 s.
 - Check: preview_frames across the whole piece, preview_motion around cuts and moves, check_project for the rules above; fix, check again, then export.
 
+## The shot log, a second transcript
+
+In the desktop app, analyze_footage measures shots and sound with ffmpeg and describes frames with a local vision model. Everything runs on this computer; first use downloads about 2.9 GB once. Cancel preserves partial descriptions; repeat the call to continue. The web build has no describer.
+Read get_shot_log for the picture, sound, cuts and already-heard speech, or find_shots to search actions and on-screen text across analyzed assets. Undescribed moments retain their measurements. Neither read tool starts hearing speech.
+Before cutting chosen ranges, suggest_edit_points gives In/Out alternatives and advice for joins (hard cut, dissolve, punch-in, J- or L-cut). These are measured hints, not an edit. Replace tool placeholders with the placed clip IDs, current scale and timeline seconds; check source handles. Check each chosen range with preview_frames before cutting. describe_moment checks a specific source time or answers a question about it.
+
 ## Stream clips, from a long VOD to a batch of shorts
 
 1. Import the VOD with import_media. For long files create_proxies for smooth previews; clip projects share the file and playback proxy.

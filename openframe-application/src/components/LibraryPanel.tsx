@@ -1,3 +1,4 @@
+import { ShotLogTab } from "./ShotLogTab";
 import { MakeClipsDialog, StreamLayoutsTab } from "./ClipDialogs";
 import { createProxies, deleteProxies, proxyAction, proxyDetails, proxyStatus, useProxies } from "../state/proxies";
 import { EmptyState } from "./EmptyState";
@@ -8,6 +9,7 @@ import {
   Blend,
   Bookmark,
   Captions,
+  Clapperboard,
   Film,
   Heart,
   Image,
@@ -67,6 +69,7 @@ import { RenameField } from "./RenameField";
 import { renameMedia } from "../state/rename";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
+  { id: "shotlog", label: "Shot log", icon: Clapperboard },
   { id: "media", label: "Media", icon: Film },
   { id: "layouts", label: "Layouts", icon: LayoutGrid },
   { id: "audio", label: "Audio", icon: Music },
@@ -132,6 +135,7 @@ export function LibraryPanel() {
         ))}
       </nav>
       <div className="lib-body" key={tab}>
+        {tab === "shotlog" && <ShotLogTab />}
         {tab === "media" && <MediaTab kind="all" />}
         {tab === "layouts" && <StreamLayoutsTab />}
         {tab === "audio" && <MediaTab kind="audio" />}

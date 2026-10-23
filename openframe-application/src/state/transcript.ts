@@ -194,3 +194,9 @@ export function deleteWords(picks: Map<Id, Set<number>>) {
   if (!cuts.length) return;
   edit(`Delete ${n} ${n === 1 ? "word" : "words"}`, (q) => cuts.reduce((r, x) => runCommand(r, "cut_ranges", { clip_id: x.id, ranges: x.ranges, ripple: true }), q));
 }
+
+/** Read only the already-heard source window; never queues speech work. */
+export function cachedAssetWords(assetId: Id, from: number, to: number): Word[] | undefined {
+  const h = heard.get(assetId);
+  return h && !missing(h, from, to) ? wordsIn(h.words, from, to) : undefined;
+}

@@ -15,7 +15,7 @@ async (page) => {
     await page.setViewportSize({ width, height });
     await page.waitForTimeout(200);
     const tabs = page.getByRole('region', { name: 'Library', exact: true }).getByRole('tab');
-    const names = ['Media', 'Layouts', 'Audio', 'Text', 'Stickers', 'Effects', 'Transitions', 'Captions', 'Filters', 'Adjustment', 'AI tools', 'Markers', 'Timeline', 'Check'];
+    const names = ['Shot log', 'Media', 'Layouts', 'Audio', 'Text', 'Stickers', 'Effects', 'Transitions', 'Captions', 'Filters', 'Adjustment', 'AI tools', 'Markers', 'Timeline', 'Check'];
     const clipped = await tabs.evaluateAll((nodes) => nodes.filter((e) => {
       const r = e.getBoundingClientRect(), p = e.parentElement.getBoundingClientRect();
       return r.left < p.left - 1 || r.right > p.right + 1 || r.top < p.top - 1 || r.bottom > p.bottom + 1;

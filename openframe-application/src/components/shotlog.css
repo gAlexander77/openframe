@@ -1,0 +1,16 @@
+﻿.shotlog-tab { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.shotlog-picker { display: grid; gap: 4px; color: var(--text-2); font-size: var(--fs-xs); }
+.shotlog-picker select { width: 100%; min-width: 0; text-overflow: ellipsis; }
+.shotlog-tab .lib-hint, .shotlog-tab .lib-toolbar { margin: 0; }
+.shotlog-tab .lib-search { flex: none; }
+.shotlog-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-xs); }
+.shotlog-progress span { width: 100%; overflow-wrap: anywhere; }
+.shotlog-progress progress { flex: 1; min-width: 0; accent-color: var(--accent); }
+.shotlog-moments { display: grid; gap: 8px; }
+.shotlog-moment { display: flex; flex-direction: column; align-items: stretch; gap: 5px; width: 100%; min-width: 0; padding: 10px; text-align: left; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text-2); font-size: var(--fs-xs); white-space: normal; overflow-wrap: anywhere; }
+.shotlog-moment:hover { border-color: var(--accent); }
+.shotlog-moment strong { color: var(--text-1); font-weight: 500; }
+.shotlog-time { font-variant-numeric: tabular-nums; }
+.shotlog-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.shotlog-chips span { background: var(--bg-inset); border-radius: var(--radius-sm); padding: 2px 5px; }
+.shotlog-moment.undescribed { color: var(--text-3); }
