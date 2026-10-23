@@ -98,19 +98,60 @@ export function parseMoment(text: string): Description | undefined {
   } catch { return; }
 }
 export const shotTime = (t: number) => `${Math.floor(t / 60).toString().padStart(2, "0")}:${(t % 60).toFixed(2).padStart(5, "0")}`;
-export function screenplay(log: ShotLog, { from = 0, to = log.duration, words }: { from?: number; to?: number; words?: Word[] } = {}): string {
-  const lines: string[] = [];
+export type ScreenplayOptions = { from?: number; to?: number; words?: Word[]; detail?: "full" | "brief" };
+export function screenplay(log: ShotLog, options: ScreenplayOptions = {}): string {
+  return screenplayBlocks(log, options).map(b => b.text).join("\n");
+}
+/** The screenplay in blocks that each start at a source time, so a long
+ * reading can be paged. Brief: one line per moment, and a run of moments
+ * in one shot that read alike (a stream's fixed layout) folded into one. */
+export function screenplayBlocks(log: ShotLog, { from = 0, to = log.duration, words, detail = "full" }: ScreenplayOptions = {}): { at: number; text: string }[] {
+  if (detail === "brief") return briefBlocks(log, from, to);
+  return fullLines(log, from, to, words);
+}
+const words4 = (s: string) => new Set(tokens(s));
+function alike(a: string, b: string) {
+  const x = words4(a), y = words4(b);
+  const both = [...x].filter(w => y.has(w)).length;
+  return both / Math.max(1, new Set([...x, ...y]).size) >= 0.5;
+}
+function briefBlocks(log: ShotLog, from: number, to: number) {
+  const blocks: { at: number; text: string; end: number; shot: number; key: string; count: number; head: string }[] = [];
+  for (const m of log.moments.filter(m => m.end > from && m.start < to)) {
+    const d = m.described, start = Math.max(from, m.start), end = Math.min(to, m.end);
+    const cut = m.start > 0 && log.shots.some(s => s.start === m.start) ? "CUT " : "";
+    const sound = m.measured.loudness_db <= -45 ? "quiet" : m.measured.loudness_db >= -24 ? "loud" : "";
+    const text = d ? `${d.shot_size.toUpperCase()} ${d.camera}: ${d.action}${d.on_screen_text.length ? ` On screen: ${d.on_screen_text.slice(0, 2).map(s => JSON.stringify(s)).join(", ")}.` : ""}${sound ? ` [${sound}]` : ""}` : "not described yet";
+    const last = blocks.at(-1);
+    if (last && !cut && d && last.shot === m.shot && last.key === `${d.shot_size}|${d.camera}` && alike(last.head, `${d.action} ${d.description}`)) {
+      last.end = end; last.count++;
+      last.text = `${shotTime(last.at)}-${shotTime(end)}  ${last.text.slice(last.text.indexOf("  ") + 2).replace(/ \(alike ×\d+\)$/, "")} (alike ×${last.count})`;
+      continue;
+    }
+    blocks.push({ at: start, end, shot: m.shot, key: d ? `${d.shot_size}|${d.camera}` : "", count: 1, head: d ? `${d.action} ${d.description}` : "", text: `${shotTime(start)}-${shotTime(end)}  ${cut}${text}` });
+  }
+  return blocks.map(({ at, text }) => ({ at, text }));
+}
+/** At most `maxChars` of blocks; `next` is where the following page starts. */
+export function pageBlocks(blocks: { at: number; text: string }[], maxChars: number): { text: string; next?: number } {
+  let size = 0, n = 0;
+  while (n < blocks.length && (n === 0 || size + blocks[n].text.length + 1 <= maxChars)) size += blocks[n++].text.length + 1;
+  return { text: blocks.slice(0, n).map(b => b.text).join("\n"), ...(n < blocks.length ? { next: blocks[n].at } : {}) };
+}
+function fullLines(log: ShotLog, from: number, to: number, words?: Word[]) {
+  const lines: { at: number; text: string }[] = [];
   const events = [...log.moments.filter(m => m.end > from && m.start < to).map(m => ({ at: m.start, moment: m })), ...log.shots.slice(1).filter(s => s.start >= from && s.start < to).map(s => ({ at: s.start, moment: undefined }))].sort((a, b) => a.at - b.at || Number(!!a.moment) - Number(!!b.moment));
   for (const { at, moment: m } of events) {
-    if (!m) { lines.push(`${shotTime(at)}          CUT`); continue; }
+    if (!m) { lines.push({ at, text: `${shotTime(at)}          CUT` }); continue; }
     const d = m.described, sound = m.measured.loudness_db <= -45 ? "quiet" : m.measured.loudness_db >= -24 ? "loud" : "moderate";
     const pauses = log.silences.filter(([s, e]) => e > Math.max(from, m.start) && s < Math.min(to, m.end));
-    lines.push(`${shotTime(Math.max(from, m.start))}-${shotTime(Math.min(to, m.end))}  ${d ? `${d.shot_size.toUpperCase()}, ${d.camera}. ${d.action} (${d.mood}) ${d.description}` : `not described yet. Motion ${m.measured.motion.toFixed(2)}, luma ${m.measured.luma.toFixed(2)}, pan ${m.measured.pan ?? "none"}`}`);
-    lines.push(`                 ${d?.on_screen_text.length ? `On screen: ${d.on_screen_text.map(s => JSON.stringify(s)).join(", ")}. ` : ""}Sound: ${sound} (${Math.round(m.measured.loudness_db)} dB), ${pauses.length ? `silence ${pauses.map(([s, e]) => `${shotTime(s)}-${shotTime(e)}`).join(", ")}` : "no silence"}.`);
+    const block = [`${shotTime(Math.max(from, m.start))}-${shotTime(Math.min(to, m.end))}  ${d ? `${d.shot_size.toUpperCase()}, ${d.camera}. ${d.action} (${d.mood}) ${d.description}` : `not described yet. Motion ${m.measured.motion.toFixed(2)}, luma ${m.measured.luma.toFixed(2)}, pan ${m.measured.pan ?? "none"}`}`];
+    block.push(`                 ${d?.on_screen_text.length ? `On screen: ${d.on_screen_text.map(s => JSON.stringify(s)).join(", ")}. ` : ""}Sound: ${sound} (${Math.round(m.measured.loudness_db)} dB), ${pauses.length ? `silence ${pauses.map(([s, e]) => `${shotTime(s)}-${shotTime(e)}`).join(", ")}` : "no silence"}.`);
     const speech = words?.filter(w => w.end > Math.max(from, m.start) && w.start < Math.min(to, m.end)).map(w => w.text).join(" ");
-    if (speech) lines.push(`                 Speech: ${JSON.stringify(speech)}`);
+    if (speech) block.push(`                 Speech: ${JSON.stringify(speech)}`);
+    lines.push({ at: Math.max(from, m.start), text: block.join("\n") });
   }
-  return lines.join("\n");
+  return lines;
 }
 const stem = (s: string) => s.toLowerCase().replace(/(?:ing|ed|es|s)$/u, "").replace(/(.)\1$/u, "$1");
 const tokens = (s: string) => (s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).map(stem);

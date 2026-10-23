@@ -37,3 +37,19 @@ Descriptions are visual evidence, not ground truth; preview chosen frames
 before cutting. Cancellation stops between native operations; an in-flight
 prepare/ask/frames call has no cancel command in the contract. Downloads
 remain on disk. Desktop end-to-end checks follow the Rust lane merge.
+
+## Measured in the desktop app, 2026-10-23
+
+On the RTX 5070 laptop, the first analyze_footage downloaded and verified
+the 2.98 GB describer in about 110 s, then described a 5-minute facecam
+stream (one shot, 38 moments) in about 170 s. The 45-minute NASA landing
+broadcast read as 236 shots and 443 moments in 38 minutes (about 5 s a
+moment). The log matches what is known: a cut at 30:34.17 to "people
+cheering and raising their arms" (touchdown applause at 30:34), "WE
+LANDED!" read off the screen at 30:39, the room clapping at 27:14 as the
+parachute is called. In full the log is about 190,000 characters, so
+get_shot_log answers in pages of 40,000 characters with the from to
+continue at, and reads windows over 10 minutes brief by default (one line
+a moment, alike moments of one shot folded, as a stream's are). Search
+finds words the model uses ("cheer", "parachute", "image"), not its
+vocabulary gaps ("sky crane").

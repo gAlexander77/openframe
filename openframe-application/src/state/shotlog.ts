@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { memoryOwners, MiB } from "../engine/memory";
 import { ByteLru, retainedBytes } from "../lib/memory";
-import { cutsFrom, describeOrder, editPoints, findMoments, joinAdvice, measureMoment, momentPrompt, MOMENT_SCHEMA, parseMoment, parseShotLog, planMoments, screenplay, silencesFrom, type Range, type ShotLog } from "../lib/shotlog";
+import { cutsFrom, describeOrder, editPoints, findMoments, joinAdvice, measureMoment, momentPrompt, MOMENT_SCHEMA, parseMoment, pageBlocks, parseShotLog, planMoments, screenplayBlocks, silencesFrom, type Range, type ShotLog } from "../lib/shotlog";
 import { findClip, sourceRange } from "../lib/project/ops";
 import { platform } from "../platform";
 import type { DescriberStatus } from "../platform/types";
@@ -11,6 +11,9 @@ import { projectWork } from "./projectWork";
 import { store } from "./store";
 import { cachedAssetWords } from "./transcript";
 import { dismiss, toast, updateToast } from "./toast";
+
+/** About 10,000 tokens: what an agent can read of a long log in one answer. */
+export const SHOT_LOG_PAGE_CHARS = 40000;
 
 export const SHOTLOG_DESKTOP_NOTE = "Shot logs need the desktop app: it runs a local vision model this browser build cannot.";
 export const SHOTLOG_MODEL = "Qwen3-VL-4B-Instruct-Q4_K_M";
@@ -214,12 +217,21 @@ export async function shotLogTool(name: string, a: Record<string, unknown>): Pro
   const log = await loadShotLog(asset.id); scope.throwIfAborted();
   if (!log) throw new Error("This source has no shot log; run analyze_footage first");
   if (name === "get_shot_log") {
-    const from = Number(a.from ?? range.start), to = Number(a.to ?? Math.min(log.duration, range.end));
-    if (from >= to || to > log.duration) throw new Error("Give a source window with from < to within the duration");
+    // A window past the end reads to the end; only an empty window is refused.
+    const from = Math.max(0, Number(a.from ?? range.start)), to = Math.min(log.duration, Number(a.to ?? range.end));
+    if (from >= to) throw new Error(`Give a source window with from < to inside 0 to ${log.duration} seconds`);
     const described = log.moments.filter(m => !!m.described).length;
     const note = log.complete ? "Complete shot log" : `Partial shot log: ${described} of ${log.moments.length} moments described; analyze_footage continues it`;
-    if (a.format === "json") return { asset_id: asset.id, ...log, from, to, moments: log.moments.filter(m => m.end > from && m.start < to), note };
-    return `${note}\n${screenplay(log, { from, to, words: a.speech === false ? undefined : cachedAssetWords(asset.id, from, to) })}`;
+    if (a.format === "json") {
+      // At most 150 moments a page: a 45-minute log is about 400 KB of JSON.
+      const moments = log.moments.filter(m => m.end > from && m.start < to), next = moments[150]?.start;
+      return { asset_id: asset.id, ...log, from, to, moments: moments.slice(0, 150), note, ...(next === undefined ? {} : { next_from: +next.toFixed(3) }) };
+    }
+    // Brief by default past 10 minutes: a 45-minute log reads about 190,000 characters in full.
+    const detail = a.detail === "full" || a.detail === "brief" ? a.detail : to - from > 600 ? "brief" : "full";
+    const page = pageBlocks(screenplayBlocks(log, { from, to, detail, words: a.speech === false ? undefined : cachedAssetWords(asset.id, from, to) }), SHOT_LOG_PAGE_CHARS);
+    const more = page.next === undefined ? "" : `\nContinued: call get_shot_log with from=${+page.next.toFixed(3)} for the rest.`;
+    return `${note} (${detail}${detail === "brief" ? "; detail full for every field of a shorter window" : ""})\n${page.text}${more}`;
   }
   const ranges = a.ranges as Range[];
   if (!ranges.length || ranges.some(r => r.start >= r.end || r.end > log.duration)) throw new Error("Ranges must have start < end within the source duration");

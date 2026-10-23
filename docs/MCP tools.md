@@ -250,14 +250,15 @@ Example:
 
 ### get_shot_log
 
-Read the second transcript: time-coded picture action, on-screen text, cuts, sound and already-heard speech, or JSON measures and descriptions. Partial logs state their coverage. Run analyze_footage first; no model inference or hearing is started by reading. Everything runs on this computer. Shot logs need the desktop app; this browser build has no local describer.
+Read the second transcript: time-coded picture action, on-screen text, cuts, sound and already-heard speech, or JSON measures and descriptions. Partial logs state their coverage. Long answers come in pages of about 10,000 tokens (150 moments as JSON) and say the from to continue with; skim a long VOD brief, then read a chosen window in full. Run analyze_footage first; no model inference or hearing is started by reading. Everything runs on this computer. Shot logs need the desktop app; this browser build has no local describer.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `asset_id` | string |  | Imported video asset ID; give exactly one asset_id or clip_id |
 | `clip_id` | string |  | Video clip ID; get_shot_log defaults to its source window. Times are source seconds |
 | `from` | number |  | Source start seconds; default clip's In or 0 (0..) |
-| `to` | number |  | Exclusive source end seconds; default clip's Out or duration (0..) |
+| `to` | number |  | Exclusive source end seconds; default clip's Out or duration; past the end reads to the end (0..) |
+| `detail` | "full" \| "brief" |  | full: every field of each moment; brief: one line per moment, alike moments in a shot folded (default for windows over 10 minutes) |
 | `format` | "text" \| "json" |  | Screenplay text (default) or structured log JSON |
 | `speech` | boolean |  | Include already-heard speech (default true); never starts transcription |
 

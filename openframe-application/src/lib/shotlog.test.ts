@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { COMMANDS, validate } from "./commands";
-import { cutsFrom, silencesFrom, planMoments, describeOrder, measureMoment, momentPrompt, MOMENT_SCHEMA, parseMoment, screenplay, findMoments, editPoints, joinAdvice, parseShotLog, type Measures, type ShotLog } from "./shotlog";
+import { cutsFrom, silencesFrom, planMoments, describeOrder, measureMoment, momentPrompt, MOMENT_SCHEMA, parseMoment, screenplay, screenplayBlocks, pageBlocks, findMoments, editPoints, joinAdvice, parseShotLog, type Measures, type ShotLog } from "./shotlog";
 
 const measures = (duration = 12): Measures => ({ duration, width: 1920, height: 1080, frame_rate: 10, scene: Array(duration * 10).fill(0.01), step: 0.5, luma: Array(duration * 2).fill(0.5), motion: Array(duration * 2).fill(0.02), dx: Array(duration * 2).fill(0), dy: Array(duration * 2).fill(0), rgb: Array.from({ length: duration * 2 }, () => [100, 120, 140]), audio_step: 0.1, audio_db: Array(duration * 10).fill(-18) });
 const description = { shot_size: "medium", camera: "static", people: 1, on_screen_text: ["JPL"], action: "A man raises his arms; others clap.", mood: "excited", description: "A control room celebrates." };
@@ -132,5 +132,26 @@ describe("edit decisions", () => {
     delete a.moments[0].described; delete b.moments[0].described;
     a.moments[0].measured.pan = null; a.moments[0].measured.loudness_db = b.moments[0].measured.loudness_db = -90;
     expect(joinAdvice(a, { start: 0, end: 2 }, b, { start: 0, end: 2 }).map(a => a.kind)).toEqual(["hard_cut"]);
+  });
+});
+describe("reading a long log", () => {
+  it("folds alike moments of one shot in the brief view and keeps a cut's moment apart", () => {
+    // 60 s in one shot read alike (a stream's fixed layout), then a cut.
+    const moments = planMoments(80, [60], 8);
+    moments.forEach(m => { m.measured = measureMoment(m, measures()); m.described = parseMoment(JSON.stringify(description)); });
+    const l: ShotLog = { version: 1, duration: 80, interval: 8, model: "test", measured_at: "2026-10-23", shots: [{ start: 0, end: 60 }, { start: 60, end: 80 }], moments, silences: [], complete: true };
+    const brief = screenplayBlocks(l, { detail: "brief" });
+    expect(brief).toHaveLength(2);
+    expect(brief[0].text).toMatch(/^00:00\.00-01:00\.00 .*\(alike ×\d+\)$/);
+    expect(brief[1].text).toContain("CUT ");
+    expect(screenplayBlocks(l, { detail: "full" }).length).toBeGreaterThan(brief.length);
+  });
+  it("pages blocks and says where the next page starts, never splitting a block", () => {
+    const blocks = [{ at: 0, text: "a".repeat(30) }, { at: 5, text: "b".repeat(30) }, { at: 9, text: "c".repeat(30) }];
+    expect(pageBlocks(blocks, 70)).toEqual({ text: `${"a".repeat(30)}\n${"b".repeat(30)}`, next: 9 });
+    expect(pageBlocks(blocks, 1000).next).toBeUndefined();
+    // A block larger than the page still goes out alone.
+    expect(pageBlocks(blocks, 10)).toEqual({ text: "a".repeat(30), next: 5 });
+    expect(screenplay(log())).toBe(screenplayBlocks(log()).map(b => b.text).join("\n"));
   });
 });
