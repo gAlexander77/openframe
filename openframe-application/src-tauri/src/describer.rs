@@ -35,6 +35,14 @@ const ENCODER: Asset = Asset {
     bytes: 453974304,
     sha256: "30ba2c7dd3127a4561b6cba9d13d0f711c91bdb38742e2f56d73c8cb596bd06d",
 };
+
+/// Two slots share the 8,192-token context (4,096 each; a three-frame ask
+/// is about 1,100 prompt tokens plus 300 answer tokens). `--cache-ram 0`:
+/// the server otherwise keeps up to 8 GiB of past prompts in system RAM
+/// (b11529's default), which held 10.7 GB during a 45-minute log and ran
+/// the machine out of memory; every ask is new images, so none is reused.
+const SERVER_FLAGS: [&str; 8] = ["-ngl", "99", "-c", "8192", "-np", "2", "--cache-ram", "0"];
+
 fn asset(os: &str, arch: &str) -> Result<Asset, String> {
     let (name, bytes, sha256) = match (os, arch) {
         ("windows", "x86_64") => (
@@ -641,13 +649,8 @@ impl Describer {
         if let Some(dev) = &device {
             command.args(["--device", dev]);
         }
+        command.args(SERVER_FLAGS);
         command.args([
-            "-ngl",
-            "99",
-            "-c",
-            "8192",
-            "-np",
-            "2",
             "--host",
             "127.0.0.1",
             "--port",
@@ -1682,5 +1685,10 @@ mod tests {
         let result = state.ask(&root, request);
         state.stop();
         println!("{}", result.unwrap());
+    }
+    #[test]
+    fn server_keeps_no_prompt_cache_in_system_ram() {
+        assert!(SERVER_FLAGS.windows(2).any(|w| w == ["--cache-ram", "0"]));
+        assert!(SERVER_FLAGS.windows(2).any(|w| w == ["-np", "2"]));
     }
 }

@@ -134,19 +134,28 @@ export function highlightWindow(peak: number, from: number, to: number, duration
 }
 
 /** Picture is supporting evidence: at most half the audio weight. Keep
- * OCR/crowd/motion changes small so a clock or a cut cannot dominate. */
+ * OCR and motion changes small so a clock or a cut cannot dominate. On the
+ * NASA landing a countdown, telemetry clocks, the model's people counts and
+ * its "(intense focus)" for a waiting room outranked the touchdown cheer:
+ * text counts only when its words change inside one shot (digits masked),
+ * tension is not an event, and people counts are not evidence. */
 export function pictureSignals(log: ShotLog) {
   const motions = log.moments.map(m => m.measured.motion).sort((a, b) => a - b);
   const median = motions[Math.floor(motions.length / 2)] ?? 0;
-  const event = /\b(?:cheer|celebrat|applaud|clap|laugh|scream|jump|hug|shock|surpris|crash|explod|explos|fall|fell|excit|euphori|intens|tense)\w*|\brais\w* (?:\w+ ){0,2}arms\b|\b(?:wins?|winning|won|losers?|lose|losing|lost)\b|\bhigh[ -]fiv\w*/i;
+  // Graded: a room cheering is an event, a grin or "excitement" a hint. On the landing log one
+  // flat weight marked 122 of 443 moments, "free-fall" among them.
+  const strong = /\b(?:cheer|celebrat|applaud|clap|scream|hug|crash|explod|explos|jump)\w*|\brais\w* (?:\w+ ){0,2}(?:arms|fists)\b|\bhigh[ -]fiv\w*/i;
+  const weak = /\b(?:laugh|excit|euphori|shock|surpris|grin)\w*|\b(?:wins?|winning|won|losers?|lose|losing|lost)\b/i;
+  const group = /\b(?:people|crowd|everyone|others|team|group|audience|colleagues|they)\b/i;
   return log.moments.map((m, i) => {
-    const d = m.described, previous = log.moments[i - 1]?.described;
-    const action = d && event.test(`${d.action} ${d.mood}`) ? 0.7 : 0;
-    const text = d && d.on_screen_text.length && JSON.stringify(d.on_screen_text) !== JSON.stringify(previous?.on_screen_text ?? []) ? 0.1 : 0;
-    const people = d && previous && d.people !== previous.people ? 0.1 : 0;
+    const d = m.described, previous = log.moments[i - 1]?.described, said = d ? `${d.action} ${d.mood}` : "";
+    const action = !d ? 0 : strong.test(said) ? (group.test(said) ? 0.8 : 0.7) : weak.test(said) ? 0.35 : 0;
+    const words = (texts: string[] = []) => new Set(texts.map(t => t.replace(/\d/g, "#").toLowerCase()));
+    const before = words(log.moments[i - 1]?.shot === m.shot ? previous?.on_screen_text : undefined);
+    const text = d && log.moments[i - 1]?.shot === m.shot && [...words(d.on_screen_text)].some(t => !before.has(t)) ? 0.1 : 0;
     const motion = m.measured.motion > median * 2 && m.measured.motion > median + 0.05 ? clamp((m.measured.motion - median) / Math.max(0.1, median)) * 0.1 : 0;
-    const evidence = [action ? d?.action || d?.mood : "", text ? "on-screen text changed" : "", people ? "number of people changed" : "", motion ? "motion above the file median" : ""].filter(Boolean);
-    return { start: m.start, end: m.end, score: action + text + people + motion, reason: evidence.length ? `picture: ${evidence.join("; ")} (shot log)` : "" };
+    const evidence = [action ? d?.action || d?.mood : "", text ? "new on-screen text" : "", motion ? "motion above the file median" : ""].filter(Boolean);
+    return { start: m.start, end: m.end, score: action + text + motion, reason: evidence.length ? `picture: ${evidence.join("; ")} (shot log)` : "" };
   });
 }
 

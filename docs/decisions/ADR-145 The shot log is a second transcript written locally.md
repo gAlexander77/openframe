@@ -68,3 +68,13 @@ Measure at the higher valid average/nominal stream rate, capped at 30 fps; fps k
 average meaning. Generated VFR video averaged 18.6441 fps; all four cuts measured exactly
 at 2.5, 5, 8 and 10 s using its nominal 30 fps. The ignored 8-ask serial/parallel benchmark
 prints both wall times and speedup; GPU throughput remains for the lead to measure.
+
+## The prompt cache off, 2026-10-24
+
+During a 45-minute log llama-server held 10.7 GB of system RAM and the
+machine ran out of memory (Claude Code stopped the app's dev wrapper and
+the test). b11529 keeps up to 8,192 MiB of past prompts in host memory by
+default (`--cache-ram`); its log showed entries of 167 to 455 MiB stored
+and evicted. Every ask is new images, so none is ever reused: the server
+now starts with `--cache-ram 0`. With two slots the same file took 28
+minutes instead of 38.
