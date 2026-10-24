@@ -1934,3 +1934,47 @@ clapping at 27:14 as the parachute is called).
   pages, then the full text of the window it chose.
 - **Hugging Face's downloader needs symlinks Windows refuses** without a
   privilege; download the files directly.
+
+## 2026-10-24 — The shot log checked end to end and made robust (Claude Code)
+
+The owner asked for the shot log to be checked, its bugs and edge cases
+fixed, the feature improved and everything tested again. Claude Code probed
+the desktop app first with files whose answers were known (exact cuts, a
+picture starting a second after its sound, variable frame rate, a 0.6 s
+clip, a rotated phone video, no audio, trimmed, sped-up and reversed clips,
+cancel and resume) and found six bugs; two Codex lanes (Rust, TypeScript)
+fixed them and built the improvements (ADR-145's dated sections, ADR-146).
+
+**Fixed.** Cuts on variable-frame-rate video landed up to 24 ms off (the
+average rate was sampled); no-audio files read "quiet" and got sound-based
+edit advice; the brief view marked a CUT outside its window; ranges past
+the end were refused; a question about three frames was answered as three
+pictures; objects went into on-screen text; the download bar ran backwards;
+the Shot log tab crashed on a project with no video; and llama-server held
+10.7 GB of system RAM (an 8 GiB prompt cache on by default), which ran the
+machine out of memory and stopped a test run.
+
+**Improved.** Two descriptions at once (the 45-minute log in 28 minutes, from
+38); downloads resume, disk space is checked, a describer the GPU drops is
+restarted; find_highlights reads the log's picture evidence; search knows
+editing synonyms; one call can hear the speech too; the panel has
+thumbnails beside each moment, folded repeats, and In and Out set in the
+source monitor.
+
+**Checked in the desktop app.** The describer peaked at 2.7 GB of RAM; on
+the NASA broadcast the touchdown (30:34) ranks first, the first image
+(33:00) fourth and the parachute's applause (27:15) fifth, where before the
+parachute missed the top six. The final sweep passed 230 of 233; the other
+three pass alone or after a runner fix.
+
+### Lessons paid for in this round
+
+- **Probe with answers you know.** Generated files with cuts at known times
+  found the frame-rate and offset behavior in minutes.
+- **Read a dependency's defaults.** llama.cpp's server caches 8 GiB of
+  prompts unless told not to; nothing in our requests could reuse them.
+- **A heuristic needs the real data.** On the landing log the first picture
+  weights ranked clocks, head counts and "(intense focus)" above the
+  touchdown; the saved log, read offline, showed which words to trust.
+- **Drives must not depend on load order.** Resource timing keeps 250
+  entries; the app outgrew it.
