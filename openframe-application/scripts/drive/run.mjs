@@ -48,6 +48,9 @@ const browser = await chromium.launch({
 let result;
 try {
   const page = await browser.newPage({ viewport: { width, height } });
+  // Drives find the app's own module URLs in resource timing; its default
+  // 250 entries filled before /src/engine/audio.ts once the app grew (trap 31).
+  await page.addInitScript(() => performance.setResourceTimingBufferSize(5000));
   await page.context().route("**/api/tags", (route) => route.fulfill({ headers: { "Access-Control-Allow-Origin": "*" }, json: { models: [{ name: "llama3.1:8b" }] } }));
   page.on("pageerror", (e) => console.error("pageerror:", e.message));
   // Drives written for an attached page (the desktop WebView) start with a
