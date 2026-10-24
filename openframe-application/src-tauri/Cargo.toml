@@ -25,4 +25,8 @@ tauri-plugin-dialog = "2"
 # and ShellExecute opens an agent CLI's install guide (agent_cli.rs).
 # Already in the tree through tauri; this only turns on API modules.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Console", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Console", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+# Already in the tree through tauri; statvfs checks the download volume.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

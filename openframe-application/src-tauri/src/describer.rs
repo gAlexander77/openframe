@@ -135,6 +135,103 @@ fn system_tool(name: &str) -> PathBuf {
     }
 }
 
+fn part_path(dest: &Path) -> PathBuf {
+    dest.with_file_name(format!(
+        "{}.part",
+        dest.file_name().unwrap().to_string_lossy()
+    ))
+}
+fn part_bytes(dest: &Path, a: Asset) -> u64 {
+    part_path(dest)
+        .metadata()
+        .map(|m| m.len().min(a.bytes))
+        .unwrap_or(0)
+}
+fn curl_args(part_exists: bool) -> Vec<&'static str> {
+    let mut args = vec!["-fL", "--retry", "3", "--silent", "--show-error"];
+    if part_exists {
+        args.extend(["-C", "-"]);
+    }
+    args.push("-o");
+    args
+}
+fn verify_download(path: &Path, a: Asset) -> Result<(), String> {
+    if installed(path, a) && sha256(path)? == a.sha256 {
+        return Ok(());
+    }
+    fs::remove_file(path).map_err(|e| e.to_string())?;
+    Err(format!(
+        "Size or SHA-256 verification failed for {}; the partial download was removed",
+        a.name
+    ))
+}
+#[derive(Default)]
+struct DownloadRun {
+    epoch: u64,
+    bytes: u64,
+    total: u64,
+}
+fn disk_budget(needed: u64, free: u64, drive: &str) -> Result<(), String> {
+    let required = needed.saturating_add(512 * 1024 * 1024);
+    if free < required {
+        return Err(format!(
+            "The describer needs {:.2} GB free on {drive}; {:.2} GB is free",
+            required as f64 / 1e9,
+            free as f64 / 1e9
+        ));
+    }
+    Ok(())
+}
+fn check_disk(root: &Path, needed: u64) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+        let path: Vec<u16> = root.as_os_str().encode_wide().chain(Some(0)).collect();
+        let mut free = 0;
+        // SAFETY: path is null-terminated and free is a live output buffer.
+        if unsafe {
+            GetDiskFreeSpaceExW(
+                path.as_ptr(),
+                &mut free,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        } == 0
+        {
+            return Err(format!(
+                "Could not check describer disk space: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        let drive = root
+            .components()
+            .next()
+            .map(|p| p.as_os_str().to_string_lossy().into_owned())
+            .unwrap_or_default();
+        disk_budget(needed, free, &drive)
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let path =
+            std::ffi::CString::new(root.as_os_str().as_bytes()).map_err(|e| e.to_string())?;
+        let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+        // SAFETY: path is null-terminated; statvfs initializes stat on success.
+        if unsafe { libc::statvfs(path.as_ptr(), stat.as_mut_ptr()) } != 0 {
+            return Err(format!(
+                "Could not check describer disk space: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        // SAFETY: statvfs returned success.
+        let stat = unsafe { stat.assume_init() };
+        let free = u64::try_from(u128::from(stat.f_bavail) * u128::from(stat.f_frsize))
+            .unwrap_or(u64::MAX);
+        disk_budget(needed, free, &root.display().to_string())
+    }
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct DescriberStatus {
     state: String,
@@ -202,11 +299,30 @@ struct Preparation {
 pub struct Describer {
     inner: Mutex<Inner>,
     operation: Mutex<()>,
+    asks: Mutex<usize>,
+    available: Condvar,
     epoch: AtomicU64,
     #[cfg(windows)]
     job: ffmpeg::job::KillOnClose,
 }
+struct AskPermit<'a>(&'a Describer);
+impl Drop for AskPermit<'_> {
+    fn drop(&mut self) {
+        let mut active = self.0.asks.lock().unwrap();
+        self.0.inner.lock().unwrap().last_ask = Instant::now();
+        *active -= 1;
+        self.0.available.notify_one();
+    }
+}
 impl Describer {
+    fn acquire_ask(&self) -> AskPermit<'_> {
+        let mut active = self.asks.lock().unwrap();
+        while *active >= 2 {
+            active = self.available.wait(active).unwrap();
+        }
+        *active += 1;
+        AskPermit(self)
+    }
     fn assign(&self, child: &Child) {
         #[cfg(windows)]
         self.job.assign(child);
@@ -290,8 +406,12 @@ impl Describer {
                 break;
             };
             if let Ok(_op) = this.operation.try_lock() {
+                let active = this.asks.lock().unwrap();
                 let mut i = this.inner.lock().unwrap();
-                if i.server.is_some() && i.last_ask.elapsed() >= Duration::from_secs(600) {
+                if *active == 0
+                    && i.server.is_some()
+                    && i.last_ask.elapsed() >= Duration::from_secs(600)
+                {
                     i.server = None;
                     i.state = "stopped".into();
                 }
@@ -304,7 +424,7 @@ impl Describer {
         a: Asset,
         url: &str,
         dest: &Path,
-        epoch: u64,
+        run: &mut DownloadRun,
     ) -> Result<(), String> {
         let stage = if a.name.ends_with(".gguf") {
             "model"
@@ -313,11 +433,20 @@ impl Describer {
         };
         fs::create_dir_all(dest.parent().ok_or("Invalid download path")?)
             .map_err(|e| e.to_string())?;
-        let part = dest.with_file_name(format!("{}.part", a.name));
-        let _ = fs::remove_file(&part);
+        let part = part_path(dest);
+        let base = run.bytes.saturating_sub(part_bytes(dest, a));
+        // A completed part can survive a stop just before its atomic rename.
+        if part.metadata().is_ok_and(|m| m.len() >= a.bytes) {
+            verify_download(&part, a)?;
+            self.check_epoch(run.epoch)?;
+            files::replace(&part, dest).map_err(|e| e.to_string())?;
+            run.bytes = base + a.bytes;
+            self.progress(stage, run.bytes, run.total);
+            return Ok(());
+        }
         let errors = File::create(root.join("download.log")).map_err(|e| e.to_string())?;
         let mut child = ffmpeg::command(&system_tool("curl"))
-            .args(["-fL", "--retry", "3", "--silent", "--show-error", "-o"])
+            .args(curl_args(part.exists()))
             .arg(&part)
             .arg(url)
             .stdout(Stdio::null())
@@ -327,9 +456,8 @@ impl Describer {
         self.assign(&child);
         let result = (|| {
             loop {
-                self.check_epoch(epoch)?;
-                let bytes = part.metadata().map(|m| m.len()).unwrap_or(0);
-                self.progress(stage, bytes, a.bytes);
+                self.check_epoch(run.epoch)?;
+                self.progress(stage, base + part_bytes(dest, a), run.total);
                 if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
                     if !status.success() {
                         return Err(format!(
@@ -342,32 +470,54 @@ impl Describer {
                 }
                 std::thread::sleep(Duration::from_millis(250));
             }
-            if !installed(&part, a) || sha256(&part)? != a.sha256 {
-                return Err(format!(
-                    "Size or SHA-256 verification failed for {}; the partial download was removed",
-                    a.name
-                ));
-            }
-            self.check_epoch(epoch)?;
+            verify_download(&part, a)?;
+            self.check_epoch(run.epoch)?;
             files::replace(&part, dest).map_err(|e| e.to_string())?;
-            self.progress(stage, a.bytes, a.bytes);
+            run.bytes = base + a.bytes;
+            self.progress(stage, run.bytes, run.total);
             Ok(())
         })();
         if result.is_err() {
             let _ = child.kill();
             let _ = child.wait();
-            let _ = fs::remove_file(&part);
         }
         result
     }
     fn install(&self, root: &Path, epoch: u64) -> Result<(), String> {
         fs::create_dir_all(root).map_err(|e| e.to_string())?;
         self.inner.lock().unwrap().state = "downloading".into();
-        if !runtime_installed(root) {
-            let a = current_asset()?;
-            let archive = root.join(a.name);
+        let runtime = current_asset()?;
+        let archive = root.join(runtime.name);
+        let needs_runtime = !runtime_installed(root);
+        let needs_archive =
+            needs_runtime && (!installed(&archive, runtime) || sha256(&archive)? != runtime.sha256);
+        let mut missing = Vec::new();
+        if needs_archive {
+            missing.push((archive.clone(), runtime));
+        }
+        for a in [MODEL, ENCODER] {
+            let dest = model_path(root, a);
+            if !installed(&dest, a) {
+                missing.push((dest, a));
+            }
+        }
+        let mut run = DownloadRun {
+            epoch,
+            total: missing.iter().map(|(_, a)| a.bytes).sum(),
+            bytes: missing.iter().map(|(dest, a)| part_bytes(dest, *a)).sum(),
+        };
+        if !missing.is_empty() {
+            check_disk(root, run.total.saturating_sub(run.bytes))?;
+        }
+        self.progress(
+            if needs_runtime { "runtime" } else { "model" },
+            run.bytes,
+            run.total,
+        );
+        if needs_runtime {
+            let a = runtime;
             // A verified archive may survive an interrupted extraction.
-            if !installed(&archive, a) || sha256(&archive)? != a.sha256 {
+            if needs_archive {
                 self.download(
                     root,
                     a,
@@ -376,7 +526,7 @@ impl Describer {
                         a.name
                     ),
                     &archive,
-                    epoch,
+                    &mut run,
                 )?;
             }
             let dir = runtime_dir(root);
@@ -415,7 +565,7 @@ impl Describer {
         for a in [MODEL, ENCODER] {
             let dest = model_path(root, a);
             if !installed(&dest, a) {
-                self.download(root, a, &format!("https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/{REVISION}/{}", a.name), &dest, epoch)?;
+                self.download(root, a, &format!("https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/{REVISION}/{}", a.name), &dest, &mut run)?;
             }
         }
         Ok(())
@@ -434,7 +584,15 @@ impl Describer {
             i.state = "starting".into();
             i.error = None;
         }
-        self.progress("starting", 0, 1);
+        let (bytes, total) = self
+            .inner
+            .lock()
+            .unwrap()
+            .progress
+            .as_ref()
+            .map(|p| (p.bytes, p.total))
+            .unwrap_or((0, 0));
+        self.progress("starting", bytes, total);
         let binary = server_binary(&runtime_dir(root))
             .ok_or("The describer runtime is missing llama-server")?;
         let log_path = root.join("server.log");
@@ -489,7 +647,7 @@ impl Describer {
             "-c",
             "8192",
             "-np",
-            "1",
+            "2",
             "--host",
             "127.0.0.1",
             "--port",
@@ -540,7 +698,7 @@ impl Describer {
                 i.state = "ready".into();
                 i.last_ask = Instant::now();
                 drop(i);
-                self.progress("starting", 1, 1);
+                self.progress("starting", total, total);
                 return Ok(());
             }
             if Instant::now() >= deadline {
@@ -605,35 +763,84 @@ impl Describer {
         preparation.finished.notify_all();
         result
     }
-    fn ask(&self, root: &Path, request: AskRequest) -> Result<String, String> {
-        let _op = self.operation.lock().unwrap();
-        let epoch = self.epoch.load(Ordering::SeqCst);
+    // Callers hold operation only while changing the server, never during inference.
+    fn start_checked(&self, root: &Path, epoch: u64) -> Result<(), String> {
         if let Err(e) = self.start(root, epoch) {
             let mut i = self.inner.lock().unwrap();
             if self.check_epoch(epoch).is_ok() {
                 i.state = "error".into();
                 i.error = Some(e.clone());
+                i.server = None;
             }
-            i.server = None;
             return Err(e);
         }
-        let (port, key) = {
-            let mut i = self.inner.lock().unwrap();
-            i.last_ask = Instant::now();
-            let s = i.server.as_ref().ok_or("The describer was stopped")?;
-            (s.port, s.key.clone())
-        };
-        let result = http(
-            port,
-            "POST",
-            "/v1/chat/completions",
-            &key,
-            &ask_body(request).to_string(),
-            Duration::from_secs(120),
-        )
-        .and_then(|(code, body)| answer(code, &body));
-        self.inner.lock().unwrap().last_ask = Instant::now();
-        result
+        Ok(())
+    }
+    fn ask(&self, root: &Path, request: AskRequest) -> Result<String, String> {
+        let epoch = self.epoch.load(Ordering::SeqCst);
+        let _permit = self.acquire_ask();
+        {
+            let _op = self.operation.lock().unwrap();
+            self.start_checked(root, epoch)?;
+        }
+        let body = ask_body(request).to_string();
+        for attempt in 0..2 {
+            self.check_epoch(epoch)?;
+            let endpoint = {
+                let i = self.inner.lock().unwrap();
+                i.server.as_ref().map(|s| (s.port, s.key.clone()))
+            };
+            // Status may have reaped a dead server between startup and this snapshot.
+            let key = endpoint.as_ref().map(|(_, key)| key.as_str());
+            let result = match &endpoint {
+                Some((port, key)) => http(
+                    *port,
+                    "POST",
+                    "/v1/chat/completions",
+                    key,
+                    &body,
+                    Duration::from_secs(120),
+                )
+                .and_then(|(code, body)| answer(code, &body).map_err(HttpError::from)),
+                None => Err(HttpError::from("The describer exited")),
+            };
+            self.check_epoch(epoch)?;
+            match result {
+                Ok(answer) => return Ok(answer),
+                Err(error) => {
+                    let exited = {
+                        let mut i = self.inner.lock().unwrap();
+                        i.server.as_mut().is_none_or(|s| {
+                            Some(s.key.as_str()) != key
+                                || s.child.try_wait().ok().flatten().is_some()
+                        })
+                    };
+                    if !retry_ask(&error, exited, attempt) {
+                        return Err(if attempt == 1 || exited {
+                            server_error(root, &error.message)
+                        } else {
+                            error.message
+                        });
+                    }
+                    let _op = self.operation.lock().unwrap();
+                    self.check_epoch(epoch)?;
+                    {
+                        let mut i = self.inner.lock().unwrap();
+                        // Another failed ask may already have restarted this server.
+                        if i.server
+                            .as_ref()
+                            .is_some_and(|s| Some(s.key.as_str()) == key)
+                        {
+                            i.server = None;
+                            i.state = "stopped".into();
+                        }
+                    }
+                    self.start_checked(root, epoch)
+                        .map_err(|e| server_error(root, &e))?;
+                }
+            }
+        }
+        unreachable!("each ask has at most one retry")
     }
 }
 fn server_error(root: &Path, message: &str) -> String {
@@ -793,6 +1000,38 @@ fn parse_http(raw: &[u8]) -> Result<(u16, String), String> {
     };
     Ok((status, String::from_utf8(body).map_err(|e| e.to_string())?))
 }
+#[derive(Debug)]
+struct HttpError {
+    message: String,
+    connection_lost: bool,
+}
+impl From<std::io::Error> for HttpError {
+    fn from(error: std::io::Error) -> Self {
+        Self {
+            connection_lost: matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::ConnectionReset
+            ),
+            message: error.to_string(),
+        }
+    }
+}
+impl From<String> for HttpError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            connection_lost: false,
+        }
+    }
+}
+impl From<&str> for HttpError {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
+}
+fn retry_ask(error: &HttpError, exited: bool, attempt: usize) -> bool {
+    attempt == 0 && (error.connection_lost || exited)
+}
 fn http(
     port: u16,
     method: &str,
@@ -800,22 +1039,22 @@ fn http(
     key: &str,
     body: &str,
     timeout: Duration,
-) -> Result<(u16, String), String> {
+) -> Result<(u16, String), HttpError> {
     let deadline = Instant::now() + timeout;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let mut socket =
-        TcpStream::connect_timeout(&addr, Duration::from_secs(2)).map_err(|e| e.to_string())?;
+        TcpStream::connect_timeout(&addr, Duration::from_secs(2)).map_err(HttpError::from)?;
     socket
         .set_read_timeout(Some(timeout))
-        .map_err(|e| e.to_string())?;
+        .map_err(HttpError::from)?;
     socket
         .set_write_timeout(Some(timeout))
-        .map_err(|e| e.to_string())?;
+        .map_err(HttpError::from)?;
     let headers = format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {key}\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n",body.len());
     socket
         .write_all(headers.as_bytes())
         .and_then(|_| socket.write_all(body.as_bytes()))
-        .map_err(|e| e.to_string())?;
+        .map_err(HttpError::from)?;
     let mut raw = Vec::new();
     let mut buf = [0; 16384];
     loop {
@@ -825,14 +1064,14 @@ fn http(
             .ok_or("The describer request timed out")?;
         socket
             .set_read_timeout(Some(remaining))
-            .map_err(|e| e.to_string())?;
-        let n = socket.read(&mut buf).map_err(|e| e.to_string())?;
+            .map_err(HttpError::from)?;
+        let n = socket.read(&mut buf).map_err(HttpError::from)?;
         if n == 0 {
             break;
         }
         raw.extend_from_slice(&buf[..n]);
     }
-    parse_http(&raw)
+    parse_http(&raw).map_err(HttpError::from)
 }
 fn root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
@@ -883,6 +1122,204 @@ pub fn describer_stop(state: tauri::State<'_, Arc<Describer>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn curl_resumes_only_when_a_part_exists() {
+        for present in [false, true] {
+            let args = curl_args(present);
+            assert_eq!(&args[..3], &["-fL", "--retry", "3"]);
+            assert_eq!(args.windows(2).any(|a| a == ["-C", "-"]), present);
+            assert_eq!(args.last(), Some(&"-o"));
+        }
+    }
+    #[test]
+    fn retries_only_first_connection_loss_or_exited_server() {
+        use std::io::ErrorKind::*;
+        for kind in [
+            ConnectionRefused,
+            ConnectionReset,
+            TimedOut,
+            BrokenPipe,
+            InvalidData,
+            PermissionDenied,
+        ] {
+            let error = HttpError::from(std::io::Error::from(kind));
+            assert_eq!(
+                retry_ask(&error, false, 0),
+                matches!(kind, ConnectionRefused | ConnectionReset)
+            );
+            assert!(retry_ask(&error, true, 0));
+            assert!(!retry_ask(&error, false, 1));
+            assert!(!retry_ask(&error, true, 1));
+        }
+        for message in [
+            "HTTP 400: invalid image",
+            "HTTP 500: out of memory",
+            "Invalid HTTP response",
+            "The describer request timed out",
+        ] {
+            let error = HttpError::from(message);
+            assert!(!retry_ask(&error, false, 0));
+            assert!(retry_ask(&error, true, 0));
+        }
+    }
+    #[test]
+    fn two_asks_enter_and_a_third_waits_until_one_finishes() {
+        let state = Arc::new(Describer::default());
+        let first = state.acquire_ask();
+        let second = state.acquire_ask();
+        assert_eq!(*state.asks.lock().unwrap(), 2);
+        state.inner.lock().unwrap().last_ask = Instant::now() - Duration::from_secs(700);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let (release, wait) = std::sync::mpsc::channel();
+        let worker_state = state.clone();
+        let worker = std::thread::spawn(move || {
+            sender.send(false).unwrap();
+            let _third = worker_state.acquire_ask();
+            sender.send(true).unwrap();
+            wait.recv().unwrap();
+        });
+        assert!(!receiver.recv_timeout(Duration::from_secs(3)).unwrap());
+        assert!(receiver.recv_timeout(Duration::from_millis(100)).is_err());
+        drop(first);
+        assert!(receiver.recv_timeout(Duration::from_secs(3)).unwrap());
+        assert_eq!(*state.asks.lock().unwrap(), 2);
+        assert!(state.inner.lock().unwrap().last_ask.elapsed() < Duration::from_secs(2));
+        release.send(()).unwrap();
+        worker.join().unwrap();
+        drop(second);
+        assert_eq!(*state.asks.lock().unwrap(), 0);
+    }
+    #[test]
+    fn disk_budget_includes_margin_and_names_the_volume() {
+        let margin = 512 * 1024 * 1024;
+        assert!(disk_budget(1_000_000_000, 1_000_000_000 + margin, "C:").is_ok());
+        let error = disk_budget(1_000_000_000, 1_000_000_000 + margin - 1, "C:").unwrap_err();
+        assert_eq!(
+            error,
+            "The describer needs 1.54 GB free on C:; 1.54 GB is free"
+        );
+        let error = disk_budget(2_000_000_000, 1_000_000_000, "C:").unwrap_err();
+        assert_eq!(
+            error,
+            "The describer needs 2.54 GB free on C:; 1.00 GB is free"
+        );
+        let dir = scratch("disk-volume");
+        fs::create_dir_all(&dir).unwrap();
+        check_disk(&dir, 1).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
+    #[test]
+    fn corrupt_finished_parts_are_removed_but_verified_parts_survive() {
+        let path = scratch("verify.part");
+        let a = Asset {
+            name: "test",
+            bytes: 3,
+            sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        };
+        for bytes in [b"ab".as_slice(), b"abd", b"abcd"] {
+            fs::write(&path, bytes).unwrap();
+            assert!(verify_download(&path, a)
+                .unwrap_err()
+                .contains("verification failed"));
+            assert!(!path.exists());
+        }
+        fs::write(&path, b"abc").unwrap();
+        verify_download(&path, a).unwrap();
+        assert!(path.exists());
+        fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn failed_transfer_preserves_a_partial_download_for_the_next_prepare() {
+        let dir = scratch("interrupted");
+        fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("model.gguf");
+        let part = part_path(&dest);
+        fs::write(&part, b"a").unwrap();
+        let missing = tauri::Url::from_file_path(dir.join("missing-source")).unwrap();
+        let result = Describer::default().download(
+            &dir,
+            Asset {
+                name: "model.gguf",
+                bytes: 3,
+                sha256: "unused",
+            },
+            missing.as_str(),
+            &dest,
+            &mut DownloadRun {
+                epoch: 0,
+                total: 3,
+                bytes: 1,
+            },
+        );
+        assert!(result.unwrap_err().contains("Could not download"));
+        assert_eq!(fs::read(&part).unwrap(), b"a");
+        assert!(!dest.exists());
+        fs::remove_file(part).unwrap();
+        fs::remove_file(dir.join("download.log")).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
+    #[test]
+    fn download_progress_is_overall_and_resumes_existing_parts() {
+        let dir = scratch("overall");
+        fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("source");
+        fs::write(&source, b"abc").unwrap();
+        let url = tauri::Url::from_file_path(&source).unwrap().to_string();
+        let state = Describer::default();
+        let messages = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let capture = messages.clone();
+        state
+            .inner
+            .lock()
+            .unwrap()
+            .listeners
+            .push(Channel::new(move |p| {
+                let tauri::ipc::InvokeResponseBody::Json(p) = p else {
+                    panic!("expected JSON progress")
+                };
+                capture
+                    .lock()
+                    .unwrap()
+                    .push(serde_json::from_str::<Value>(&p).unwrap());
+                Ok(())
+            }));
+        let names = ["runtime.zip", "model.gguf", "encoder.gguf"];
+        let asset = |name| Asset {
+            name,
+            bytes: 3,
+            sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        };
+        fs::write(part_path(&dir.join(names[1])), b"a").unwrap();
+        fs::write(part_path(&dir.join(names[2])), b"abc").unwrap();
+        let mut run = DownloadRun {
+            epoch: 0,
+            total: 9,
+            bytes: 4,
+        };
+        for name in names {
+            state
+                .download(&dir, asset(name), &url, &dir.join(name), &mut run)
+                .unwrap();
+        }
+        // Starting retains the preparation's completed byte count.
+        let p = state.inner.lock().unwrap().progress.clone().unwrap();
+        state.progress("starting", p.bytes, p.total);
+        let messages = messages.lock().unwrap();
+        assert!(messages.len() >= 4);
+        assert!(messages.iter().all(|p| p["total"] == 9));
+        assert!(messages
+            .windows(2)
+            .all(|p| p[0]["bytes"].as_u64() <= p[1]["bytes"].as_u64()));
+        assert_eq!(messages.last().unwrap()["fraction"], 1.0);
+        for name in names {
+            assert_eq!(fs::read(dir.join(name)).unwrap(), b"abc");
+            assert!(!part_path(&dir.join(name)).exists());
+            fs::remove_file(dir.join(name)).unwrap();
+        }
+        fs::remove_file(source).unwrap();
+        fs::remove_file(dir.join("download.log")).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
     #[test]
     fn picks_discrete_device_even_when_integrated_has_more_memory() {
         let text = "Available devices:\n  Vulkan0: Intel(R) Graphics (18347 MiB, 17579 MiB free)\n  Vulkan1: NVIDIA GeForce RTX 5070 Laptop GPU (7891 MiB, 7123 MiB free)";
@@ -1147,6 +1584,66 @@ mod tests {
         for worker in workers {
             worker.join().unwrap();
         }
+    }
+    #[test]
+    #[ignore = "requires OPENFRAME_TEST_DESCRIBER and OPENFRAME_TEST_VIDEO; runs 17 GPU asks without downloads"]
+    fn installed_model_compares_one_and_two_slots() {
+        let root = PathBuf::from(
+            std::env::var_os("OPENFRAME_TEST_DESCRIBER").expect("OPENFRAME_TEST_DESCRIBER"),
+        );
+        let video =
+            PathBuf::from(std::env::var_os("OPENFRAME_TEST_VIDEO").expect("OPENFRAME_TEST_VIDEO"));
+        let (ffmpeg, _) = ffmpeg::test_tools().expect("bundled-or-PATH ffmpeg/ffprobe");
+        let out = ffmpeg::command(&ffmpeg)
+            .args(["-v", "error", "-i"])
+            .arg(video)
+            .args([
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale=768:-2",
+                "-f",
+                "image2pipe",
+                "-c:v",
+                "mjpeg",
+                "-",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let image = crate::shotlog::base64(&out.stdout);
+        let state = Describer::default();
+        let request = || AskRequest {
+            images: vec![image.clone()],
+            prompt: "Describe what is visible in this video frame in one brief sentence.".into(),
+            schema: None,
+            max_tokens: Some(100),
+        };
+        // Exclude model loading and first-request shader warm-up from both timings.
+        assert!(!state.ask(&root, request()).unwrap().is_empty());
+        let mut times = Vec::new();
+        for slots in [1, 2] {
+            let started = Instant::now();
+            for _ in 0..8 / slots {
+                std::thread::scope(|scope| {
+                    let workers: Vec<_> = (0..slots)
+                        .map(|_| scope.spawn(|| state.ask(&root, request())))
+                        .collect();
+                    for worker in workers {
+                        assert!(!worker.join().unwrap().unwrap().is_empty());
+                    }
+                });
+            }
+            let elapsed = started.elapsed();
+            println!("8 one-frame asks, {slots} in flight: {elapsed:?}");
+            times.push(elapsed.as_secs_f64());
+        }
+        state.stop();
+        println!("two-slot speedup: {:.2}x", times[0] / times[1]);
     }
     /// Lead: OPENFRAME_TEST_DESCRIBER=<app-local-data>/describer,
     /// OPENFRAME_TEST_VIDEO=<file>, then cargo test installed_model -- --ignored --nocapture.

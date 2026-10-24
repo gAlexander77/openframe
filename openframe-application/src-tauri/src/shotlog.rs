@@ -20,6 +20,15 @@ const H: usize = 36;
 const PIXELS: usize = W * H;
 const STEP: f64 = 0.5;
 const AUDIO_STEP: f64 = 0.1;
+fn sampling_rate(average: Option<f64>, stream: Option<f64>) -> f64 {
+    let valid = |f: &f64| f.is_finite() && *f > 0.0;
+    match (average.filter(valid), stream.filter(valid)) {
+        (Some(a), Some(r)) => a.max(r),
+        (Some(f), None) | (None, Some(f)) => f,
+        (None, None) => 30.0,
+    }
+    .min(30.0)
+}
 #[derive(Serialize, Debug)]
 pub struct Measures {
     duration: f64,
@@ -182,11 +191,7 @@ impl Shotlog {
             let info = ffmpeg::probe(tools.1, path)?;
             running.check()?;
             let video = info.video.ok_or("The file has no video stream")?;
-            let fps = video
-                .fps
-                .filter(|f| f.is_finite() && *f > 0.0)
-                .unwrap_or(30.0)
-                .min(30.0);
+            let fps = sampling_rate(video.fps, video.r_fps);
             std::thread::scope(|scope| {
                 let audio = info
                     .audio
@@ -703,6 +708,120 @@ pub async fn shotlog_save(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sampling_uses_valid_higher_stream_rate_and_caps_at_thirty() {
+        assert_eq!(sampling_rate(Some(18.6), Some(30.0)), 30.0);
+        assert_eq!(sampling_rate(Some(24.0), Some(12.0)), 24.0);
+        assert_eq!(sampling_rate(Some(60.0), Some(120.0)), 30.0);
+        assert_eq!(sampling_rate(None, Some(25.0)), 25.0);
+        assert_eq!(sampling_rate(Some(20.0), Some(f64::INFINITY)), 20.0);
+        assert_eq!(sampling_rate(Some(f64::NAN), Some(-1.0)), 30.0);
+    }
+    #[test]
+    fn variable_frame_rate_cuts_stay_within_one_source_frame() {
+        let Some((ffmpeg, ffprobe)) = ffmpeg::test_tools() else {
+            eprintln!("Skipping VFR cut test: bundled-or-PATH ffmpeg/ffprobe is missing");
+            return;
+        };
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "../scratch/shotlog-tests/vfr-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let cfr = dir.join("scene-cuts.mp4");
+        let vfr = dir.join("scene-cuts-vfr.mp4");
+        let mut command = ffmpeg::command(&ffmpeg);
+        command.args(["-y", "-v", "error"]);
+        for (source, duration) in [
+            ("testsrc2", "2.5"),
+            ("mandelbrot", "2.5"),
+            ("smptehdbars", "3"),
+            ("testsrc", "2"),
+            ("color=c=0x204080", "2"),
+        ] {
+            let separator = if source.contains('=') { ':' } else { '=' };
+            command.args([
+                "-f",
+                "lavfi",
+                "-t",
+                duration,
+                "-i",
+                &format!("{source}{separator}size=640x360:rate=30"),
+            ]);
+        }
+        let out = command
+            .args([
+                "-filter_complex",
+                "[0:v][1:v][2:v][3:v][4:v]concat=n=5:v=1:a=0,format=yuv420p[v]",
+                "-map",
+                "[v]",
+                "-c:v",
+                "libx264",
+                "-g",
+                "60",
+            ])
+            .arg(&cfr)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let out = ffmpeg::command(&ffmpeg)
+            .args(["-y", "-v", "error", "-i"])
+            .arg(&cfr)
+            .args([
+                "-vf",
+                "select='if(lt(t,5),1,not(mod(n,3)))'",
+                "-fps_mode",
+                "vfr",
+                "-c:v",
+                "libx264",
+            ])
+            .arg(&vfr)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let video = ffmpeg::probe(&ffprobe, &vfr).unwrap().video.unwrap();
+        assert!(video.fps.unwrap() < video.r_fps.unwrap());
+        println!(
+            "VFR average={} nominal={}",
+            video.fps.unwrap(),
+            video.r_fps.unwrap()
+        );
+        let measured = Shotlog::default()
+            .measure((&ffmpeg, &ffprobe), &vfr, "vfr", &|_| {})
+            .unwrap();
+        assert_eq!(measured.frame_rate, 30.0);
+        for seconds in [2.5, 5.0, 8.0, 10.0] {
+            let target = (seconds * measured.frame_rate).round() as usize;
+            let frame = (target.saturating_sub(3)..=(target + 3).min(measured.scene.len() - 1))
+                .max_by(|&a, &b| measured.scene[a].total_cmp(&measured.scene[b]))
+                .unwrap();
+            assert!(
+                measured.scene[frame] > 0.15,
+                "missing cut at {seconds}: {}",
+                measured.scene[frame]
+            );
+            assert!(
+                frame.abs_diff(target) <= 1,
+                "cut at {} instead of {seconds}",
+                frame as f64 / measured.frame_rate
+            );
+            println!(
+                "cut target={seconds}s measured={}s",
+                frame as f64 / measured.frame_rate
+            );
+        }
+        fs::remove_file(cfr).unwrap();
+        fs::remove_file(vfr).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
     fn texture() -> Vec<u8> {
         (0..PIXELS)
             .flat_map(|i| {
