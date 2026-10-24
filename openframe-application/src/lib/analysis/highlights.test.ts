@@ -1,4 +1,5 @@
-import { highlightTitle, scenePasses, sceneSampling, SCENE_BUDGET_SECONDS } from "./highlights";
+import { planMoments, type ShotLog } from "../shotlog";
+import { pictureSignals, highlightTitle, scenePasses, sceneSampling, SCENE_BUDGET_SECONDS } from "./highlights";
 import { describe, expect, it } from "vitest";
 import { findHighlights, HighlightAudio, highlightWindow, refineHighlight, rollingBaseline, type HighlightFeature } from "./highlights";
 
@@ -146,5 +147,41 @@ describe("scene sampling order", () => {
   });
   it("keeps short files to one pass at the interval", () => {
     expect(scenePasses(30, 1)).toEqual([Array.from({ length: 30 }, (_, i) => i)]);
+  });
+});
+
+
+describe("picture evidence from a shot log", () => {
+  const log = (): ShotLog => {
+    const moments = planMoments(600, [], 8);
+    moments.forEach(m => { m.measured.motion = 0.02; m.described = { shot_size: "medium", camera: "static", people: 1, on_screen_text: [], action: "A person speaks", mood: "calm", description: "A room" }; });
+    const m = moments.find(m => m.start === 400)!;
+    m.described = { ...m.described!, action: "People cheering and raising their arms", mood: "euphoric", people: 8, on_screen_text: ["WE LANDED!"] }; m.measured.motion = 0.5;
+    return { version: 1, duration: 600, model: "synthetic", measured_at: "today", interval: 8, moments, shots: [{ start: 0, end: 600 }], silences: [], complete: true };
+  };
+  it("lifts celebration above steady speech, while a strong audio burst leads", () => {
+    const l = log(), f = features(600, [[120, 123]]);
+    const ranked = findHighlights(f, 600, { count: 6 }, undefined, undefined, [0, 600], l);
+    expect(ranked[0].peak).toBeLessThan(123);
+    const picture = ranked.find(h => h.peak >= 400 && h.peak < 408)!;
+    expect(picture).toBeDefined(); expect(picture.rank).toBeLessThanOrEqual(6);
+    expect(picture.reasons.join()).toContain("picture: People cheering and raising their arms");
+    expect(picture.reasons.join()).toContain("(shot log)");
+    expect(findHighlights(features(600), 600)).toEqual([]);
+    expect(findHighlights(features(600), 600, {}, undefined, undefined, [0, 600], l)[0].peak).toBe(400.25);
+  });
+  it("measures text, people and motion changes separately and tolerates partial logs", () => {
+    const l = log(), signals = pictureSignals(l), event = signals.find(s => s.start === 400)!;
+    expect(event.score).toBeCloseTo(1);
+    expect(event.reason).toContain("on-screen text changed"); expect(event.reason).toContain("number of people changed"); expect(event.reason).toContain("motion above the file median");
+    expect(signals[0].score).toBe(0);
+    l.moments[0].described!.action = "A person watches a window in winter";
+    expect(pictureSignals(l)[0].score).toBe(0);
+    delete l.moments[50].described;
+    expect(pictureSignals(l)[50].score).toBeCloseTo(0.1);
+    for (const action of ["A crowd applauds", "A person laughs", "They high-five", "A vehicle crashes", "They hug", "He fell", "They won", "She is losing"]) {
+      l.moments[50].described = { ...l.moments[0].described!, action };
+      expect(pictureSignals(l)[50].score, action).toBeGreaterThanOrEqual(0.7);
+    }
   });
 });

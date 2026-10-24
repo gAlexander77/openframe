@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { memoryOwners, MiB } from "../engine/memory";
 import { ByteLru, retainedBytes } from "../lib/memory";
-import { cutsFrom, describeOrder, editPoints, findMoments, joinAdvice, measureMoment, momentPrompt, MOMENT_SCHEMA, parseMoment, pageBlocks, parseShotLog, planMoments, screenplayBlocks, silencesFrom, type Range, type ShotLog } from "../lib/shotlog";
+import { cutsFrom, describePending, editPoints, findMoments, joinAdvice, measureMoment, momentPrompt, MOMENT_SCHEMA, parseMoment, pageBlocks, parseShotLog, planMoments, screenplayBlocks, silencesFrom, type Range, type ShotLog } from "../lib/shotlog";
 import { findClip, sourceRange } from "../lib/project/ops";
 import { platform } from "../platform";
 import type { DescriberStatus } from "../platform/types";
@@ -9,7 +9,7 @@ import type { JobContext, JobStatus } from "../lib/jobs";
 import { jobs } from "./jobs";
 import { projectWork } from "./projectWork";
 import { store } from "./store";
-import { cachedAssetWords } from "./transcript";
+import { cachedAssetWords, hearAsset } from "./transcript";
 import { dismiss, toast, updateToast } from "./toast";
 
 /** About 10,000 tokens: what an agent can read of a long log in one answer. */
@@ -47,12 +47,51 @@ memoryOwners.register("shot_logs", () => {
   return { bytes: logs.bytes + [...borrowed].reduce((n, log) => n + retainedBytes(log), 0), count: logs.size + borrowed.size, budget: logs.budget, detail: "8 MiB idle cache; visible borrowed logs stay until the panel closes" };
 }, () => { logs.clear(); shown.clear(); running.clear(); changed(); });
 
+let thumbnailGeneration = 0;
+const thumbnails = new ByteLru<string, string>(8 * MiB);
+const thumbnailWork = new Map<string, Promise<string | undefined>>();
+const visibleThumbnails = new Map<object, { key: string; src: string; bytes: number }>();
+memoryOwners.register("shot_log_thumbnails", () => {
+  const borrowed = new Map([...visibleThumbnails.values()].filter(v => thumbnails.peek(v.key) !== v.src).map(v => [v.key, v]));
+  return { bytes: thumbnails.bytes + [...borrowed.values()].reduce((n, v) => n + v.bytes, 0), count: thumbnails.size + borrowed.size, budget: thumbnails.budget, estimated: true, detail: "8 MiB idle cache plus visible thumbnails; includes estimated decoded pixels" };
+}, () => { thumbnailGeneration++; thumbnails.clear(); thumbnailWork.clear(); visibleThumbnails.clear(); });
+/** A panel requests only visible moments, and releases its string/pixels on
+ * leaving view. In-flight native frames drain without refilling a closed session. */
+export async function borrowShotThumbnail(id: string, time: number) {
+  if (!platform.shotlog) return;
+  const asset = store.get().project.assets.find(a => a.id === id);
+  if (!asset) return;
+  const generation = thumbnailGeneration, scope = projectWork.capture(), sourceKey = keyOf(id), key = JSON.stringify([sourceKey, time]);
+  const bytesOf = (src: string) => retainedBytes(src) + 160 * Math.max(1, Math.round(160 * (asset.height ?? 90) / (asset.width || 160))) * 4;
+  let src = thumbnails.get(key);
+  if (!src) {
+    let pending = thumbnailWork.get(key);
+    if (!pending) {
+      pending = platform.shotlog.frames(asset.src, [time], 160).then(images => {
+        if (generation !== thumbnailGeneration || scope.aborted || keyOf(id) !== sourceKey || !images[0]) return;
+        const value = `data:image/jpeg;base64,${images[0]}`;
+        thumbnails.set(key, value, bytesOf(value)); return value;
+      });
+      thumbnailWork.set(key, pending);
+      const own = pending;
+      void pending.finally(() => { if (thumbnailWork.get(key) === own) thumbnailWork.delete(key); }).catch(() => {});
+    }
+    src = await pending;
+  }
+  if (!src || generation !== thumbnailGeneration || scope.aborted || keyOf(id) !== sourceKey) return;
+  const token = {};
+  visibleThumbnails.set(token, { key, src, bytes: bytesOf(src) });
+  return { src, release: () => { visibleThumbnails.delete(token); } };
+}
+
 export function shotLogTarget(args: { asset_id?: string; clip_id?: string }) {
   if (!!args.asset_id === !!args.clip_id) throw new Error("Give exactly one asset_id or clip_id");
   const p = store.get().project;
   const clip = args.clip_id ? findClip(p, args.clip_id)?.clip : undefined;
-  if (args.clip_id && clip?.type !== "video") throw new Error("Choose a video clip");
   const asset = p.assets.find(a => a.id === (args.asset_id ?? (clip && "assetId" in clip ? clip.assetId : "")));
+  if (asset?.kind === "image") throw new Error(`Shot logs are for video; ${asset.name} is a picture`);
+  if (asset?.kind === "audio") throw new Error(`Shot logs are for video; ${asset.name} is sound only`);
+  if (args.clip_id && clip?.type !== "video") throw new Error("Choose a video clip");
   if (!asset?.hasVideo) throw new Error("Choose a video asset");
   const [start, end] = clip?.type === "video" ? sourceRange(clip, p.fps) : [0, asset.duration];
   const range = { start: Math.max(0, start), end: Math.min(asset.duration, clip?.type === "video" && clip.freeze ? start + 1 / (p.fps.num / p.fps.den) : end) };
@@ -92,12 +131,12 @@ async function prepare(context: JobContext, progress: (stage: string, fraction: 
   const status = await d.status(); context.signal.throwIfAborted();
   const bytes = status.bytes_needed;
   progress(bytes ? `Downloading the describer (${(bytes / 1e9).toFixed(1)} GB, once)` : "Preparing the describer", 0);
-  await d.prepare(p => { if (!context.signal.aborted) progress(p.stage === "starting" ? "Preparing the describer" : `Downloading the describer (${(bytes / 1e9).toFixed(1)} GB, once)`, p.fraction); });
+  await d.prepare(p => { if (!context.signal.aborted) progress(p.stage === "starting" ? "Preparing the describer" : `Downloading the describer: ${p.stage} (${(p.bytes / 1e9).toFixed(2)} / ${(p.total / 1e9).toFixed(2)} GB)`, p.fraction); });
   context.signal.throwIfAborted();
   return bytes;
 }
 /** UI and MCP share retained jobs, one analysis per asset in this session. */
-export function analyzeFootage(assetId: string, { interval = 8, refresh = false, describe = true }: { interval?: number; refresh?: boolean; describe?: boolean } = {}) {
+export function analyzeFootage(assetId: string, { interval = 8, refresh = false, describe = true, speech = false }: { interval?: number; refresh?: boolean; describe?: boolean; speech?: boolean } = {}) {
   if (!platform.shotlog || (describe && !platform.describer)) throw new Error(SHOTLOG_DESKTOP_NOTE);
   if (!Number.isFinite(interval) || interval < 4 || interval > 30) throw new Error("Interval must be 4 to 30 seconds");
   const { asset } = shotLogTarget({ asset_id: assetId }), scope = projectWork.capture(), key = keyOf(assetId);
@@ -118,11 +157,14 @@ export function analyzeFootage(assetId: string, { interval = 8, refresh = false,
     const notice = toast("Measuring shots and sound", "progress", undefined, { label: "Cancel", run: context.cancel });
     const progress = (stage: string, fraction: number) => { if (signal.aborted) return; context.progress(fraction, stage); updateToast(notice, { text: stage, progress: fraction }); changed(); };
     const current = () => { signal.throwIfAborted(); if (keyOf(assetId) !== key) throw new Error("The source changed; analyze footage again"); };
+    let saving = Promise.resolve();
     const save = async () => {
       if (!log) return;
       // Saving a canceled run is allowed only to the captured source on disk.
       // Never repopulate a closed session's cache with a late answer.
-      await platform.shotlog!.save(asset.src, JSON.stringify(log));
+      const json = JSON.stringify(log);
+      saving = saving.then(() => platform.shotlog!.save(asset.src, json));
+      await saving;
       if (!scope.aborted && keyOf(assetId) === key) { logs.set(key, log, retainedBytes(log)); changed(); }
     };
     try {
@@ -137,23 +179,28 @@ export function analyzeFootage(assetId: string, { interval = 8, refresh = false,
         if (!moments.length) throw new Error("The footage has no measurable duration");
         moments.forEach(m => { m.measured = measureMoment(m, measured); });
         const edges = [0, ...cuts, measured.duration];
-        log = { version: 1, duration: measured.duration, interval, model: SHOTLOG_MODEL, measured_at: new Date().toISOString(), shots: edges.slice(0, -1).map((start, i) => ({ start, end: edges[i + 1] })), moments, silences: silencesFrom(measured), complete: false };
+        log = { version: 1, has_audio: measured.audio_db.length > 0, duration: measured.duration, interval, model: SHOTLOG_MODEL, measured_at: new Date().toISOString(), shots: edges.slice(0, -1).map((start, i) => ({ start, end: edges[i + 1] })), moments, silences: silencesFrom(measured), complete: false };
         await save(); current();
+      }
+      if (speech && asset.hasAudio && log.has_audio !== false) {
+        progress("Hearing speech", 0);
+        await hearAsset(store.get().project, assetId, {}, signal, p => progress("Hearing speech", p.progress));
+        current();
       }
       if (describe && !log.complete) {
         bytes = await prepare(context, progress);
-        let sinceSave = 0, done = log.moments.filter(m => m.described).length;
-        for (const i of describeOrder(log.moments)) {
+        let sinceSave = 0;
+        const moments = log.moments;
+        progress(`Described ${moments.filter(m => m.described).length} of ${moments.length} moments`, moments.filter(m => m.described).length / moments.length);
+        await describePending(moments, signal, async m => {
           current();
-          const m = log.moments[i];
-          if (m.described) continue;
-          progress(`Describing moment ${done + 1} of ${log.moments.length}`, done / log.moments.length);
           const images = await platform.shotlog!.frames(asset.src, m.frames, 768); current();
-          const text = await platform.describer!.ask({ images, prompt: momentPrompt(m), schema: MOMENT_SCHEMA, maxTokens: 300 }); current();
-          m.described = parseMoment(text);
-          if (m.described) done++;
-          if (++sinceSave === 10) { await save(); sinceSave = 0; }
-        }
+          const text = await platform.describer!.ask({ images, prompt: momentPrompt(m), schema: MOMENT_SCHEMA, maxTokens: 300 });
+          return parseMoment(text);
+        }, async done => {
+          progress(`Described ${done} of ${moments.length} moments`, done / moments.length);
+          if (++sinceSave === 10) { sinceSave = 0; await save(); }
+        });
       }
       current();
       log.complete = log.moments.every(m => !!m.described);
@@ -192,7 +239,7 @@ export async function shotLogTool(name: string, a: Record<string, unknown>): Pro
     return findMoments(found, String(a.query), Number(a.limit ?? 10)).map(({ asset, ...m }) => ({ asset_id: asset, ...m }));
   }
   if (!platform.shotlog && (name === "describe_moment" || !logs.size)) throw new Error(SHOTLOG_DESKTOP_NOTE);
-  const { asset, range } = shotLogTarget(a), scope = projectWork.capture();
+  const { asset, clip, range } = shotLogTarget(a), scope = projectWork.capture();
   if (name === "describe_moment") {
     if (!platform.describer || !platform.shotlog) throw new Error(SHOTLOG_DESKTOP_NOTE);
     const time = Number(a.time), span = Number(a.span ?? 1);
@@ -200,7 +247,7 @@ export async function shotLogTool(name: string, a: Record<string, unknown>): Pro
     const times = [time - span, time, time + span].map(t => Math.max(0, Math.min(Math.max(0, asset.duration - 0.001), t)));
     const work = async (signal: AbortSignal) => {
       const images = await platform.shotlog!.frames(asset.src, times, 768); signal.throwIfAborted();
-      const text = await platform.describer!.ask({ images, prompt: a.question ? `${String(a.question)}\nFrames in time order at ${times.join(", ")} source seconds. Name only what you can see.` : momentPrompt({ frames: times }), ...(a.question ? {} : { schema: MOMENT_SCHEMA }), maxTokens: 300 }); signal.throwIfAborted();
+      const text = await platform.describer!.ask({ images, prompt: a.question ? `${String(a.question)}\nThese are ${times.length} frames from one moment of one video, in time order at ${times.join(", ")} source seconds, ${span} seconds apart (clamped at the ends). Name only what you can see.` : momentPrompt({ frames: times }), ...(a.question ? {} : { schema: MOMENT_SCHEMA }), maxTokens: 300 }); signal.throwIfAborted();
       const answer = a.question ? text : parseMoment(text);
       if (!answer) throw new Error("The describer returned an invalid answer; try again");
       return { asset_id: asset.id, time, frames: times, answer };
@@ -216,12 +263,14 @@ export async function shotLogTool(name: string, a: Record<string, unknown>): Pro
   }
   const log = await loadShotLog(asset.id); scope.throwIfAborted();
   if (!log) throw new Error("This source has no shot log; run analyze_footage first");
+  const playback = clip?.type === "video" && (clip.reverse || clip.speed !== 1 || clip.speedCurve)
+    ? `This clip plays ${range.start.toFixed(2)}-${range.end.toFixed(2)}${clip.reverse ? " reversed" : ""}${clip.speedCurve ? " at variable speed" : ` at ${clip.speed}x`}; times here are source seconds` : undefined;
   if (name === "get_shot_log") {
     // A window past the end reads to the end; only an empty window is refused.
     const from = Math.max(0, Number(a.from ?? range.start)), to = Math.min(log.duration, Number(a.to ?? range.end));
     if (from >= to) throw new Error(`Give a source window with from < to inside 0 to ${log.duration} seconds`);
     const described = log.moments.filter(m => !!m.described).length;
-    const note = log.complete ? "Complete shot log" : `Partial shot log: ${described} of ${log.moments.length} moments described; analyze_footage continues it`;
+    const note = [log.complete ? "Complete shot log" : `Partial shot log: ${described} of ${log.moments.length} moments described; analyze_footage continues it`, playback].filter(Boolean).join("\n");
     if (a.format === "json") {
       // At most 150 moments a page: a 45-minute log is about 400 KB of JSON.
       const moments = log.moments.filter(m => m.end > from && m.start < to), next = moments[150]?.start;
@@ -233,7 +282,11 @@ export async function shotLogTool(name: string, a: Record<string, unknown>): Pro
     const more = page.next === undefined ? "" : `\nContinued: call get_shot_log with from=${+page.next.toFixed(3)} for the rest.`;
     return `${note} (${detail}${detail === "brief" ? "; detail full for every field of a shorter window" : ""})\n${page.text}${more}`;
   }
-  const ranges = a.ranges as Range[];
-  if (!ranges.length || ranges.some(r => r.start >= r.end || r.end > log.duration)) throw new Error("Ranges must have start < end within the source duration");
-  return { asset_id: asset.id, ranges: ranges.map((r, i) => ({ ...r, ...editPoints(log, r, { window: a.window as number | undefined, words: cachedAssetWords(asset.id, Math.max(0, r.start - Number(a.window ?? 2)), Math.min(log.duration, r.end + Number(a.window ?? 2))) }), ...(i < ranges.length - 1 ? { join_to_next: joinAdvice(log, r, log, ranges[i + 1]) } : {}) })) };
+  const ranges = (a.ranges as Range[]).map((r, i) => {
+    const start = Math.max(0, Math.min(log.duration, r.start)), end = Math.max(0, Math.min(log.duration, r.end));
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) throw new Error(`Range ${i + 1} is empty after clamping to 0-${log.duration} source seconds`);
+    return { start, end };
+  });
+  if (!ranges.length) throw new Error("Give at least one source range");
+  return { asset_id: asset.id, ...(playback ? { note: playback } : {}), ranges: ranges.map((r, i) => ({ ...r, ...editPoints(log, r, { window: a.window as number | undefined, words: cachedAssetWords(asset.id, Math.max(0, r.start - Number(a.window ?? 2)), Math.min(log.duration, r.end + Number(a.window ?? 2))) }), ...(i < ranges.length - 1 ? { join_to_next: joinAdvice(log, r, log, ranges[i + 1]) } : {}) })) };
 }

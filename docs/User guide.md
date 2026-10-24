@@ -26,8 +26,14 @@ appear in the panel. The app starts the model on this computer. There is
 nothing to install or start for the describer.
 
 The log lists source time ranges, framing, camera movement, actions and
-on-screen text. Search for words in the action or visible text; click a
-moment to open the source monitor at its start. Gray entries have measured
+on-screen text. **Include speech** hears the source into its speech transcript
+during the same analysis; it starts checked for videos under 20 minutes.
+Search for words in the action or visible text; click a
+moment's **Open in source monitor** button to start there with its In and Out
+marked. Alike moments in one shot fold into a time-range row; click that row
+to expand or collapse it. Small middle-frame thumbnails load as you scroll.
+Search also recognizes a few related editing words, such as celebrate for
+cheering and touchdown for landing. Gray entries have measured
 motion, brightness and sound but no description yet. **Cancel** keeps the
 finished descriptions; **Continue analysis** resumes them. **Refresh** measures
 and describes the source again. Logs survive app restarts without changing
@@ -37,8 +43,13 @@ the desktop app.
 Agents use `analyze_footage`, `get_shot_log`, `find_shots`,
 `suggest_edit_points` and `describe_moment`. Cut suggestions include reasons
 and join options, rather than editing the timeline. Speech appears only for
-source windows already heard by the transcript. Review the actual frames
-before choosing cuts; descriptions and camera estimates can be wrong.
+source windows already heard by the transcript; agents can request
+`analyze_footage { speech: true }` to hear them too (default false).
+Videos without sound read "no audio." Ranges extending past the source are
+clamped; an empty range is refused by number. Reversed or retimed clip reads
+explain playback and keep all times in source seconds. Find highlights also
+uses an existing log for picture reactions and changes, with evidence in
+each result. Review the actual frames before choosing cuts; descriptions and camera estimates can be wrong.
 
 ## Make your first edit
 

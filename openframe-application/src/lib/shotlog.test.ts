@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { COMMANDS, validate } from "./commands";
-import { cutsFrom, silencesFrom, planMoments, describeOrder, measureMoment, momentPrompt, MOMENT_SCHEMA, parseMoment, screenplay, screenplayBlocks, pageBlocks, findMoments, editPoints, joinAdvice, parseShotLog, type Measures, type ShotLog } from "./shotlog";
+import { cutsFrom, describePending, momentGroups, silencesFrom, planMoments, describeOrder, measureMoment, momentPrompt, MOMENT_SCHEMA, parseMoment, screenplay, screenplayBlocks, pageBlocks, findMoments, editPoints, joinAdvice, parseShotLog, type Measures, type ShotLog } from "./shotlog";
 
 const measures = (duration = 12): Measures => ({ duration, width: 1920, height: 1080, frame_rate: 10, scene: Array(duration * 10).fill(0.01), step: 0.5, luma: Array(duration * 2).fill(0.5), motion: Array(duration * 2).fill(0.02), dx: Array(duration * 2).fill(0), dy: Array(duration * 2).fill(0), rgb: Array.from({ length: duration * 2 }, () => [100, 120, 140]), audio_step: 0.1, audio_db: Array(duration * 10).fill(-18) });
 const description = { shot_size: "medium", camera: "static", people: 1, on_screen_text: ["JPL"], action: "A man raises his arms; others clap.", mood: "excited", description: "A control room celebrates." };
@@ -154,4 +154,77 @@ describe("reading a long log", () => {
     expect(pageBlocks(blocks, 10)).toEqual({ text: "a".repeat(30), next: 5 });
     expect(screenplay(log())).toBe(screenplayBlocks(log()).map(b => b.text).join("\n"));
   });
+});
+
+
+describe("shot log edge regressions", () => {
+  it("labels absent sound and never uses stale sound evidence", () => {
+    const l = { ...log(), has_audio: false };
+    expect(screenplay(l)).toContain("Sound: no audio");
+    expect(screenplay(l)).not.toContain("silence");
+    expect(screenplay(l, { detail: "brief" })).toContain("[no audio]");
+    const points = editPoints(l, { start: 9, end: 10 }, {});
+    expect(JSON.stringify(points)).not.toContain("silence");
+    const kinds = joinAdvice(l, { start: 0, end: 2 }, l, { start: 3, end: 4 }).map(a => a.kind);
+    expect(kinds).not.toContain("L_cut"); expect(kinds).not.toContain("J_cut");
+    expect(parseShotLog(JSON.stringify(l))).toMatchObject({ has_audio: false });
+    expect(parseShotLog(JSON.stringify({ ...l, has_audio: "false" }))).toBeUndefined();
+  });
+  it("does not label a cut before the brief window", () => {
+    expect(screenplay(log(), { from: 5.1, detail: "brief" })).not.toContain("CUT");
+    expect(screenplay(log(), { from: 5, detail: "brief" })).toContain("CUT");
+  });
+  it("keeps literal text and drops object descriptions in on-screen text", () => {
+    const keep = ["MARS 2020 PERSEVERANCE", "UTC: 2021-02-18 20:52:48", "WE LANDED!", "CAM: MC CHASE"];
+    const d = parseMoment(JSON.stringify({ ...description, on_screen_text: ["NASA logo on astronaut's suit", "American flag and NASA insignia behind astronaut", ...keep] }));
+    expect(d!.on_screen_text).toEqual(keep);
+    expect(momentPrompt({ frames: [1, 2, 3] })).toContain("copied exactly");
+  });
+  it("matches editing synonyms with lower weight and reports the matched word", () => {
+    const l = log(); l.moments.forEach(m => { m.described!.action = "People cheering"; m.described!.description = "A room"; m.described!.mood = "calm"; });
+    const direct = findMoments([{ asset: "a", log: l }], "cheer");
+    const synonym = findMoments([{ asset: "a", log: l }], "celebrate");
+    expect(synonym[0]).toMatchObject({ start: 0, matched_words: ["cheer"] });
+    expect(synonym[0].score).toBeLessThan(direct[0].score);
+  });
+});
+
+
+it("runs two descriptions, publishes out of order, stops admission and drains on cancel", async () => {
+  const moments = planMoments(48, []), controller = new AbortController();
+  const pending = new Map<number, (d: ReturnType<typeof parseMoment>) => void>();
+  const done: number[] = [];
+  const result = describePending(moments, controller.signal, m => new Promise(resolve => { pending.set(m.start, resolve); }), async n => { done.push(n); });
+  const checked = expect(result).rejects.toThrow();
+  expect([...pending.keys()]).toEqual([0, 32]);
+  pending.get(32)!(parseMoment(JSON.stringify(description)));
+  await vi.waitFor(() => expect(pending.size).toBe(3));
+  expect(moments[4].described).toBeDefined(); expect(done).toEqual([1]);
+  controller.abort();
+  pending.get(0)!(parseMoment(JSON.stringify(description))); pending.get(16)!(parseMoment(JSON.stringify(description)));
+  await checked;
+  expect(done).toEqual([1, 2, 3]); expect(pending.size).toBe(3);
+  const resumed: number[] = [];
+  await describePending(moments, new AbortController().signal, async m => { resumed.push(m.start); return parseMoment(JSON.stringify(description)); }, async () => {});
+  expect(resumed).toEqual([8, 24, 40]);
+});
+it("drains the other worker before surfacing an inference failure", async () => {
+  const moments = planMoments(32, []);
+  let finish!: (d: ReturnType<typeof parseMoment>) => void, settled = false, calls = 0;
+  const result = describePending(moments, new AbortController().signal, async () => {
+    if (++calls === 2) throw new Error("inference failed");
+    return new Promise(resolve => { finish = resolve; });
+  }, async () => {});
+  const checked = expect(result).rejects.toThrow("inference failed");
+  void result.then(() => { settled = true; }, () => { settled = true; });
+  await Promise.resolve(); await Promise.resolve(); expect(settled).toBe(false);
+  finish(parseMoment(JSON.stringify(description))); await checked;
+  expect(calls).toBe(2); expect(moments[0].described).toBeDefined();
+});
+it("uses the brief view's same-shot groups for the panel", () => {
+  const l = log(); l.moments = planMoments(12, [5], 3);
+  l.moments.forEach(m => { m.described = parseMoment(JSON.stringify(description)); });
+  const groups = momentGroups(l);
+  expect(groups.map(g => g.moments.length)).toEqual([2, 3]);
+  expect(groups.map(g => g.start)).toEqual(screenplayBlocks(l, { detail: "brief" }).map(b => b.at));
 });

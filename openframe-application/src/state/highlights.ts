@@ -11,6 +11,7 @@ import type { Asset } from "../lib/project/types";
 import { platform } from "../platform";
 import { projectWork } from "./projectWork";
 import { store } from "./store";
+import { loadShotLog } from "./shotlog";
 import { hearWindow } from "./transcript";
 import { dismiss, toast, updateToast } from "./toast";
 import { run } from "./actions";
@@ -100,10 +101,12 @@ export async function findAssetHighlights(options: HighlightRequest, chatText?: 
       if (!chat.length) throw new Error("No timestamped messages were found in this chat replay");
     }
     signal.throwIfAborted();
+    const shotLog = asset.hasVideo ? await loadShotLog(asset.id) : undefined;
+    signal.throwIfAborted();
     progress("Ranking moments…", 0);
     const range: [number, number] = clip && (clip.type === "audio" || clip.type === "video") ? sourceRange(clip, p.fps) : [0, asset.duration];
     // Read the file once, but a clip request ranks only its visible source span.
-    let highlights = findHighlights(reading.features, asset.duration, { ...options, count: 100 }, chat, scenes ? reading.cuts : undefined, range)
+    let highlights = findHighlights(reading.features, asset.duration, { ...options, count: 100 }, chat, scenes ? reading.cuts : undefined, range, shotLog)
       .filter(h => h.peak >= range[0] && h.peak < range[1])
       .map(h => ({ ...h, start: Math.max(range[0], h.start), end: Math.min(range[1], h.end) }))
       .filter(h => h.end - h.start >= Math.min(min, range[1] - range[0]))
@@ -119,7 +122,7 @@ export async function findAssetHighlights(options: HighlightRequest, chatText?: 
     }
     highlights = highlights.map((h, i) => ({ ...h, rank: i + 1 }));
     signal.throwIfAborted();
-    const signals = [...(asset.hasAudio ? ["audio", "speech"] : []), ...(scenes ? ["scenes"] : []), ...(chat ? ["chat"] : []), ...(options.times?.length ? ["times"] : []), ...(options.transcribe ? ["transcript", ...(options.keywords?.length ? ["keywords"] : [])] : [])];
+    const signals = [...(shotLog ? ["shot_log"] : []), ...(asset.hasAudio ? ["audio", "speech"] : []), ...(scenes ? ["scenes"] : []), ...(chat ? ["chat"] : []), ...(options.times?.length ? ["times"] : []), ...(options.transcribe ? ["transcript", ...(options.keywords?.length ? ["keywords"] : [])] : [])];
     const markerClip = clip ?? sourceClips.find(c => {
       if (c.type !== "audio" && c.type !== "video") return false;
       const [lo, hi] = sourceRange(c, p.fps);

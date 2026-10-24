@@ -14,3 +14,10 @@
 .shotlog-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .shotlog-chips span { background: var(--bg-inset); border-radius: var(--radius-sm); padding: 2px 5px; }
 .shotlog-moment.undescribed { color: var(--text-3); }
+
+.shotlog-speech { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); }
+.shotlog-group { display: grid; gap: 8px; min-width: 0; }
+.shotlog-fold { width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; justify-content: flex-start; }
+.shotlog-thumbnail { display: block; width: 160px; max-width: 100%; min-height: 60px; background: var(--bg-inset); }
+.shotlog-thumbnail img { display: block; width: 160px; max-width: 100%; height: auto; }
+.shotlog-open { color: var(--text-1); text-decoration: underline; }

@@ -7,23 +7,37 @@ on the user's machine. Three doors, one engine.
 
 In the desktop app, `analyze_footage` takes exactly one `asset_id` or
 `clip_id`, an optional maximum moment interval (4–30 seconds, default 8),
-`describe` (default true), and `refresh` (default false). It returns counts,
+`describe` (default true), `speech` (default false), and `refresh` (default
+false). It returns counts,
 completeness, model, elapsed time and first-use download bytes. Long runs
 return a retained job (`wait: 0` returns immediately); use `job_status` and
 `cancel_job`. Repeating analysis reuses the running job for that asset, then
 resumes missing descriptions from the saved log. `describe: false` measures
-only; `refresh` replaces the reading. First description downloads about
+without vision inference; `speech: true` also hears the source through the
+transcript module's bounded windows, stage "Hearing speech", even when
+`describe` is false. Already-heard words are reused. `refresh` replaces
+the visual reading. Two descriptions run concurrently; progress counts
+finished valid moments, with saves every ten and after draining cancellation.
+First description downloads about
 2.9 GB once and runs the vision model on this computer, without a separate
 installation or server to start.
 
 Read `get_shot_log` in screenplay text or JSON, optionally bounded by `from`
 and `to` source seconds. A clip defaults to its visible source window.
 `find_shots` searches actions and on-screen text across every analyzed video
-(or one `asset_id`); quoted phrases must match. These reads load saved logs
+(or one `asset_id`); quoted phrases must match. Unquoted words also use small
+editing synonym families (celebrate/cheer/clap, touchdown/landing, and
+similar terms) at half the direct-match score. `matched_words` reports the
+matched stems; the answer remains an array. These reads load saved logs
 and use already-heard speech windows, never starting transcription.
 `suggest_edit_points` takes source `ranges` and a boundary `window` (default
 2 seconds), returning In/Out choices, reasons and up to two alternatives,
-plus advice between consecutive ranges. Join calls use existing
+plus advice between consecutive ranges. Each range clamps to [0, duration];
+an empty clamped range is refused by its 1-based number. Clip reads explain
+reverse/speed changes while returning source-second times. Optional saved-log
+`has_audio: false` suppresses all sound reasoning; absent means true for
+older logs. Pictures and sound-only assets receive explicit video-only
+errors. Join calls use existing
 `set_transition` (dissolve, dipBlack, none), `set_param` (transform.scale),
 `detach_audio` and `trim_clip`; replace angle-bracket placeholders with
 placed clip IDs and timeline seconds, and multiply a punch-in by the current
@@ -32,6 +46,13 @@ not prove speech; a J-cut suggestion is conditional on checking the speech.
 `describe_moment` inspects three frames around source `time` (`span` default
 1 second), answering a `question` in plain text or returning the structured
 moment description. It returns a preparation job only when needed.
+
+`find_highlights` also reads an existing shot log (partial logs work) without
+starting vision inference, reports `shot_log` in `signals`, and adds picture
+reasons for celebratory/intense actions or moods, changed on-screen text,
+a change in people count, and motion above the file median. The default
+`weights.picture` is 0.25 against audio 0.5; sound keeps the leading weight.
+See [[ADR-146 The shot log supports highlight ranking and paired analysis]].
 
 Order: analyze, read or search, suggest edit points, then check chosen ranges
 with `preview_frames` before cutting. The browser build has no describer;
