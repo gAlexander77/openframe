@@ -53,3 +53,18 @@ continue at, and reads windows over 10 minutes brief by default (one line
 a moment, alike moments of one shot folded, as a stream's are). Search
 finds words the model uses ("cheer", "parachute", "image"), not its
 vocabulary gaps ("sky crane").
+
+## Describer hardening, 2026-10-24
+
+Two asks run concurrently (`-np 2`, `-c 8192`: 4,096 tokens per slot); a third waits.
+The 10-minute idle clock starts at the last finished ask, with none running.
+Refused/reset connections or an exited server trigger one restart and one retry;
+concurrent failures share that restart; a second failure includes the server log tail.
+Downloads resume `.part` files with curl `-C -`; failed size/hash checks delete the part.
+Progress counts all missing runtime/model/encoder files together, including resumed bytes.
+Before downloading, require remaining bytes plus 512 MiB free: GetDiskFreeSpaceExW on
+Windows, existing libc's statvfs on Unix (the Unix path was not run on this Windows host).
+Measure at the higher valid average/nominal stream rate, capped at 30 fps; fps keeps its
+average meaning. Generated VFR video averaged 18.6441 fps; all four cuts measured exactly
+at 2.5, 5, 8 and 10 s using its nominal 30 fps. The ignored 8-ask serial/parallel benchmark
+prints both wall times and speedup; GPU throughput remains for the lead to measure.
