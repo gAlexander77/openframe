@@ -231,14 +231,15 @@ Read what the picture and sound do, search moments, and choose cuts. Everything 
 
 ### analyze_footage
 
-Measure shots, motion, brightness, color and silence, then write a time-coded visual shot log with a local vision model. Everything runs on this computer; the first description downloads about 2.9 GB once. Returns counts, completeness, model, elapsed_seconds and first_use_download_bytes. A retained session job supports progress, cancellation and resume. One analysis per asset; describe false measures only. Everything runs on this computer. Shot logs need the desktop app; this browser build has no local describer.
+Measure shots, motion, brightness, color and silence, then write a time-coded visual shot log with a local vision model. Everything runs on this computer; the first description downloads about 2.9 GB once. Returns counts, completeness, model, elapsed_seconds and first_use_download_bytes. A retained session job supports progress, cancellation and resume. One analysis per asset; describe false skips vision inference. speech true also hears speech into the per-asset transcript; default false. Two descriptions run concurrently. Everything runs on this computer. Shot logs need the desktop app; this browser build has no local describer.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `asset_id` | string |  | Imported video asset ID; give exactly one asset_id or clip_id |
 | `clip_id` | string |  | Video clip ID; get_shot_log defaults to its source window. Times are source seconds |
+| `speech` | boolean |  | Also hear the full video into its per-asset speech transcript (default false), in bounded windows; get_shot_log interleaves the words |
 | `interval` | number |  | Maximum moment length in source seconds (default 8); refresh to change an existing log's spacing (4..30) |
-| `describe` | boolean |  | Describe frames with the local model (default true); false measures only |
+| `describe` | boolean |  | Describe frames with the local model (default true); false skips vision inference |
 | `refresh` | boolean |  | Discard the saved reading and measure again (default false); otherwise resume undescribed moments |
 | `wait` | number |  | Seconds to wait for a long job (default 45); 0 returns immediately. Poll job_status and cancel with cancel_job (0..45) |
 
@@ -270,11 +271,11 @@ Example:
 
 ### find_shots
 
-Search analyzed footage by what happens or what text appears on screen. Returns asset_id, source start/end, weighted score and matched words. On-screen text and action count most; quoted phrases must match. Reads local logs without starting analysis. Everything runs on this computer. Shot logs need the desktop app; this browser build has no local describer.
+Search analyzed footage by what happens or what text appears on screen. Returns asset_id, source start/end, weighted score and matched words. On-screen text and action count most; editing synonyms score half a direct match, matched_words reports matched stems, and quoted phrases must match. Reads local logs without starting analysis. Everything runs on this computer. Shot logs need the desktop app; this browser build has no local describer.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `query` | string | yes | Words in action, description or on-screen text; quoted phrases must match |
+| `query` | string | yes | Words in action, description or on-screen text; editing synonyms count half as much; quoted phrases must match |
 | `asset_id` | string |  | Search this video asset only; omit for every analyzed video in the project |
 | `limit` | integer |  | Maximum matches, ranked by weighted word overlap (default 10) (1..100) |
 
@@ -292,9 +293,9 @@ Suggest the best In and Out plus up to two alternatives near each chosen source 
 |---|---|---|---|
 | `asset_id` | string |  | Imported video asset ID; give exactly one asset_id or clip_id |
 | `clip_id` | string |  | Video clip ID; get_shot_log defaults to its source window. Times are source seconds |
-| `ranges` | { start, end }[] | yes | Chosen ranges in source seconds, in planned edit order |
-| `ranges[].start` | number | yes | Source In seconds (0..) |
-| `ranges[].end` | number | yes | Exclusive source Out seconds (0..) |
+| `ranges` | { start, end }[] | yes | Chosen ranges in source seconds, in planned edit order; clamped to the source duration; an empty range is refused by number |
+| `ranges[].start` | number | yes | Source In seconds; clamped to 0-duration |
+| `ranges[].end` | number | yes | Exclusive source Out seconds; clamped to 0-duration |
 | `window` | number |  | Search this many seconds around each boundary (default 2) (0..30) |
 
 Example:
@@ -328,7 +329,7 @@ Find the best moments in a long stream, then turn them into finished clip projec
 
 ### find_highlights
 
-Rank exciting moments in a long VOD using local audio excitement and speech, optional chat replay, scene activity and given viewer-clip times. Results are SOURCE seconds, with score 0-1, numeric reasons, signals used and elapsed_seconds. Read-only unless markers is true (one undoable edit). Only candidate windows are transcribed when requested; keywords then refine ranking and quotes. Defaults: count 10, length 15-60 s, lead-in 4 s, lead-out 3 s, minimum peak gap 20 s. Audio uses a surrounding 3-minute median, 3 s short-term and 400 ms momentary BS.1770 loudness; vocal excitement is heuristic, not laughter recognition. Audio is streamed at 16 kHz and compact features cached per asset. Preview candidates with preview_media before making clips.
+Rank exciting moments in a long VOD using local audio excitement and speech, picture evidence from an existing shot log, optional chat replay, scene activity and given viewer-clip times. Results are SOURCE seconds, with score 0-1, numeric reasons, signals used and elapsed_seconds. Read-only unless markers is true (one undoable edit). Only candidate windows are transcribed when requested; keywords then refine ranking and quotes. Defaults: count 10, length 15-60 s, lead-in 4 s, lead-out 3 s, minimum peak gap 20 s. Audio uses a surrounding 3-minute median, 3 s short-term and 400 ms momentary BS.1770 loudness; vocal excitement is heuristic, not laughter recognition. Audio is streamed at 16 kHz and compact features cached per asset. Preview candidates with preview_media before making clips.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -345,8 +346,9 @@ Rank exciting moments in a long VOD using local audio excitement and speech, opt
 | `keywords` | string[] |  | Phrases such as no way or clip that; scored in candidate transcripts when transcribe is true |
 | `transcribe` | boolean |  | Hear candidate windows plus 5 s margin with local Whisper, snap sentences, add snippet/title and keyword scores (default false) |
 | `scenes` | true \| false \| "auto" |  | Sample 96 px frames every 1 s, or every 4 s past 20 minutes, coarse to fine over the whole file; at most 75 s spent sampling. scene_sampling reports interval, samples, covered_seconds (seconds' worth at the interval), even_interval_seconds (the spacing reached across the whole file) and elapsed time. auto enables video up to 2 hours |
-| `weights` | { audio, speech, chat, scenes, times, keywords } |  | Relative signal weights; only present signals contribute, score clamped to 0-1 |
+| `weights` | { audio, picture, speech, chat, scenes, times, keywords } |  | Relative signal weights; only present signals contribute, score clamped to 0-1 |
 | `weights.audio` | number |  | Audio excitement weight (default 0.5) (0..10) |
+| `weights.picture` | number |  | Existing shot-log picture signal weight (default 0.25); no vision inference is started (0..10) |
 | `weights.speech` | number |  | Voice activity preference (default 0.1) (0..10) |
 | `weights.chat` | number |  | Chat rate spikes and emotes/clip mentions (default 0.25) (0..10) |
 | `weights.scenes` | number |  | Scene changes per minute (default 0.05) (0..10) |

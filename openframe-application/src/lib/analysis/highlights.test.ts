@@ -1,4 +1,5 @@
-import { highlightTitle, scenePasses, sceneSampling, SCENE_BUDGET_SECONDS } from "./highlights";
+import { planMoments, type ShotLog } from "../shotlog";
+import { pictureSignals, highlightTitle, scenePasses, sceneSampling, SCENE_BUDGET_SECONDS } from "./highlights";
 import { describe, expect, it } from "vitest";
 import { findHighlights, HighlightAudio, highlightWindow, refineHighlight, rollingBaseline, type HighlightFeature } from "./highlights";
 
@@ -146,5 +147,67 @@ describe("scene sampling order", () => {
   });
   it("keeps short files to one pass at the interval", () => {
     expect(scenePasses(30, 1)).toEqual([Array.from({ length: 30 }, (_, i) => i)]);
+  });
+});
+
+
+describe("picture evidence from a shot log", () => {
+  const log = (): ShotLog => {
+    const moments = planMoments(600, [], 8);
+    moments.forEach(m => { m.measured.motion = 0.02; m.described = { shot_size: "medium", camera: "static", people: 1, on_screen_text: [], action: "A person speaks", mood: "calm", description: "A room" }; });
+    const m = moments.find(m => m.start === 400)!;
+    m.described = { ...m.described!, action: "People cheering and raising their arms", mood: "euphoric", people: 8, on_screen_text: ["WE LANDED!"] }; m.measured.motion = 0.5;
+    return { version: 1, duration: 600, model: "synthetic", measured_at: "today", interval: 8, moments, shots: [{ start: 0, end: 600 }], silences: [], complete: true };
+  };
+  it("lifts celebration above steady speech, while a strong audio burst leads", () => {
+    const l = log(), f = features(600, [[120, 123]]);
+    const ranked = findHighlights(f, 600, { count: 6 }, undefined, undefined, [0, 600], l);
+    expect(ranked[0].peak).toBeLessThan(123);
+    const picture = ranked.find(h => h.peak >= 400 && h.peak < 408)!;
+    expect(picture).toBeDefined(); expect(picture.rank).toBeLessThanOrEqual(6);
+    expect(picture.reasons.join()).toContain("picture: People cheering and raising their arms");
+    expect(picture.reasons.join()).toContain("(shot log)");
+    expect(findHighlights(features(600), 600)).toEqual([]);
+    expect(findHighlights(features(600), 600, {}, undefined, undefined, [0, 600], l)[0].peak).toBe(400.25);
+  });
+  it("measures new text and motion separately and tolerates partial logs", () => {
+    const l = log(), signals = pictureSignals(l), event = signals.find(s => s.start === 400)!;
+    expect(event.score).toBeCloseTo(1); // a group cheering 0.8, new text 0.1, motion 0.1
+    expect(event.reason).toContain("new on-screen text"); expect(event.reason).not.toContain("people"); expect(event.reason).toContain("motion above the file median");
+    expect(signals[0].score).toBe(0);
+    l.moments[0].described!.action = "A person watches a window in winter";
+    expect(pictureSignals(l)[0].score).toBe(0);
+    delete l.moments[50].described;
+    expect(pictureSignals(l)[50].score).toBeCloseTo(0.1);
+    for (const action of ["A crowd applauds", "They high-five", "A vehicle crashes", "They hug", "She raises both fists"]) {
+      l.moments[50].described = { ...l.moments[0].described!, action };
+      expect(pictureSignals(l)[50].score, action).toBeGreaterThanOrEqual(0.7);
+    }
+    for (const action of ["A person laughs", "They won", "She is losing", "A wide grin"]) {
+      l.moments[50].described = { ...l.moments[0].described!, action };
+      expect(pictureSignals(l)[50].score, action).toBeCloseTo(0.35 + 0.1, 1);
+    }
+    // A group's reaction outweighs one person's; a spacecraft in free-fall is no event.
+    l.moments[50].described = { ...l.moments[0].described!, action: "People are cheering" };
+    const crowd = pictureSignals(l)[50].score;
+    l.moments[50].described = { ...l.moments[0].described!, action: "A man cheers" };
+    expect(crowd).toBeGreaterThan(pictureSignals(l)[50].score);
+    l.moments[50].described = { ...l.moments[0].described!, action: "The spacecraft begins a free-fall descent" };
+    expect(pictureSignals(l)[50].score).toBeCloseTo(0.1);
+  });
+  it("does not count clocks, cuts, people counts or a tense waiting room as events (NASA landing)", () => {
+    const l = log(), at = (t: number) => l.moments.findIndex(m => m.start === t);
+    // A countdown and telemetry clock ticking inside one shot.
+    l.moments[at(16)].described!.on_screen_text = ["00:00:38", "UTC: 2021-02-18 20:52:48"];
+    l.moments[at(24)].described!.on_screen_text = ["00:00:33", "UTC: 2021-02-18 20:52:56"];
+    expect(pictureSignals(l)[at(24)].score).toBe(0);
+    // New words across a cut are the cut, not an event.
+    l.shots = [{ start: 0, end: 32 }, { start: 32, end: 600 }];
+    l.moments.forEach(m => { m.shot = m.start < 32 ? 0 : 1; });
+    l.moments[at(32)].described!.on_screen_text = ["MISSION CONTROL"];
+    expect(pictureSignals(l)[at(32)].score).toBe(0);
+    // The model's people count and "(calm, intense focus)" are not evidence.
+    l.moments[at(48)].described = { ...l.moments[at(48)].described!, people: 9, mood: "calm, intense focus", action: "Engineers stay focused on their screens" };
+    expect(pictureSignals(l)[at(48)].score).toBe(0);
   });
 });

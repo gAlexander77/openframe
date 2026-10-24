@@ -17,7 +17,7 @@ export interface Moment {
   described?: Description;
 }
 export interface ShotLog {
-  version: 1; duration: number; model: string; measured_at: string; interval: number;
+  version: 1; has_audio?: boolean; duration: number; model: string; measured_at: string; interval: number;
   shots: { start: number; end: number }[]; moments: Moment[]; silences: [number, number][]; complete: boolean;
 }
 export interface Range { start: number; end: number }
@@ -88,13 +88,20 @@ export const MOMENT_SCHEMA = {
   }, required: ["shot_size", "camera", "people", "on_screen_text", "action", "mood", "description"], additionalProperties: false,
 };
 export function momentPrompt(moment: Pick<Moment, "frames">): string {
-  return `These are ${moment.frames.length} frames from one moment of a video, in time order, at ${moment.frames.map(t => `${t.toFixed(2)} s`).join(", ")}. Describe what is happening for a video editor deciding what to clip. Be concrete and brief: action is what changes across the frames in one sentence; description is at most two sentences. Name only what you can see.`;
+  return `These are ${moment.frames.length} frames from one moment of a video, in time order, at ${moment.frames.map(t => `${t.toFixed(2)} s`).join(", ")}. Describe what is happening for a video editor deciding what to clip. Be concrete and brief: action is what changes across the frames in one sentence; description is at most two sentences. Name only what you can see. on_screen_text contains only letters and numbers you can read, copied exactly; logos and objects belong in description, not on_screen_text.`;
+}
+/** Reject prose about objects, while keeping short labels, mixed-case names,
+ * uppercase captions and numeric readouts. This is a conservative OCR guard. */
+function literalText(s: string) {
+  const words = s.match(/[\p{L}\p{N}]+/gu) ?? [];
+  const lowercase = words.filter(w => /^[a-z]+$/.test(w)).length;
+  return !!s.trim() && !(words.length > 3 && !/\d/.test(s) && lowercase >= 3);
 }
 export function parseMoment(text: string): Description | undefined {
   try {
     const d = JSON.parse(text.replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, ""));
     if (!d || !["action", "mood", "description", "shot_size", "camera"].every(k => typeof d[k] === "string") || !Number.isFinite(d.people) || !Array.isArray(d.on_screen_text) || d.on_screen_text.some((s: unknown) => typeof s !== "string")) return;
-    return { shot_size: SHOT_SIZES.includes(d.shot_size) ? d.shot_size : "medium", camera: CAMERAS.includes(d.camera) ? d.camera : "unknown", people: clamp(Math.round(d.people), 0, 10000), on_screen_text: d.on_screen_text.slice(0, 6).map((s: string) => s.trim().slice(0, 60)), action: d.action.trim().slice(0, 160), mood: d.mood.trim().slice(0, 40), description: d.description.trim().slice(0, 320) };
+    return { shot_size: SHOT_SIZES.includes(d.shot_size) ? d.shot_size : "medium", camera: CAMERAS.includes(d.camera) ? d.camera : "unknown", people: clamp(Math.round(d.people), 0, 10000), on_screen_text: d.on_screen_text.filter(literalText).slice(0, 6).map((s: string) => s.trim().slice(0, 60)), action: d.action.trim().slice(0, 160), mood: d.mood.trim().slice(0, 40), description: d.description.trim().slice(0, 320) };
   } catch { return; }
 }
 export const shotTime = (t: number) => `${Math.floor(t / 60).toString().padStart(2, "0")}:${(t % 60).toFixed(2).padStart(5, "0")}`;
@@ -116,21 +123,25 @@ function alike(a: string, b: string) {
   return both / Math.max(1, new Set([...x, ...y]).size) >= 0.5;
 }
 function briefBlocks(log: ShotLog, from: number, to: number) {
-  const blocks: { at: number; text: string; end: number; shot: number; key: string; count: number; head: string }[] = [];
+  const blocks: { at: number; text: string; end: number; shot: number; key: string; count: number; head: string; moments: Moment[] }[] = [];
   for (const m of log.moments.filter(m => m.end > from && m.start < to)) {
     const d = m.described, start = Math.max(from, m.start), end = Math.min(to, m.end);
-    const cut = m.start > 0 && log.shots.some(s => s.start === m.start) ? "CUT " : "";
-    const sound = m.measured.loudness_db <= -45 ? "quiet" : m.measured.loudness_db >= -24 ? "loud" : "";
-    const text = d ? `${d.shot_size.toUpperCase()} ${d.camera}: ${d.action}${d.on_screen_text.length ? ` On screen: ${d.on_screen_text.slice(0, 2).map(s => JSON.stringify(s)).join(", ")}.` : ""}${sound ? ` [${sound}]` : ""}` : "not described yet";
+    const cut = m.start >= from && m.start > 0 && log.shots.some(s => s.start === m.start) ? "CUT " : "";
+    const sound = log.has_audio === false ? "no audio" : m.measured.loudness_db <= -45 ? "quiet" : m.measured.loudness_db >= -24 ? "loud" : "";
+    const text = d ? `${d.shot_size.toUpperCase()} ${d.camera}: ${d.action}${d.on_screen_text.length ? ` On screen: ${d.on_screen_text.slice(0, 2).map(s => JSON.stringify(s)).join(", ")}.` : ""}${sound ? ` [${sound}]` : ""}` : `not described yet${sound ? ` [${sound}]` : ""}`;
     const last = blocks.at(-1);
     if (last && !cut && d && last.shot === m.shot && last.key === `${d.shot_size}|${d.camera}` && alike(last.head, `${d.action} ${d.description}`)) {
-      last.end = end; last.count++;
+      last.end = end; last.count++; last.moments.push(m);
       last.text = `${shotTime(last.at)}-${shotTime(end)}  ${last.text.slice(last.text.indexOf("  ") + 2).replace(/ \(alike ×\d+\)$/, "")} (alike ×${last.count})`;
       continue;
     }
-    blocks.push({ at: start, end, shot: m.shot, key: d ? `${d.shot_size}|${d.camera}` : "", count: 1, head: d ? `${d.action} ${d.description}` : "", text: `${shotTime(start)}-${shotTime(end)}  ${cut}${text}` });
+    blocks.push({ moments: [m], at: start, end, shot: m.shot, key: d ? `${d.shot_size}|${d.camera}` : "", count: 1, head: d ? `${d.action} ${d.description}` : "", text: `${shotTime(start)}-${shotTime(end)}  ${cut}${text}` });
   }
-  return blocks.map(({ at, text }) => ({ at, text }));
+  return blocks;
+}
+/** Share exactly the brief screenplay's grouping with the panel. */
+export function momentGroups(log: ShotLog) {
+  return briefBlocks(log, 0, log.duration).map(b => ({ start: b.at, end: b.end, moments: b.moments }));
 }
 /** At most `maxChars` of blocks; `next` is where the following page starts. */
 export function pageBlocks(blocks: { at: number; text: string }[], maxChars: number): { text: string; next?: number } {
@@ -143,18 +154,23 @@ function fullLines(log: ShotLog, from: number, to: number, words?: Word[]) {
   const events = [...log.moments.filter(m => m.end > from && m.start < to).map(m => ({ at: m.start, moment: m })), ...log.shots.slice(1).filter(s => s.start >= from && s.start < to).map(s => ({ at: s.start, moment: undefined }))].sort((a, b) => a.at - b.at || Number(!!a.moment) - Number(!!b.moment));
   for (const { at, moment: m } of events) {
     if (!m) { lines.push({ at, text: `${shotTime(at)}          CUT` }); continue; }
-    const d = m.described, sound = m.measured.loudness_db <= -45 ? "quiet" : m.measured.loudness_db >= -24 ? "loud" : "moderate";
+    const d = m.described, sound = log.has_audio === false ? "no audio" : m.measured.loudness_db <= -45 ? "quiet" : m.measured.loudness_db >= -24 ? "loud" : "moderate";
     const pauses = log.silences.filter(([s, e]) => e > Math.max(from, m.start) && s < Math.min(to, m.end));
     const block = [`${shotTime(Math.max(from, m.start))}-${shotTime(Math.min(to, m.end))}  ${d ? `${d.shot_size.toUpperCase()}, ${d.camera}. ${d.action} (${d.mood}) ${d.description}` : `not described yet. Motion ${m.measured.motion.toFixed(2)}, luma ${m.measured.luma.toFixed(2)}, pan ${m.measured.pan ?? "none"}`}`];
-    block.push(`                 ${d?.on_screen_text.length ? `On screen: ${d.on_screen_text.map(s => JSON.stringify(s)).join(", ")}. ` : ""}Sound: ${sound} (${Math.round(m.measured.loudness_db)} dB), ${pauses.length ? `silence ${pauses.map(([s, e]) => `${shotTime(s)}-${shotTime(e)}`).join(", ")}` : "no silence"}.`);
-    const speech = words?.filter(w => w.end > Math.max(from, m.start) && w.start < Math.min(to, m.end)).map(w => w.text).join(" ");
+    block.push(`                 ${d?.on_screen_text.length ? `On screen: ${d.on_screen_text.map(s => JSON.stringify(s)).join(", ")}. ` : ""}Sound: ${log.has_audio === false ? "no audio" : `${sound} (${Math.round(m.measured.loudness_db)} dB), ${pauses.length ? `silence ${pauses.map(([s, e]) => `${shotTime(s)}-${shotTime(e)}`).join(", ")}` : "no silence"}`}.`);
+    const speech = (log.has_audio === false ? undefined : words)?.filter(w => w.end > Math.max(from, m.start) && w.start < Math.min(to, m.end)).map(w => w.text).join(" ");
     if (speech) block.push(`                 Speech: ${JSON.stringify(speech)}`);
     lines.push({ at: Math.max(from, m.start), text: block.join("\n") });
   }
   return lines;
 }
-const stem = (s: string) => s.toLowerCase().replace(/(?:ing|ed|es|s)$/u, "").replace(/(.)\1$/u, "$1");
+const stem = (s: string) => s.toLowerCase().replace(/(?:ing|ed|es|s)$/u, "").replace(/(.)\1$/u, "$1").replace(/e$/u, "");
 const tokens = (s: string) => (s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).map(stem);
+const synonyms = [
+  "cheer celebrate applaud clap excited euphoric", "laugh smile grin", "land touchdown landing",
+  "talk speak say speech", "crowd audience people group", "run sprint", "car vehicle",
+  "screen monitor display", "text sign caption title graphic",
+].map(tokens);
 export function findMoments(logs: { asset: string; log: ShotLog }[], query: string, limit = 10) {
   const phrases = [...query.matchAll(/"([^"]+)"/g)].map(m => m[1].toLowerCase());
   const wanted = [...new Set(tokens(query))];
@@ -167,11 +183,16 @@ export function findMoments(logs: { asset: string; log: ShotLog }[], query: stri
     if (phrases.some(p => !all.includes(p))) return [];
     let score = 0;
     const matched = new Set<string>();
-    for (const [text, weight] of fields) for (const w of wanted) if (tokens(text).includes(w)) { score += weight; matched.add(w); }
+    for (const [text, weight] of fields) for (const w of new Set(tokens(text))) {
+      const direct = wanted.includes(w);
+      const related = !direct && wanted.some(q => synonyms.some(group => group.includes(q) && group.includes(w)));
+      if (direct || related) { score += weight * (direct ? 1 : 0.5); matched.add(w); }
+    }
     return score ? [{ asset, start: m.start, end: m.end, score, matched_words: [...matched] }] : [];
   })).sort((a, b) => b.score - a.score || a.asset.localeCompare(b.asset) || a.start - b.start).slice(0, limit);
 }
-export function editPoints(log: ShotLog, range: Range, { window = 2, words = [] }: { window?: number; words?: Word[] } = {}) {
+export function editPoints(log: ShotLog, range: Range, { window = 2, words: suppliedWords = [] }: { window?: number; words?: Word[] } = {}) {
+  const words = log.has_audio === false ? [] : suppliedWords;
   // An Out never lands at or before its In: a cut just after the In would empty the range.
   const shortest = Math.min(0.5, (range.end - range.start) / 2);
   const choose = (edge: "in" | "out", after = -Infinity) => {
@@ -186,7 +207,7 @@ export function editPoints(log: ShotLog, range: Range, { window = 2, words = [] 
     };
     // Exclusive Outs land at the boundary: the last included picture is before it.
     for (const s of log.shots.slice(1)) add(s.start, `shot cut at ${shotTime(s.start)}${edge === "out" ? " (exclusive Out, before the new shot)" : ""}`, 4);
-    for (const [s, e] of log.silences) add(edge === "in" ? e : s, `${(e - s).toFixed(1)} s of silence`, 3);
+    for (const [s, e] of log.has_audio === false ? [] : log.silences) add(edge === "in" ? e : s, `${(e - s).toFixed(1)} s of silence`, 3);
     for (let i = 1; i < log.moments.length; i++) if (log.moments[i - 1].measured.motion > 0.15 && log.moments[i].measured.motion < 0.05) add(log.moments[i].start, "end of an action (motion drops)", 2);
     for (const w of words) add(edge === "in" ? w.start : w.end, edge === "out" && /[.!?]["')]*$/.test(w.text) ? "after a sentence" : "word boundary", edge === "out" && /[.!?]["')]*$/.test(w.text) ? 4 : 1);
     const crossing = words.find(w => target > w.start && target < w.end);
@@ -209,8 +230,8 @@ export function joinAdvice(logA: ShotLog, rangeA: Range, logB: ShotLog, rangeB: 
   if (Math.abs(a.measured.luma - b.measured.luma) > 0.35) advice.push({ kind: "brightness", reason: "Large brightness change; try a dip to black or a dissolve", tools: [transition("dipBlack"), transition("dissolve")] });
   if (a.measured.pan && a.measured.pan === b.measured.pan) advice.push({ kind: "match_motion", reason: `Match the ${a.measured.pan} motion with a hard cut on the move`, tools: [transition("none")] });
   const silent = (log: ShotLog, time: number) => log.silences.some(([s, e]) => time >= s && time < e);
-  if (a.measured.loudness_db > -45 && !silent(logA, Math.max(0, rangeA.end - 0.001))) advice.push({ kind: "L_cut", reason: "A's sound is still running: detach its audio, then extend its end about 0.5 s under B, if source handles allow", tools: [{ name: "detach_audio", arguments: { clip_id: "<A clip id>" } }, { name: "trim_clip", arguments: { clip_id: "<detached A audio id>", edge: "end", to: "<timeline cut seconds + 0.5>", ripple: false } }] });
-  if (b.measured.loudness_db > -45 && !silent(logB, rangeB.start)) advice.push({ kind: "J_cut", reason: "B's sound begins with its picture: if speech should lead it, detach audio and extend its start about 0.5 s before the picture; verify speech and source handles", tools: [{ name: "detach_audio", arguments: { clip_id: "<B clip id>" } }, { name: "trim_clip", arguments: { clip_id: "<detached B audio id>", edge: "start", to: "<timeline cut seconds - 0.5>", ripple: false } }] });
+  if (logA.has_audio !== false && a.measured.loudness_db > -45 && !silent(logA, Math.max(0, rangeA.end - 0.001))) advice.push({ kind: "L_cut", reason: "A's sound is still running: detach its audio, then extend its end about 0.5 s under B, if source handles allow", tools: [{ name: "detach_audio", arguments: { clip_id: "<A clip id>" } }, { name: "trim_clip", arguments: { clip_id: "<detached A audio id>", edge: "end", to: "<timeline cut seconds + 0.5>", ripple: false } }] });
+  if (logB.has_audio !== false && b.measured.loudness_db > -45 && !silent(logB, rangeB.start)) advice.push({ kind: "J_cut", reason: "B's sound begins with its picture: if speech should lead it, detach audio and extend its start about 0.5 s before the picture; verify speech and source handles", tools: [{ name: "detach_audio", arguments: { clip_id: "<B clip id>" } }, { name: "trim_clip", arguments: { clip_id: "<detached B audio id>", edge: "start", to: "<timeline cut seconds - 0.5>", ripple: false } }] });
   if (!advice.length) advice.push({ kind: "hard_cut", reason: "No framing, brightness or sound warning; use a hard cut", tools: [transition("none")] });
   return advice;
 }
@@ -221,7 +242,7 @@ export function parseShotLog(text: string): ShotLog | undefined {
     const l = JSON.parse(text) as ShotLog;
     const num = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
     const span = (s: Range) => !!s && num(s.start) && num(s.end) && s.start >= 0 && s.end > s.start && s.end <= l.duration;
-    if (l.version !== 1 || !num(l.duration) || l.duration <= 0 || !num(l.interval) || l.interval <= 0 || typeof l.model !== "string" || typeof l.measured_at !== "string" || typeof l.complete !== "boolean" || !Array.isArray(l.shots) || !l.shots.length || !l.shots.every(span) || !Array.isArray(l.moments) || !l.moments.length || !Array.isArray(l.silences)) return;
+    if ((l.has_audio !== undefined && typeof l.has_audio !== "boolean") || l.version !== 1 || !num(l.duration) || l.duration <= 0 || !num(l.interval) || l.interval <= 0 || typeof l.model !== "string" || typeof l.measured_at !== "string" || typeof l.complete !== "boolean" || !Array.isArray(l.shots) || !l.shots.length || !l.shots.every(span) || !Array.isArray(l.moments) || !l.moments.length || !Array.isArray(l.silences)) return;
     if (l.shots[0].start !== 0 || l.shots.at(-1)!.end !== l.duration || l.shots.some((s, i) => i > 0 && s.start !== l.shots[i - 1].end)) return;
     for (const [i, m] of l.moments.entries()) {
       if (!span(m) || (i === 0 ? m.start !== 0 : m.start !== l.moments[i - 1].end) || !Number.isInteger(m.shot) || !l.shots[m.shot] || m.start < l.shots[m.shot].start || m.end > l.shots[m.shot].end || !Array.isArray(m.frames) || m.frames.length < 1 || m.frames.length > 3 || !m.frames.every(t => num(t) && t >= m.start && t < m.end)) return;
@@ -233,4 +254,25 @@ export function parseShotLog(text: string): ShotLog | undefined {
     l.complete = l.moments.every(m => !!m.described);
     return l;
   } catch { return; }
+}
+
+
+/** Two native requests can run together. Stop admission on cancel/error,
+ * drain both workers before saving or starting another run of this source. */
+export async function describePending(moments: Moment[], signal: AbortSignal, describe: (m: Moment) => Promise<Description | undefined>, finished: (done: number) => Promise<void>) {
+  const order = describeOrder(moments).filter(i => !moments[i].described);
+  let next = 0, done = moments.filter(m => m.described).length, failed = false;
+  const worker = async () => {
+    try {
+      while (!signal.aborted && !failed && next < order.length) {
+        const m = moments[order[next++]];
+        m.described = await describe(m);
+        if (m.described) { done++; await finished(done); }
+      }
+    } catch (e) { failed = true; throw e; }
+  };
+  const results = await Promise.allSettled([worker(), worker()]);
+  const error = results.find(r => r.status === "rejected");
+  if (error?.status === "rejected") throw error.reason;
+  signal.throwIfAborted();
 }

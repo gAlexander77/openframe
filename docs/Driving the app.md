@@ -285,6 +285,11 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
 30. **Home holds no project** (ADR-144): read `project().id` before
     leaving the editor, and give captions real sound, or no model loads
     for a drive to hold.
+31. **Resource timing keeps 250 entries.** Drives import the app's own
+    module by the URL its resource entry names (sharing the app's
+    instance); once the app loaded more modules than that, `audio.ts`
+    fell past the buffer and `sound-design` imported `undefined`.
+    `run.mjs` raises the buffer to 5,000 before every page load.
 
 ## MCP against the web build
 

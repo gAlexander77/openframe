@@ -14,3 +14,14 @@
 .shotlog-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .shotlog-chips span { background: var(--bg-inset); border-radius: var(--radius-sm); padding: 2px 5px; }
 .shotlog-moment.undescribed { color: var(--text-3); }
+
+.shotlog-speech { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); }
+.shotlog-group { display: grid; gap: 8px; min-width: 0; }
+.shotlog-fold { width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; justify-content: flex-start; }
+/* Desktop rows put the thumbnail beside the text so a short panel still shows
+   several moments (stacked, one 160 px picture filled the panel's height). */
+.shotlog-moment:has(.shotlog-thumbnail) { display: grid; grid-template-columns: 96px minmax(0, 1fr); column-gap: 10px; row-gap: 4px; align-content: start; }
+.shotlog-moment:has(.shotlog-thumbnail) > :not(.shotlog-thumbnail) { grid-column: 2; }
+.shotlog-thumbnail { display: block; grid-column: 1; grid-row: 1 / span 6; align-self: start; width: 96px; aspect-ratio: 16 / 9; background: var(--bg-inset); border-radius: var(--radius-sm); overflow: hidden; }
+.shotlog-thumbnail img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.shotlog-open { color: var(--text-1); text-decoration: underline; }

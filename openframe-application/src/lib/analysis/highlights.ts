@@ -1,3 +1,4 @@
+import type { ShotLog } from "../shotlog";
 import type { Word } from "../captions";
 import { chatCue, type ChatMessage } from "../chatReplay";
 import { fft } from "./beats";
@@ -26,7 +27,7 @@ export function scenePasses(seconds: number, interval: number): number[][] {
 }
 
 export const HIGHLIGHT_STEP = 0.5;
-export const HIGHLIGHT_WEIGHTS = { audio: 0.5, speech: 0.1, chat: 0.25, scenes: 0.05, times: 0.8, keywords: 0.3 };
+export const HIGHLIGHT_WEIGHTS = { audio: 0.5, speech: 0.1, chat: 0.25, scenes: 0.05, picture: 0.25, times: 0.8, keywords: 0.3 };
 export type HighlightWeights = typeof HIGHLIGHT_WEIGHTS;
 export interface HighlightFeature { time: number; loudness: number; momentary: number; speech: number; vocal: number }
 export interface Highlight { rank: number; start: number; end: number; peak: number; score: number; reasons: string[]; snippet?: string; title?: string }
@@ -132,7 +133,33 @@ export function highlightWindow(peak: number, from: number, to: number, duration
   return { start, end };
 }
 
-export function findHighlights(features: HighlightFeature[], duration: number, options: HighlightOptions = {}, chat?: ChatMessage[], cuts?: number[], bounds: [number, number] = [0, duration]): Highlight[] {
+/** Picture is supporting evidence: at most half the audio weight. Keep
+ * OCR and motion changes small so a clock or a cut cannot dominate. On the
+ * NASA landing a countdown, telemetry clocks, the model's people counts and
+ * its "(intense focus)" for a waiting room outranked the touchdown cheer:
+ * text counts only when its words change inside one shot (digits masked),
+ * tension is not an event, and people counts are not evidence. */
+export function pictureSignals(log: ShotLog) {
+  const motions = log.moments.map(m => m.measured.motion).sort((a, b) => a - b);
+  const median = motions[Math.floor(motions.length / 2)] ?? 0;
+  // Graded: a room cheering is an event, a grin or "excitement" a hint. On the landing log one
+  // flat weight marked 122 of 443 moments, "free-fall" among them.
+  const strong = /\b(?:cheer|celebrat|applaud|clap|scream|hug|crash|explod|explos|jump)\w*|\brais\w* (?:\w+ ){0,2}(?:arms|fists)\b|\bhigh[ -]fiv\w*/i;
+  const weak = /\b(?:laugh|excit|euphori|shock|surpris|grin)\w*|\b(?:wins?|winning|won|losers?|lose|losing|lost)\b/i;
+  const group = /\b(?:people|crowd|everyone|others|team|group|audience|colleagues|they)\b/i;
+  return log.moments.map((m, i) => {
+    const d = m.described, previous = log.moments[i - 1]?.described, said = d ? `${d.action} ${d.mood}` : "";
+    const action = !d ? 0 : strong.test(said) ? (group.test(said) ? 0.8 : 0.7) : weak.test(said) ? 0.35 : 0;
+    const words = (texts: string[] = []) => new Set(texts.map(t => t.replace(/\d/g, "#").toLowerCase()));
+    const before = words(log.moments[i - 1]?.shot === m.shot ? previous?.on_screen_text : undefined);
+    const text = d && log.moments[i - 1]?.shot === m.shot && [...words(d.on_screen_text)].some(t => !before.has(t)) ? 0.1 : 0;
+    const motion = m.measured.motion > median * 2 && m.measured.motion > median + 0.05 ? clamp((m.measured.motion - median) / Math.max(0.1, median)) * 0.1 : 0;
+    const evidence = [action ? d?.action || d?.mood : "", text ? "new on-screen text" : "", motion ? "motion above the file median" : ""].filter(Boolean);
+    return { start: m.start, end: m.end, score: action + text + motion, reason: evidence.length ? `picture: ${evidence.join("; ")} (shot log)` : "" };
+  });
+}
+
+export function findHighlights(features: HighlightFeature[], duration: number, options: HighlightOptions = {}, chat?: ChatMessage[], cuts?: number[], bounds: [number, number] = [0, duration], shotLog?: ShotLog): Highlight[] {
   const n = Math.ceil(duration / HIGHLIGHT_STEP);
   const weights = { ...HIGHLIGHT_WEIGHTS, ...options.weights };
   const loud = rollingBaseline(features.map(f => f.loudness));
@@ -144,8 +171,12 @@ export function findHighlights(features: HighlightFeature[], duration: number, o
   const cutBins = Array<number>(n).fill(0);
   for (const t of cuts ?? []) if (t >= 0 && t < duration) cutBins[Math.floor(t / HIGHLIGHT_STEP)]++;
   const cutPrefix = [0]; cutBins.forEach(x => cutPrefix.push(cutPrefix.at(-1)! + x));
+  const pictures = shotLog ? pictureSignals(shotLog) : [];
+  let pictureIndex = 0;
   const rows = Array.from({ length: n }, (_, i) => {
     const f = features[i], time = f?.time ?? i * HIGHLIGHT_STEP + 0.25;
+    while (pictureIndex < pictures.length && pictures[pictureIndex].end <= time) pictureIndex++;
+    const picture = pictures[pictureIndex]?.start <= time ? pictures[pictureIndex] : undefined;
     const rise = f ? Math.max(f.loudness, f.momentary) - loud[i] : 0;
     const spread = f ? Math.max(0, f.momentary - f.loudness) : 0;
     const shortRise = f ? f.loudness - loud[i] : 0;
@@ -155,8 +186,8 @@ export function findHighlights(features: HighlightFeature[], duration: number, o
     const chatScore = chatRise / (chatRise + 3) * 0.8 + clamp(cues.slice(Math.max(0, i - 2), i + 4).reduce((s, x) => s + x, 0) / 8) * 0.2;
     const given = options.times?.find(t => Math.abs(time - t) <= 1);
     const cpm = (cutPrefix[Math.min(n, i + 30)] - cutPrefix[Math.max(0, i - 30)]) * 2;
-    let score = audio * weights.audio + (f?.speech ?? 0) * weights.speech + (chat ? chatScore * weights.chat : 0) + (cuts ? clamp(cpm / 30) * weights.scenes : 0) + (given !== undefined ? weights.times : 0);
-    const denominator = (features.length ? weights.audio + weights.speech : 0) + (chat ? weights.chat : 0) + (cuts ? weights.scenes : 0);
+    let score = (picture?.score ?? 0) * weights.picture + audio * weights.audio + (f?.speech ?? 0) * weights.speech + (chat ? chatScore * weights.chat : 0) + (cuts ? clamp(cpm / 30) * weights.scenes : 0) + (given !== undefined ? weights.times : 0);
+    const denominator = (features.length ? weights.audio + weights.speech : 0) + (chat ? weights.chat : 0) + (cuts ? weights.scenes : 0) + (shotLog ? weights.picture : 0);
     score = clamp(score / Math.max(denominator, 0.01));
     const reasons: string[] = [];
     if (rise >= 6) reasons.push(`loudness +${rise.toFixed(1)} LU over the 3-minute baseline`);
@@ -165,6 +196,7 @@ export function findHighlights(features: HighlightFeature[], duration: number, o
     else if (chat && chatScore >= 0.15) reasons.push(`chat emotes/clip requests (${Math.round(rates[i] * 60)} messages/min)`);
     if (cuts && cpm >= 6) reasons.push(`${cpm.toFixed(0)} scene changes/min`);
     if (f && reasons.length && f.speech >= 0.2) reasons.push(`speech ${(f.speech * 100).toFixed(0)}% of window`);
+    if (picture?.reason && weights.picture > 0) reasons.push(picture.reason);
     if (given !== undefined) reasons.push(`viewer clip at ${new Date(given * 1000).toISOString().slice(11, 19)}`);
     return { time, score, reasons };
   });

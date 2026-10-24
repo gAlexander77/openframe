@@ -99,6 +99,8 @@ pub struct Video {
     pub height: u32,
     pub pix_fmt: String,
     pub fps: Option<f64>,
+    /// Nominal stream rate; may exceed the average for variable-frame-rate video.
+    pub r_fps: Option<f64>,
     pub interlaced: bool,
     /// Clockwise degrees to apply, from the display matrix.
     pub rotation: i32,
@@ -131,6 +133,7 @@ struct RawStream {
     pix_fmt: String,
     field_order: String,
     avg_frame_rate: String,
+    r_frame_rate: String,
     duration: Option<String>,
     channels: u32,
     sample_rate: Option<String>,
@@ -160,7 +163,8 @@ struct RawError {
 fn rate(r: &str) -> Option<f64> {
     let (n, d) = r.split_once('/')?;
     let (n, d): (f64, f64) = (n.parse().ok()?, d.parse().ok()?);
-    (n > 0.0 && d > 0.0).then_some(n / d)
+    let fps = n / d;
+    (n > 0.0 && d > 0.0 && fps.is_finite() && fps > 0.0).then_some(fps)
 }
 
 fn summarize(json: &[u8]) -> Result<Summary, String> {
@@ -188,6 +192,7 @@ fn summarize(json: &[u8]) -> Result<Summary, String> {
             height: s.height,
             pix_fmt: s.pix_fmt.clone(),
             fps: rate(&s.avg_frame_rate),
+            r_fps: rate(&s.r_frame_rate),
             interlaced: matches!(s.field_order.as_str(), "tt" | "bb" | "tb" | "bt"),
             rotation: s
                 .side_data_list
@@ -872,6 +877,48 @@ pub(crate) mod job {
 }
 
 #[cfg(test)]
+pub(crate) fn test_tools() -> Option<(PathBuf, PathBuf)> {
+    let exe = |name: &str| format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    let mut candidates = Vec::new();
+    if let Some(path) =
+        std::env::var_os("OPENFRAME_FFMPEG").or_else(|| std::env::var_os("VIDEO_EDITOR_FFMPEG"))
+    {
+        let path = PathBuf::from(path);
+        candidates.push(if path.is_dir() {
+            path.join(exe("ffmpeg"))
+        } else {
+            path
+        });
+    }
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    candidates.extend([
+        manifest.join("resources/ffmpeg").join(exe("ffmpeg")),
+        manifest.join("ffmpeg").join(exe("ffmpeg")),
+    ]);
+    if let Ok(current) = std::env::current_exe() {
+        if let Some(dir) = current.parent() {
+            candidates.extend([
+                dir.join(exe("ffmpeg")),
+                dir.join("ffmpeg").join(exe("ffmpeg")),
+            ]);
+        }
+    }
+    candidates.push(exe("ffmpeg").into());
+    candidates.into_iter().find_map(|ffmpeg| {
+        let ffprobe = ffmpeg.with_file_name(exe("ffprobe"));
+        [&ffmpeg, &ffprobe]
+            .iter()
+            .all(|tool| {
+                command(tool)
+                    .arg("-version")
+                    .output()
+                    .is_ok_and(|out| out.status.success())
+            })
+            .then_some((ffmpeg, ffprobe))
+    })
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -895,8 +942,37 @@ mod tests {
             ("prores", 1920, 1080)
         );
         assert_eq!((v.fps, v.interlaced, v.rotation), (Some(24.0), false, 0));
+        assert_eq!(v.r_fps, Some(24.0));
         let a = s.audio.unwrap();
         assert_eq!((a.channels, a.sample_rate), (1, 48000));
+    }
+
+    #[test]
+    fn stream_rate_preserves_average_and_rejects_invalid_rates() {
+        for (raw, expected) in [
+            ("30/1", Some(30.0)),
+            ("0/0", None),
+            ("NaN/1", None),
+            ("inf/1", None),
+            ("1/0", None),
+            ("-30/1", None),
+            ("1/inf", None),
+            ("bad", None),
+        ] {
+            let json = serde_json::json!({"streams":[{"codec_type":"video",
+                "avg_frame_rate":"93/5", "r_frame_rate":raw}]});
+            let v = summarize(&serde_json::to_vec(&json).unwrap())
+                .unwrap()
+                .video
+                .unwrap();
+            assert_eq!(v.fps, Some(18.6));
+            assert_eq!(v.r_fps, expected, "{raw}");
+        }
+        let v = summarize(br#"{"streams":[{"codec_type":"video"}]}"#)
+            .unwrap()
+            .video
+            .unwrap();
+        assert_eq!((v.fps, v.r_fps), (None, None));
     }
 
     #[test]

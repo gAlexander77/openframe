@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { audibleTime, audioContext, masterBus, scheduleAudio, type Schedule } from "../engine/audio";
 import { player } from "../engine/player";
 import { AudioLines, ChevronLeft, ChevronRight, Pause, Play } from "../icons";
-import { sourceFrames, sourceProject } from "../lib/sourceMonitor";
+import { initialSourceMarks, sourceFrames, sourceProject } from "../lib/sourceMonitor";
 import type { Asset } from "../lib/project/types";
 import { formatTimecode, fpsValue, framesToSeconds } from "../lib/time";
 import { addToTimeline, editFromSource } from "../state/media";
@@ -16,12 +16,13 @@ import { Dialog } from "./Dialog";
 import { FramePreview } from "./FramePreview";
 import "./sourceMonitor.css";
 
-export function SourceMonitor({ asset, onClose, initialTime = 0 }: { asset: Asset; onClose: () => void; initialTime?: number }) {
+export function SourceMonitor({ asset, onClose, initialTime = 0, initialIn, initialOut }: { asset: Asset; onClose: () => void; initialTime?: number; initialIn?: number; initialOut?: number }) {
   const project = useMemo(() => sourceProject(asset), [asset]);
   const total = sourceFrames(asset, project.fps), rate = fpsValue(project.fps);
-  const [frame, setFrame] = useState(() => Math.max(0, Math.min(total - 1, Math.floor(initialTime * rate)))), [markIn, setIn] = useState(0), [markOut, setOut] = useState(total);
+  const initial = initialSourceMarks(total, rate, initialIn, initialOut);
+  const [frame, setFrame] = useState(() => Math.max(0, Math.min(total - 1, Math.floor(initialTime * rate)))), [markIn, setIn] = useState(initial.markIn), [markOut, setOut] = useState(initial.markOut);
   const timelineIn = useEditor((s) => s.inPoint), timelineOut = useEditor((s) => s.outPoint);
-  const [hasIn, setHasIn] = useState(false), [hasOut, setHasOut] = useState(false);
+  const [hasIn, setHasIn] = useState(initial.hasIn), [hasOut, setHasOut] = useState(initial.hasOut);
   const [prompt, setPrompt] = useState<PlaceMode | null>(null);
   const [playing, setPlaying] = useState(false), [error, setError] = useState("");
   const [signal] = useState(() => projectWork.signal());
