@@ -68,3 +68,12 @@ export function resolveSourceEdit(asset: Asset, fps: Rational, playhead: number,
   if (speed < 0.05 || speed > 100) throw new Error("Fit to fill needs a speed between 0.05 and 100.");
   return { start, in: Math.max(0, from), out: end, duration, speed };
 }
+
+
+/** Optional source-second marks for opening a selected moment. Outs remain
+ * exclusive internally; the monitor displays the last included frame. */
+export function initialSourceMarks(total: number, rate: number, sourceIn?: number, sourceOut?: number) {
+  const markIn = Math.max(0, Math.min(total - 1, Math.floor((sourceIn ?? 0) * rate + 1e-6)));
+  const markOut = Math.max(markIn + 1, Math.min(total, Math.floor((sourceOut ?? total / rate) * rate + 1e-6)));
+  return { markIn, markOut, hasIn: sourceIn !== undefined, hasOut: sourceOut !== undefined };
+}

@@ -2,7 +2,7 @@ import { placeSourceEdit } from "./drop";
 import { runAgentCommand, type CommandReport } from "./commands";
 import { createProject } from "./project/defaults";
 import { expect, it } from "vitest";
-import { resolveSourceEdit, sourceFrames, sourceProject, withSourceRange } from "./sourceMonitor";
+import { initialSourceMarks, resolveSourceEdit, sourceFrames, sourceProject, withSourceRange } from "./sourceMonitor";
 import type { Asset } from "./project/types";
 const asset: Asset = { id: "a", name: "a", src: "a.mp4", kind: "video", duration: 10, fps: 60, hasVideo: true, hasAudio: true };
 it("makes an isolated source timeline without changing source metadata", () => {
@@ -65,4 +65,12 @@ it("places the resolved length before insert/overwrite, adopts first-source rate
   expect(overwritten.project.tracks[0].clips.map((c) => [c.start, c.duration])).toEqual([[90, 30], [120, 30], [150, 30]]);
   q.tracks[0].locked = true;
   expect(() => placeSourceEdit(q, asset, 0, {}, "insert")).toThrow("locked");
+});
+
+
+it("opens a moment with explicit source marks and keeps other previews unmarked", () => {
+  expect(initialSourceMarks(300, 30, 5, 8)).toEqual({ markIn: 150, markOut: 240, hasIn: true, hasOut: true });
+  expect(initialSourceMarks(300, 30)).toEqual({ markIn: 0, markOut: 300, hasIn: false, hasOut: false });
+  expect(initialSourceMarks(300, 30, -1, 20)).toMatchObject({ markIn: 0, markOut: 300 });
+  expect(initialSourceMarks(300, 30, 10, 10)).toMatchObject({ markIn: 299, markOut: 300 });
 });
