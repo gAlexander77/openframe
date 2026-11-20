@@ -88,6 +88,11 @@ Clip    = video | audio | image | text | color | adjustment | compound   (see ty
             tapeStop? (sound design; see Sound design below)
           text clips may carry wordTimes?: number[] (frames from the clip's start
             each word is spoken) and style.highlight?: color of the spoken word
+          text clips may carry counter?: { from, to, seconds, decimals?,
+            format?: number | plain | time, ease? }: every {n} in the text
+            reads as a number running from `from` to `to` over `seconds` from
+            the clip's start, then held (src/lib/counter.ts, ADR-147); a
+            reader that predates it draws {n} as written
           text styles may carry case?: upper | lower | title (shown so; the
             text itself is kept as typed), stroke2?: { color, width } (a second
             outline), glow?: { color, blur, strength? }, gradient?: { from, to,

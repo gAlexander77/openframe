@@ -166,10 +166,11 @@ desktop app instead.
 **Start with [[MCP tools]]**: every tool, generated from the code, grouped
 in the order a video gets made, with each parameter (nested fields
 included) and an example call. [[Agent playbook]] is how a model should
-make an ad, an epic edit or a short. A connected model gets the same
-guidance from the `help` tool (topics `overview`, `ad`, `epic_edit`,
-`social_short`, `design`, `params`, or a tool's name), from the MCP prompts
-`make_ad`, `epic_edit` and `social_short`, and from the resources
+make an ad, an epic edit, an interview-led piece or a short. A connected
+model gets the same guidance from the `help` tool (topics `overview`, `ad`,
+`epic_edit`, `documentary`, `voiceover`, `social_short`, `design`, `params`,
+or a tool's name), from the MCP prompts `make_ad`, `epic_edit`,
+`documentary` and `social_short`, and from the resources
 `guide://...` and `catalog://all`. Tools carry MCP titles and behavior
 hints (read-only, destructive, open-world; each only where it differs from
 the spec's default), so clients can run reads without asking

@@ -36,7 +36,7 @@ import {
 import * as ops from "./project/ops";
 import { assetRole, assetsOf, roleTrack, trackRole } from "./audioRoles";
 import { TRACK_ROLES } from "./project/defaults";
-import type { Adjust, Anchor, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextRun, TextStyle, Track, TrackMatte, Transform, WheelName, Wiggle, WiggleTarget } from "./project/types";
+import type { Adjust, Anchor, Clip, ClipLabel, Counter, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextRun, TextStyle, Track, TrackMatte, Transform, WheelName, Wiggle, WiggleTarget } from "./project/types";
 import { anchorOf, anchorProblem, anchorSummary, followAnchors } from "./anchors";
 import { placeSounds } from "./sfx";
 import { addCallout, CALLOUT_SHAPES, CALLOUT_STROKE, CalloutError, type CalloutShape } from "./callouts";
@@ -75,7 +75,10 @@ import { isDialog } from "./analysis/balance";
 import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
 import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, minTextSize, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
 import { AD_ELEMENTS, addAdElement, SPOTS, titleWrap, type AdBackground, type AdElement, type Spot } from "./ads";
-import { isFootage, placeOnTop, underAdjustmentNote } from "./overlays";
+import { isFootage, placeOnTop, placeStack, underAdjustmentNote } from "./overlays";
+import { COUNTER_FORMATS, COUNTER_MAX_DECIMALS, COUNTER_TOKEN } from "./counter";
+import { creditsRoll, creditsStyle, CREDITS_BLOCK, CREDITS_LINE_SECONDS } from "./credits";
+import { cutNeighbors, splitEdit } from "./project/splitEdit";
 import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
 import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW_PARAMS } from "./shadow";
 import { BORDER_DEFAULT, BORDER_PARAMS, BORDER_WIDTH_MAX, cleanBorder } from "./border";
@@ -360,6 +363,34 @@ const RUN_STYLE = {
   underline: S.bool("Underline letters"),
   scale: S.num("Size multiplier relative to the base size", { minimum: 0.25, maximum: 4 }),
 };
+
+/** highlight_words' color when none is given: the marker sweep's yellow. */
+const HIGHLIGHT_COLOR = "#ffd84d";
+
+/** A counting title's numbers (add_counter, set_counter). */
+const COUNTER_FIELDS = {
+  from: S.num("The number it starts at"),
+  to: S.num("The number it ends on"),
+  count_seconds: S.num("Seconds the count takes from the clip's start, the last number held for the rest of the clip; default the whole clip for format time, two thirds of it otherwise", { minimum: 0.04 }),
+  decimals: S.num(`Decimal places shown, 0..${COUNTER_MAX_DECIMALS}; default 0`, { minimum: 0, maximum: COUNTER_MAX_DECIMALS }),
+  format: S.str("number (default): thousands grouped, 12,500; plain: no grouping, for a year; time: the value is seconds, shown as a clock (1:05)", { enum: [...COUNTER_FORMATS] }),
+  ease: S.str("The count's curve: easeOut by default (fast, then settling on the number), linear for format time (a clock's pace)", { enum: EASE_IDS }),
+};
+
+/** A counter from a command's arguments over what the clip had. */
+function counterArg(p: Project, a: Record<string, unknown>, duration: number, had?: Counter): Counter {
+  const format = (a.format ?? had?.format) as Counter["format"];
+  const e = a.ease !== undefined ? easeById(String(a.ease)) : had?.ease;
+  const clip = framesToSeconds(duration, p.fps);
+  return {
+    from: Number(a.from ?? had?.from),
+    to: Number(a.to ?? had?.to),
+    seconds: +Number(a.count_seconds ?? had?.seconds ?? (format === "time" ? clip : (clip * 2) / 3)).toFixed(4),
+    ...(a.decimals !== undefined || had?.decimals ? { decimals: Math.round(Number(a.decimals ?? had?.decimals)) } : {}),
+    ...(format && format !== "number" ? { format } : {}),
+    ...(e !== undefined ? { ease: e } : {}),
+  };
+}
 
 /**
  * A shot added on the main track a frame after the one before it ends
@@ -931,6 +962,40 @@ export const COMMANDS: Command[] = [
       const [at, [clip, why]] = to < b.lo ? [b.lo, b.loBy] : to > b.hi ? [b.hi, b.hiBy] : [to, [left, "length" as ops.TrimStop]];
       if (at !== to && report) (report.notes ??= []).push(`Stopped at ${s(at)} s, not ${a.to} s: ${clip.id}: ${trimStopReason(p, clip, clip.id === left.id ? "end" : "start", why)}.`);
       return ops.rollEdit(p, left.id, right.id, to);
+    },
+  },
+  {
+    name: "jl_cut",
+    description: "J cut or L cut (a split edit) at the cut between two video clips that touch: the sound's cut moves off the picture's, the way dialog, interviews and scene changes are cut so they do not feel chopped. by is where the sound's cut goes, in seconds from the picture's cut: positive is an L cut (the outgoing clip's sound runs on under the incoming picture: a speaker finishes the thought over what they describe), negative a J cut (the incoming clip's sound starts under the outgoing picture: the next scene is heard before it is seen); 0 makes the cut straight again. 0.3 to 1 s is usual. Each clip's sound moves to an audio clip of its own (grouped with its picture, as detach_audio does), the two on one audio track, and the cut between them rolls, so both stay in sync and nothing else moves; calling it again on the same cut moves the same sound cut. The sound that grows needs that much more of its file past the cut, and the answer says where it stopped and why. It answers the two audio clips: set_crossfade on the first softens the join, preview_audio hears it.",
+    input: S.obj(
+      {
+        clip_id: S.str("A video clip on one side of the cut"),
+        by: S.num("Seconds from the picture's cut to the sound's: positive an L cut (outgoing sound runs on), negative a J cut (incoming sound starts early), 0 a straight cut", { minimum: -30, maximum: 30 }),
+        edge: S.str("Which of the clip's cuts: end (default, with the next clip) or start (with the clip before)", { enum: ["start", "end"] }),
+      },
+      ["clip_id", "by"],
+    ),
+    run: (p, a, report) => {
+      const loc = clipOrThrow(p, a.clip_id);
+      if (loc.track.locked) throw new CommandError(`track ${loc.track.id} is locked`);
+      const pair = cutNeighbors(p, loc.clip.id, a.edge === "start" ? "start" : "end");
+      if (typeof pair === "string") throw new CommandError(pair);
+      const [left, right] = pair;
+      const by = Number(a.by);
+      let r!: ReturnType<typeof splitEdit>;
+      const q = commandError(() => (r = splitEdit(p, left.id, right.id, Math.sign(by) * f(p, Math.abs(by)))).project);
+      if (report) {
+        const s = (frames: number) => +framesToSeconds(Math.abs(frames), p.fps).toFixed(3);
+        const d = r.at - r.cut;
+        const [la, ra] = r.audio;
+        (report.notes ??= []).push(
+          d > 0 ? `L cut: ${left.id}'s sound (${la}) runs on ${s(d)} s under ${right.id}'s picture, where ${right.id}'s sound (${ra}) starts.`
+          : d < 0 ? `J cut: ${right.id}'s sound (${ra}) starts ${s(d)} s before its picture, under ${left.id}, where ${left.id}'s sound (${la}) ends.`
+          : `Straight cut: the sounds of ${left.id} and ${right.id} (${la}, ${ra}) meet at the picture's cut.`,
+        );
+        if (r.stop) report.notes.push(`Stopped at ${s(d)} s, not ${Math.abs(by)} s: ${r.stop.clip.id}: ${trimStopReason(q, r.stop.clip, r.stop.edge, r.stop.why)}.`);
+      }
+      return q;
     },
   },
   {
@@ -1747,6 +1812,28 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "add_progress_bar",
+    description: "Add a progress bar: a thin line along the bottom (or top) edge that fills from left to right as the video plays, so a viewer sees how far along it is (tutorials, list videos, shorts). It runs from start to end (default the whole project as it is now, so add it last), above everything. It is a line shape with shape.draw keyed 0 to 1: set_shape, set_param and delete_clips work on it; after the video's length changes, delete it and add it again.",
+    input: S.obj({
+      start: S.num("Seconds it starts filling; default 0", { minimum: 0 }),
+      end: S.num("Seconds it is full; default the project's end", { minimum: 0 }),
+      edge: S.str("Which edge it runs along; default bottom", { enum: ["bottom", "top"] }),
+      thickness: S.num("Pixels at a 1080-pixel-tall canvas; default 10", { minimum: 1, maximum: 200 }),
+      color: S.str("CSS color; default the brand kit's accent"),
+      opacity: S.num("0..1, default 1", { minimum: 0, maximum: 1 }),
+    }),
+    run: (p, a) => {
+      const start = f(p, a.start ?? 0);
+      const end = a.end !== undefined ? f(p, a.end) : ops.projectDuration(p);
+      if (end - start < 2) throw new CommandError(a.end === undefined && !ops.projectDuration(p) ? "the timeline is empty: add the video first, the bar last" : "end must be after start");
+      const thickness = Number(a.thickness ?? 10);
+      const shape: Shape = { kind: "line", width: 1, height: 0.1, stroke: { color: colorArg(a.color, "color") ?? brandOf(p).colors.accent, width: thickness } };
+      const base = createColorClip(shape.stroke!.color, start, end - start);
+      const y = (0.5 - thickness / 2 / 1080) * (a.edge === "top" ? -1 : 1);
+      return placeOnTop(p, { ...base, name: "Progress bar", shape, opacity: Number(a.opacity ?? 1), transform: { ...base.transform, y }, keyframes: { "shape.draw": [{ f: 0, v: 0 }, { f: end - start - 1, v: 1 }] } } as Clip, "Graphics");
+    },
+  },
+  {
     name: "add_callout",
     description:
       "Point at a part of a screen recording or shot, as explainers do: a ring, box or rounded box that draws on around region, with the rest of the frame dimmed through a hole the same shape, both pinned to clip_id's picture, so they stay on the part through that clip's zooms and pans (frame_region, keys) and any later edit of them; to glides them on to other parts. region is in fractions of that clip's source picture, as frame_region takes it (x, y its top-left corner): give the part itself, the ring is drawn a few pixels clear of it. Two shape layers, the dim under the ring, grouped (they move, copy and delete together; each edits like any shape), above everything at that time. Example, the Split button of a 2560x1440 recording, then the clip's edge: {clip_id: 'c_1', region: {x: 0.102, y: 0.542, w: 0.018, h: 0.03}, at: 14.2, duration: 4.3, to: [{region: {x: 0.515, y: 0.825, w: 0.06, h: 0.095}, at: 15.83}], sound: true}.",
@@ -2445,6 +2532,121 @@ export const COMMANDS: Command[] = [
           }),
         })),
       };
+    },
+  },
+  {
+    name: "highlight_words",
+    description: `Make chosen words stand out in every caption at once (CapCut's keyword highlight): each whole-word match of words, in any case, takes the style given, as style_text_range styles a stretch of one title (color, weight, scale, italic, underline or gradient; with none given, the color ${HIGHLIGHT_COLOR}). Pick the few words that carry the point (the number, the product, the verb), one or two a sentence. clip_ids styles titles instead of the captions; clear removes the styling from those words. The answer counts the matches of each word and names any word nothing says. A caption look's spoken-word highlight (style.highlight) still lights the word being said. Example: {words: ['free', 'today'], color: '#ffd84d', scale: 1.15}.`,
+    input: S.obj({
+      words: { type: "array", items: { type: "string" }, description: "Words or short phrases to style wherever they are said, whole words only" },
+      clip_ids: S.ids("Text clips to style instead of every caption"),
+      match_case: S.bool("Match the case as written (default: any case)"),
+      ...RUN_STYLE,
+      clear: S.bool("Remove the styling from these words instead"),
+    }, ["words"]),
+    run: (p, a, report) => {
+      const words = [...new Set((a.words as unknown[]).map((w) => String(w).trim()).filter(Boolean))];
+      if (!words.length) throw new CommandError("give at least one word");
+      const ids = a.clip_ids ? new Set((a.clip_ids as Id[]).map((id) => {
+        const c = clipOrThrow(p, id).clip;
+        if (c.type !== "text") throw new CommandError(`${c.id} is not a text clip`);
+        return c.id;
+      })) : null;
+      const given = Object.fromEntries(Object.keys(RUN_STYLE).filter((k) => a[k] !== undefined).map((k) => [k, a[k]])) as Partial<TextRun>;
+      const look = Object.keys(given).length || a.clear ? given : { color: HIGHLIGHT_COLOR };
+      const found = new Map(words.map((w) => [w, 0]));
+      let targets = 0;
+      const q = {
+        ...p,
+        tracks: p.tracks.map((t) => ({
+          ...t,
+          clips: t.clips.map((c) => {
+            if (c.type !== "text" || (ids ? !ids.has(c.id) : !c.caption)) return c;
+            targets++;
+            let runs = c.style.runs ?? [], hit = false;
+            for (const w of words) {
+              // Whole words: no letter or digit on either side.
+              const re = new RegExp(`(?<![\\p{L}\\p{N}])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, a.match_case === true ? "gu" : "giu");
+              for (const m of c.text.matchAll(re)) {
+                runs = styleRange(c.text, runs, m.index, m.index + m[0].length, look, a.clear === true);
+                found.set(w, found.get(w)! + 1);
+                hit = true;
+              }
+            }
+            return hit ? { ...c, style: { ...c.style, runs } } : c;
+          }),
+        })),
+      };
+      if (!targets) throw new CommandError("there are no captions on the timeline: add_captions or auto_captions first, or give clip_ids to style titles");
+      const missing = words.filter((w) => !found.get(w));
+      if (missing.length === words.length) throw new CommandError(`no ${ids ? "given title" : "caption"} says ${words.map((w) => `"${w}"`).join(", ")}: describe_project with fields ["text"] has the captions' words`);
+      if (report) (report.notes ??= []).push(`${a.clear ? "Cleared" : "Styled"} ${words.filter((w) => found.get(w)).map((w) => `"${w}" ${found.get(w)} time${found.get(w) === 1 ? "" : "s"}`).join(", ")}.${missing.length ? ` Nothing says ${missing.map((w) => `"${w}"`).join(", ")}.` : ""}`);
+      return q;
+    },
+  },
+  {
+    name: "add_counter",
+    description: `Add a title that counts: a number running from one value to another, for a statistic that counts up ("0 to 12,500 creators"), a price, a score, a countdown or a stopwatch (Final Cut's Counting generator, After Effects' Numbers). text says where the number goes with ${COUNTER_TOKEN} (default the number alone): "${COUNTER_TOKEN}+ creators", "$${COUNTER_TOKEN}", "T-${COUNTER_TOKEN}". It counts over count_seconds from its start, then holds the last number for the rest of the clip, so give the clip time to be read after the count. format number groups thousands (12,500), plain does not (a year), time shows seconds as a clock (a 10 s countdown: from 10, to 0, format time, duration 10). A rising count never shows a number it has not reached, and a falling one never one it has passed. Everything else is add_text's: position, style, role, track_id; set_animation, set_text and keyframes work on it as on any title, and set_counter changes the numbers. Example: {text: '${COUNTER_TOKEN}+ creators', from: 0, to: 12500, start: 3, duration: 3, count_seconds: 1.5, style: {size: 150}}.`,
+    input: S.obj(
+      {
+        text: S.str(`The words, with ${COUNTER_TOKEN} where the number goes; default "${COUNTER_TOKEN}"`),
+        ...COUNTER_FIELDS,
+        start: S.num("Seconds", { minimum: 0 }),
+        duration: S.num("Seconds the title is on screen", { minimum: 0.001 }),
+        x: S.num("Horizontal offset, -0.5..0.5"),
+        y: S.num("Vertical offset, -0.5..0.5"),
+        style: TEXT_STYLE_SCHEMA,
+        role: S.str("Style it from the brand kit first, as add_text does", { enum: TEXT_ROLES }),
+        track_id: S.str("Track id; default above everything at that time"),
+      },
+      ["from", "to", "start", "duration"],
+    ),
+    run: (p, a, report) => {
+      const { text: given, from: _f, to: _t, count_seconds: _s, decimals: _d, format: _m, ease: _e, ...title } = a;
+      const text = String(given ?? COUNTER_TOKEN);
+      if (!text.includes(COUNTER_TOKEN)) throw new CommandError(`text needs ${COUNTER_TOKEN} where the number goes, e.g. "${COUNTER_TOKEN}+ creators"`);
+      const before = new Set(p.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+      const q = COMMAND_INDEX.get("add_text")!.run(p, { ...title, text }, report);
+      const made = q.tracks.flatMap((t) => t.clips).find((c) => c.type === "text" && !before.has(c.id))!;
+      return ops.updateClip(q, made.id, (c) => ({ ...c, counter: counterArg(q, a, c.duration) }) as Clip);
+    },
+  },
+  {
+    name: "set_counter",
+    description: `Change a counting title's numbers (add_counter), or make any title count: its text must hold ${COUNTER_TOKEN} where the number goes (set_text). Only what is given changes; off: true stops it counting, leaving the text as written.`,
+    input: S.obj({ clip_id: S.str("Text clip id"), ...COUNTER_FIELDS, off: S.bool("Stop counting") }, ["clip_id"]),
+    run: (p, a) =>
+      ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, (c) => {
+        if (c.type !== "text") throw new CommandError("not a text clip");
+        if (a.off === true) return (({ counter: _, ...rest }) => rest as Clip)(c);
+        if (!c.text.includes(COUNTER_TOKEN)) throw new CommandError(`its text has no ${COUNTER_TOKEN}: set_text its text to say where the number goes, e.g. "${COUNTER_TOKEN}+ creators"`);
+        if (!c.counter && (a.from === undefined || a.to === undefined)) throw new CommandError("give from and to: the title does not count yet");
+        return { ...c, counter: counterArg(p, a, c.duration, c.counter) };
+      }),
+  },
+  {
+    name: "add_credits",
+    description: `Roll credits: lines of text travel up the frame at one steady speed, from below it to above it (Premiere's roll, Resolve's scroll, Final Cut's scrolling credits), for end credits, thanks and long lists. text is the lines, \\n between them; an empty line leaves a gap one line high. Without duration every line crosses the frame in line_seconds (default ${CREDITS_LINE_SECONDS}: comfortable online, cinema runs 8 to 10, under 3 is hard to read) and the roll lasts as long as its lines need (the answer says how long, so the music and the end can be fitted to it); with duration the whole roll takes that long, and the answer says how long each line is on screen. It is made of grouped titles of up to ${CREDITS_BLOCK} lines, each on screen only while it crosses, above everything at that time: they move and delete together, and set_text with their clip_ids restyles them. Put it over black (add_color_clip) or over the last shot dimmed. check_project does not judge a roll by how long it is up or where it enters and leaves. Example: {text: 'Directed by\\nJordan Lee\\n\\nEdited by\\nSam Rivera', start: 62}.`,
+    input: S.obj(
+      {
+        text: S.str("The lines, \\n between them; an empty line is a gap"),
+        start: S.num("Seconds the first line enters at the bottom", { minimum: 0 }),
+        duration: S.num("Seconds the whole roll takes, first line in to last line out; default as long as line_seconds needs", { minimum: 0.5 }),
+        line_seconds: S.num(`Seconds a line takes to cross the frame when duration is not given; default ${CREDITS_LINE_SECONDS}`, { minimum: 1, maximum: 60 }),
+        x: S.num("Horizontal offset from the center, -0.5..0.5; default 0"),
+        style: TEXT_STYLE_SCHEMA,
+      },
+      ["text", "start"],
+    ),
+    run: (p, a, report) => {
+      if (a.duration !== undefined && a.line_seconds !== undefined) throw new CommandError("give duration (the whole roll) or line_seconds (each line), not both");
+      const x = Number(a.x ?? 0);
+      const style = styleFrom(creditsStyle(p), (a.style ?? {}) as Partial<TextStyle>);
+      style.maxWidth ??= titleWrap(p, x);
+      const roll = creditsRoll(p, String(a.text), f(p, a.start), style, { x, ...(a.duration !== undefined ? { frames: span(p, a.start, a.duration) } : {}), ...(a.line_seconds !== undefined ? { lineSeconds: Number(a.line_seconds) } : {}) });
+      if (!roll.clips.length) throw new CommandError("text has no lines");
+      if (report) (report.notes ??= []).push(`${roll.lines} lines roll for ${+framesToSeconds(roll.frames, p.fps).toFixed(2)} s, each on screen ${roll.lineSeconds} s${roll.lineSeconds < 3 ? ": too fast to read comfortably, give it a longer duration" : ""}.`);
+      return placeStack(p, roll.clips, "Credits");
     },
   },
   {
@@ -3495,6 +3697,7 @@ export function describeProject(p: Project) {
         ...("changePitch" in c && c.changePitch ? { change_pitch: true } : {}),
         ...(c.type === "image" && c.imageIn ? { in: c.imageIn } : {}),
         ...(c.type === "text" ? { text: c.text, runs: c.style.runs ?? [] } : {}),
+        ...(c.type === "text" && c.counter ? { counter: { from: c.counter.from, to: c.counter.to, count_seconds: c.counter.seconds, ...(c.counter.decimals ? { decimals: c.counter.decimals } : {}), ...(c.counter.format ? { format: c.counter.format } : {}), ...(c.counter.ease ? { ease: presetOf(c.counter.ease)?.id ?? "custom" } : {}) } } : {}),
         ...(c.type === "compound" ? { compound: c.compoundId } : {}),
         ...("volume" in c && c.volume !== 1 ? { volume: +c.volume.toFixed(4) } : {}),
         ...("fadeIn" in c && c.fadeIn ? { fade_in: s(c.fadeIn) } : {}),

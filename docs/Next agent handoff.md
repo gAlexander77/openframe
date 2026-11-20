@@ -1,9 +1,45 @@
 # Next agent handoff - OpenFrame
 
-**Updated:** 2026-10-22. This is the current owner direction for the next
+**Updated:** 2026-11-19. This is the current owner direction for the next
 Claude Code or Codex pickup. Read it before resuming previous tasks.
 
-## Current state - 2026-10-22 (read first)
+## Current state - 2026-11-19 (read first)
+
+- **One branch holds everything: `main`.** The owner asked (2026-11-19) for
+  every branch to be brought into one. `improvements-6` to `improvements-9`
+  were already merged, and this round's `improvements-10` is merged into
+  the local `main`. The remote branches `bg-removal`, `compound-clips` and
+  `timeline-ux` are WIP backups from 2026-10-14 whose features were
+  finished on `main` on 2026-10-16; they hold nothing to merge. Deleting
+  them on the remote is the owner's call.
+- **Nothing is open on GitHub**: no pull request, no issue.
+- **Not pushed.** That session had no git or `gh` credentials. The local
+  `main` is ahead of `origin/main`; the owner pushes.
+- **This round** ([[History]], 2026-11-19;
+  [[ADR-147 Story tools reuse the title, the roll and the detached sound]]):
+  `jl_cut`, `add_counter`, `set_counter`, `add_credits`, `highlight_words`,
+  `add_progress_bar`, `export_frame`, and a `documentary` playbook and
+  prompt. 204 tools.
+- **Next for these tools:**
+  - buttons for them (a counter and a credits card in the Text tab, J/L
+    cut in the clip menu, Save frame as JPEG); today only the in-app
+    assistant and outside agents reach them;
+  - a desktop run of `export_frame` (the web build can only refuse it);
+  - a blind test of the `documentary` playbook with real interview
+    footage, as rounds 5 to 7 tested the others;
+  - a counting title that is split or head-trimmed restarts its count
+    (ADR-147 says what a fix needs).
+- **Still missing against the big editors**, from the same survey:
+  multicam (sync by sound exists; an angle switch does not), optical-flow
+  slow motion, a luma key, curved text, a slideshow maker (stills on the
+  beat or a set length, with moves), an audio spectrum graphic.
+- **Test media**: `node scripts/make-fixtures.mjs` and
+  `npm i --prefix scratch playwright-core` are needed once per checkout
+  (both git-ignored); `person-pan.mp4` is downloaded and can fail with a
+  429, which only the drives that use it notice.
+- Everything in the 2026-10-22 state below still holds.
+
+## State at 2026-10-22
 
 - `main` holds all seven improvements rounds (to ADR-144), the shot log
   (ADR-145, 2026-10-23) and its end-to-end hardening (ADR-146,

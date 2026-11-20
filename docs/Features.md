@@ -179,6 +179,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   so they select, move and delete together; Alt-click takes one side
   alone, each edge trims on its own, and red frame counts (+15 / −15)
   show on both when one is moved out of sync. Ungroup unlinks them.
+  For agents, `jl_cut` makes the split edit in one call: both shots'
+  sound is extracted onto one audio track and the cut between the two
+  sounds rolls off the picture's cut, later for an L cut and earlier for
+  a J cut, measured from the picture's cut so a second call moves the
+  same cut ([[ADR-147 Story tools reuse the title, the roll and the detached sound]]).
 - **Selected edit points:** click a clip edge with Select to draw a bracket;
   add other edges with Shift, or choose both touching sides with Alt or a
   double-click for a roll. Extend Edit moves them to the playhead, and the
@@ -543,7 +548,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   4K and under any scale or rotation. The Shape section of the Video tab
   edits them; the timeline names the clip after its shape. The pieces of
   lower thirds, callouts, CTA buttons and end cards (`add_shape`,
-  `set_shape`).
+  `set_shape`). `add_progress_bar` is one of them made in a call: a line
+  along the bottom or top edge that fills over the video (ADR-147).
 - **Callouts** (ADR-120): a ring, box or rounded box that draws on around
   a part of a screen recording or shot, the rest of the frame dimmed
   through a hole the same shape, both pinned to that clip's picture, so
@@ -948,6 +954,22 @@ element rows stay private, and captions stay on top.
   Pieces of a cut clip read on without hearing it again. Agents:
   `get_transcript` then `cut_ranges`. The words are kept for the session,
   not in the project; clips with a speed curve or reversed are left out.
+- **Counting titles** (`add_counter`, `set_counter`; Final Cut's Counting
+  generator, After Effects' Numbers): a title whose `{n}` runs from one
+  number to another and then holds: a statistic counting up, a price, a
+  countdown or a stopwatch (`format` number, plain or time). It is an
+  ordinary title in every other way. Agents and the assistant only; no
+  button yet ([[ADR-147 Story tools reuse the title, the roll and the detached sound]]).
+- **Credits roll** (`add_credits`; Premiere's roll, Resolve's scroll): lines
+  travel up the frame at one steady speed, each crossing in `line_seconds`
+  (default 6) or the whole roll in `duration`. It is made of grouped
+  titles of up to eight lines, each on screen only while it crosses.
+  Check does not judge a roll by its time on screen. Agents and the
+  assistant only.
+- **Caption keywords** (`highlight_words`; CapCut's keyword highlight):
+  chosen words take a color, weight or size in every caption at once,
+  whole words in any case; `clear` takes it off. Agents and the assistant
+  only.
 
 ## Generated music
 
@@ -1421,7 +1443,9 @@ A quiet recording need not leave the music nearly silent.
   ([[ADR-080 MP3 by LAME in WebAssembly, captions leave an export four ways]]).
 - **Save frame as PNG** from the player (the camera button, File menu,
   Mod+Shift+E, Premiere's Export Frame key): the frame under the playhead
-  at the project's size, without the export dialog.
+  at the project's size, without the export dialog. Agents write any
+  frame as a PNG or JPEG with `export_frame` (a cover or thumbnail), to
+  the Videos folder or a folder they name, in the desktop app (ADR-147).
 - Frame-exact and sample-synced (the export drive reads the framecode
   back); a canceled export never leaves a partial file.
 - **Loudness** (Audio > Loudness; Premiere's Loudness Normalization): bring
@@ -1551,8 +1575,9 @@ Three doors, one engine ([[Automation]]):
   an agent can look at its work, `list_projects`, `open_project` and
   `new_project` to move between projects as the home screen does, and
   `export_video` / `export_status` to make the file; HTTP or
-  `--mcp-stdio`. A model learns the tools from the `help` tool, three MCP
-  prompts (make an ad, an epic edit, a short) with design rules, guide
+  `--mcp-stdio`. A model learns the tools from the `help` tool, four MCP
+  prompts (make an ad, an epic edit, an interview or documentary piece, a
+  short) with design rules, guide
   resources and a full `list_catalog`; [[MCP tools]] is the generated
   reference. Edits answer with only what they changed; `batch` runs
   many as one undo step. Its quiet answer lists added clips in step order,

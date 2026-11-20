@@ -586,3 +586,4 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-144 Session resources have byte budgets and explicit owners]] - byte LRU caches, borrowed image lifetimes, idle model teardown, session cleanup and memory diagnostics.
 - [[ADR-145 The shot log is a second transcript written locally]] - measured picture and sound, local vision descriptions, resumable coarse-to-fine logs and source edit advice.
 - [[ADR-146 The shot log supports highlight ranking and paired analysis]] - picture evidence in highlights, two descriptions in flight, editing synonyms and speech alongside the visual reading.
+- [[ADR-147 Story tools reuse the title, the roll and the detached sound]] - J and L cuts in one call, counting titles, a credits roll in blocks, caption keywords, a progress bar, a cover picture on disk and a documentary playbook.

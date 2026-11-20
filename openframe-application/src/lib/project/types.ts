@@ -1028,7 +1028,26 @@ export type TextClip = ClipBase &
      * whitespace) is spoken, from speech recognition. Ignored when the word
      * count no longer matches the text. */
     wordTimes?: number[];
+    /** A title that counts (lib/counter.ts, ADR-147): every {n} in `text`
+     * reads as a number running from one value to another. */
+    counter?: Counter;
   };
+
+export interface Counter {
+  from: number;
+  to: number;
+  /** Decimal places shown, 0..6; absent = 0. */
+  decimals?: number;
+  /** number (absent): thousands grouped, 12,500; plain: 2026; time: the
+   * value is seconds, shown 1:05. */
+  format?: "number" | "plain" | "time";
+  /** The curve of the count; absent: easeOut, or linear for time. */
+  ease?: Ease;
+  /** Seconds from the clip's start the count takes, `to` held after them.
+   * Seconds, not frames or a share of the clip: a trim or a new frame rate
+   * leaves a timer's pace alone. */
+  seconds: number;
+}
 /** A solid; with `shape`, a shape layer whose fill is `color`. */
 export type ColorClip = ClipBase & Visual & { type: "color"; color: string; shape?: Shape };
 /** Applies its color, filter and effects to everything composited below it

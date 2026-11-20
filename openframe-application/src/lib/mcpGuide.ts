@@ -42,7 +42,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   {
     name: "Timeline",
     blurb: "Place, cut, move and arrange clips. batch runs many edits as one undo step.",
-    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "extend_edit", "trim_edits", "edit_from_source", "roll_edit", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_enabled", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
+    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "extend_edit", "trim_edits", "edit_from_source", "roll_edit", "jl_cut", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_enabled", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
   },
   {
     name: "Music, beats and markers",
@@ -57,10 +57,10 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   {
     name: "Graphics and compositing",
     blurb: "Shapes (bars, boxes, lines that draw on, soft glows), callouts that ring a part of a screen recording and follow its zooms, overlays pinned to footage, drop shadows, borders and perspective tilt for floating windows and picture-in-picture, track mattes, motion blur, mirrored edges and camera shake.",
-    tools: ["add_shape", "set_shape", "add_callout", "set_anchor", "set_shadow", "set_border", "set_tilt", "set_track_matte", "set_motion_blur", "set_edge_mode", "set_wiggle"],
+    tools: ["add_shape", "set_shape", "add_progress_bar", "add_callout", "set_anchor", "set_shadow", "set_border", "set_tilt", "set_track_matte", "set_motion_blur", "set_edge_mode", "set_wiggle"],
   },
   { name: "Speed", blurb: "Constant speed, ramps, reverse and smoother slow motion.", tools: ["set_speed", "set_speed_curve", "set_speed_ramp", "set_reverse", "set_preserve_pitch", "set_frame_blending"] },
-  { name: "Text and captions", blurb: "Titles, templates, stickers, captions and the transcript.", tools: ["add_text", "set_text", "style_text_range", "animate_text_style", "add_text_template", "apply_word_art", "add_sticker", "add_captions", "auto_captions", "set_caption_look", "replace_caption_text", "get_transcript"] },
+  { name: "Text and captions", blurb: "Titles, counters, credits, templates, stickers, captions and the transcript.", tools: ["add_text", "set_text", "style_text_range", "animate_text_style", "add_counter", "set_counter", "add_credits", "add_text_template", "apply_word_art", "add_sticker", "add_captions", "auto_captions", "set_caption_look", "highlight_words", "replace_caption_text", "get_transcript"] },
   {
     name: "Brand and ad elements",
     blurb: "A brand kit every part of an ad draws from, built ad elements, and titles behind the subject.",
@@ -72,7 +72,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
     blurb: "Voice, music, effects and the mix.",
     tools: ["add_voiceover", "review_voiceover", "retake_voiceover", "text_to_speech", "add_sound_effect", "add_ambience", "set_fades", "set_pitch", "apply_voice_preset", "set_audio_filter", "set_reverb", "set_echo", "set_tape_stop", "set_compressor", "add_audio_insert", "update_audio_insert", "move_audio_insert", "remove_audio_insert", "set_dynamics", "set_channel_fill", "set_crossfade", "normalize_loudness", "duck_under_speech", "reduce_noise", "sync_audio", "remove_silences", "remove_filler_words"],
   },
-  { name: "Check and deliver", blurb: "Look at the media and the result, check it against the rules, then export.", tools: ["preview_media", "preview_frames", "preview_motion", "preview_frame", "preview_audio", "check_project", "measure_loudness", "export_video", "export_versions", "export_status", "job_status", "cancel_job"] },
+  { name: "Check and deliver", blurb: "Look at the media and the result, check it against the rules, then export.", tools: ["preview_media", "preview_frames", "preview_motion", "preview_frame", "preview_audio", "check_project", "measure_loudness", "export_video", "export_versions", "export_frame", "export_status", "job_status", "cancel_job"] },
 ];
 
 /** A tool's group; new tools land in "More" until they are filed. */
@@ -83,7 +83,7 @@ const READ_ONLY = new Set(["analyze_footage", "get_shot_log", "find_shots", "sug
 /** Tools that remove things (all are still undoable, but say so). */
 const DESTRUCTIVE = new Set(["delete_proxies", "delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "cut_music", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
 /** Tools that reach outside the project: files on disk, downloads. */
-const OPEN_WORLD = new Set(["analyze_footage", "describe_moment","find_highlights", "create_clips", "export_projects", "create_proxies", "delete_proxies", "import_timeline", "export_timeline", "import_media", "export_video", "export_versions", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "retake_voiceover", "review_voiceover", "remove_filler_words", "get_transcript"]);
+const OPEN_WORLD = new Set(["analyze_footage", "describe_moment","find_highlights", "create_clips", "export_projects", "create_proxies", "delete_proxies", "import_timeline", "export_timeline", "import_media", "export_video", "export_versions", "export_frame", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "retake_voiceover", "review_voiceover", "remove_filler_words", "get_transcript"]);
 
 const title = (name: string) => name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
@@ -148,6 +148,12 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   add_beat_hits: { effects: ["flash", "zoom"], marker_label: "Drop" },
   set_speed_ramp: { clip_id: "c_7", at: 8.4, moment: "slow" },
   roll_edit: { clip_id: "c_7", to: 8 },
+  jl_cut: { clip_id: "c_7", by: 0.6 },
+  add_counter: { text: "{n}+ creators", from: 0, to: 12500, start: 3, duration: 3, count_seconds: 1.5, style: { size: 150 } },
+  add_credits: { text: "Directed by\nJordan Lee\n\nEdited by\nSam Rivera", start: 62 },
+  highlight_words: { words: ["free", "today"], color: "#ffd84d", scale: 1.15 },
+  add_progress_bar: { color: "#ffd23f", thickness: 12 },
+  export_frame: { at: 3.5, name: "spring-sale-cover", format: "jpg", resolution: "1080p" },
   freeze_frame: { clip_id: "c_7", at: 6.267, duration: 1.733, mode: "overwrite" },
   fit_music: { clip_id: "c_3", drop_at: 8.4, end: "bar", fade_out: 1.5 },
   cut_music: { clip_id: "c_3", from: 14, to: 30 },
@@ -327,11 +333,11 @@ ${DESIGN_POINTER}`,
 3. Script in beats: hook (0-3 s), problem or desire, the product, proof (features, numbers, a demo), offer, call to action. Write the voice lines short. Put the grade's adjustment clip (step 7) on the timeline before any titles: new tracks stack on top (under the captions, which stay the top layer), and a grade added last would tint the titles and end card too (move_track below_track_id fixes the order later).
 4. add_voiceover with the script, directed (help topic voiceover: casting, pace, pauses, pronunciations; a line's caption can show other words than it says: "20% off" for "twenty percent off"): the voice and captions are placed at their real lengths, and it answers where each line landed. review_voiceover hears it back and names what to fix; retake_voiceover fixes a line; then cut the picture to the voice.
 5. Picture: add_media_clip a shot under each line; frame_region for slow push-ins on stills and product details; set_canvas_fill blur when footage does not fill the frame; set_speed for slow motion on hero shots.
-6. Words: a headline per idea with add_text and a role (headline, subhead, label...: sized and styled from the brand), animated per word or letter (set_animation wordPop, letterRise or typewriter; unit and stagger for any other) with an out; add_ad_element lower_third for a name, offer_badge for the offer, cta_button for the ask; text_behind_subject puts the hero title behind the person or product; set_caption_look for the captions (pop or boxed read well on social).
+6. Words: a headline per idea with add_text and a role (headline, subhead, label...: sized and styled from the brand), animated per word or letter (set_animation wordPop, letterRise or typewriter; unit and stagger for any other) with an out; add_ad_element lower_third for a name, offer_badge for the offer, cta_button for the ask; add_counter counts a proof number up (users, savings, a score); text_behind_subject puts the hero title behind the person or product; set_caption_look for the captions (pop or boxed read well on social).
 7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots. Graphics: add_shape for bars, boxes and lines that draw on (keyframe shape.draw), set_track_matte to show footage inside big title letters, set_border to frame a picture-in-picture shot (a rounded mask gets a rounded border), set_motion_blur on fast moves. A styled layer stack used again (a floating window: footage, mask, border) is a template: create_compound_clip it once, then duplicate_clips with unique true for each use and edit_compound replace_clip to put that use's footage in.
 8. Sound: music with add_media_clip on an audio track (or an original score with generate_music, its sections fitted to the cut and its final hit on the end card), duck_under_speech under the voice, set_fades out at the end, add_sound_effect on reveals, normalize_loudness on the voice.
 9. End card: add_ad_element end_card (logo, headline, the call-to-action button and the url, in the brand), held 2-3 s; or logo_reveal for a brand spot.
-10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); measure_loudness with spec online (or the broadcast spec) and loudness -14; then export_video (loudness -14). The other deliverables in one call: export_versions with check true first (a sheet of every shape and length), then without check: ratios 16:9, 9:16, 1:1, durations 30, 15, 6 and a textless master. Each version's crops keep what callouts point at and the regions the master pushes into, else follow the shots' subjects; the check sheet outlines in orange a subject a framing still cuts, or a callout off the frame (focus [{clip_id, x, y}] on that version places it by hand). Where a version needs more work by hand (an end card to lay out), export_versions with save_projects true saves it as a project in that shape: open_project it, fix it, export_video.
+10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); measure_loudness with spec online (or the broadcast spec) and loudness -14; then export_video (loudness -14), and export_frame for its thumbnail. The other deliverables in one call: export_versions with check true first (a sheet of every shape and length), then without check: ratios 16:9, 9:16, 1:1, durations 30, 15, 6 and a textless master. Each version's crops keep what callouts point at and the regions the master pushes into, else follow the shots' subjects; the check sheet outlines in orange a subject a framing still cuts, or a callout off the frame (focus [{clip_id, x, y}] on that version places it by hand). Where a version needs more work by hand (an end card to lay out), export_versions with save_projects true saves it as a project in that shape: open_project it, fix it, export_video.
 
 ${DESIGN_POINTER}`,
   },
@@ -348,6 +354,22 @@ ${DESIGN_POINTER}`,
 8. Titles: big, short, bold words (one display face, size 160-240) with pop or zoomIn; text behind the subject (remove_background on a copy above the title) for the hero shot.
 9. Sound design: add_sound_effect rise or reverseCymbal with end_at on the drop (it peaks there), impact, braam or subDrop on the drop's beat, whoosh on whip transitions; a set_audio_filter lowpass sweep that opens onto the drop, set_tape_stop for a stop before it; then fit_music end bar (or video) with fade_out to end the music cleanly.
 10. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), measure_loudness, then export_video (loudness -14).
+
+${DESIGN_POINTER}`,
+  },
+  documentary: {
+    title: "An interview or documentary",
+    text: `Making an interview-led piece (a documentary short, a testimonial, a talking-head story with cutaways):
+1. new_project; import_media the interviews, the b-roll and the music. preview_media each file; in the desktop app analyze_footage the b-roll, so find_shots can search it by what it shows (help topic shot_log).
+2. Hear it before cutting: add_media_clip each interview on the main track, then get_transcript: its words with source seconds. Choose the lines that tell the story and their order on paper first: a strong first line (the hook), one idea a line, the ending last.
+3. Cut the talk (the radio edit): cut_ranges removes what is not used (source seconds, so one transcript stays valid through every cut); remove_silences and remove_filler_words tighten what is left; move_clip reorders lines. Cut in the breath between words, never inside one; preview_audio hears each join.
+4. Smooth the joins once the cuts are final (a sound moved off its picture is no longer cut with it): jl_cut at the cuts between speakers and scenes, by 0.3 to 1 s. An L cut lets a line finish over the next picture; a J cut lets the next voice start before its face. set_crossfade softens a sound join. Two takes in one framing cut together jump: cover the join with a cutaway (next step) or punch one side in (set_param transform.scale 1.15), as suggest_edit_points advises.
+5. Cover with b-roll: add_track (video) once, then add_media_clip with that track_id and fit fill over the words each shot illustrates, 2 to 5 s each, starting a few frames after a cut in the talk and never across a change of subject; its own sound low under the voice (set_param volume 0.1 to 0.2) or off. Show the speaker when they first speak and on the lines that matter most. frame_region pushes slowly into photos and documents.
+6. Names and facts: add_ad_element lower_third (or add_text_template lowerThird) on each speaker's first appearance, 3 to 6 s; add_counter counts a number up as it is said; add_marker with chapter true marks the parts of a longer piece.
+7. Sound: normalize_loudness the talk, and add_audio_insert preset dialog_cleanup on its audio track (jl_cut puts it on one); music low under the talk with duck_under_speech, up in the pauses between parts (open_at); add_ambience under silent b-roll; set_fades at the end.
+8. Picture: match_color brings every interview angle and cutaway to one reference shot, then one look over all of it on an adjustment clip (set_filter or apply_lut); stabilize_clip a shaky cutaway.
+9. Captions: auto_captions (whole lines for a documentary; for a short, words_per_caption 2 or 3 and highlight_words on the words that carry the point). add_credits rolls the credits over the last shot or black.
+10. preview_frames across the piece, preview_motion at the joins, check_project, measure_loudness kind film with spec online; then export_video with loudness -14 (chapters true writes the chapter markers) and export_frame for its cover.
 
 ${DESIGN_POINTER}`,
   },
@@ -368,10 +390,10 @@ ${DESIGN_POINTER}`,
 1. new_project; set_project 1080x1920; import_media.
 2. add_media_clip the clip; remove_silences and remove_filler_words tighten the talk.
 3. auto_reframe the clip to 9:16 (or frame_region onto the speaker or the part of the screen that matters); set_canvas_fill blur for anything that does not fill the frame.
-4. Captions a few words at a time (the pop look): a voiceover made here captions itself so, add_voiceover caption_words 2 or 3 (each word timed to the voice; a caption of one word keeps its color, the highlight lights the word being spoken among several); for recorded speech, auto_captions captions what the people on the timeline say: words_per_caption 2 or 3 and look pop. check_project reads such captions as the line they make. On a tall canvas captions sit at y 0.05, clear of the apps' captions and buttons; set_caption_look y, size and maxWidth move, size and narrow every caption at once.
-5. Hook title in the first second (add_text, on 9:16 size 70-110 with 2-4 words a line; ordinary titles size 50-90; with a box or outline), a few stickers or sound effects on punchlines (add_sticker, add_sound_effect).
+4. Captions a few words at a time (the pop look): a voiceover made here captions itself so, add_voiceover caption_words 2 or 3 (each word timed to the voice; a caption of one word keeps its color, the highlight lights the word being spoken among several); for recorded speech, auto_captions captions what the people on the timeline say: words_per_caption 2 or 3 and look pop. check_project reads such captions as the line they make. On a tall canvas captions sit at y 0.05, clear of the apps' captions and buttons; set_caption_look y, size and maxWidth move, size and narrow every caption at once. highlight_words colors the one or two words a sentence that carry the point, in every caption at once.
+5. Hook title in the first second (add_text, on 9:16 size 70-110 with 2-4 words a line; ordinary titles size 50-90; with a box or outline), a few stickers or sound effects on punchlines (add_sticker, add_sound_effect); add_counter for a number that counts up; add_progress_bar last, for a list or a tutorial.
 6. Music low under the voice (duck_under_speech), set_fades, normalize_loudness.
-7. preview_frames, then export_video with the social preset sizes (1080p).
+7. preview_frames, then export_video with the social preset sizes (1080p), and export_frame for its cover.
 
 ${DESIGN_POINTER}`,
   },
@@ -426,7 +448,7 @@ export function helpText(topic: string | undefined, tools: ToolInfo[], instructi
   if (t === "overview") {
     const groups = TOOL_GROUPS.map((g) => `- ${g.name}: ${g.blurb} ${g.tools.filter((n) => tools.some((x) => x.name === n)).join(", ")}`);
     const more = tools.filter((x) => groupOf(x.name) === "More").map((x) => x.name);
-    return [instructions, "", "For an interview or vlog, auto_captions captions what the people on the timeline say.", "The shot log is a second transcript of the picture and sound: analyze_footage, then get_shot_log or find_shots, then suggest_edit_points before cutting. Check chosen ranges with preview_frames. help topic shot_log explains first use and partial logs.", "", "Tools by step:", ...groups, ...(more.length ? [`- More: ${more.join(", ")}`] : []), "", `Help topics: ${HELP_TOPICS.join(", ")}, or any tool's name for its parameters and an example.`].join("\n");
+    return [instructions, "", "For an interview or vlog, auto_captions captions what the people on the timeline say; help topic documentary cuts one: the transcript, J and L cuts (jl_cut), cutaways.", "The shot log is a second transcript of the picture and sound: analyze_footage, then get_shot_log or find_shots, then suggest_edit_points before cutting. Check chosen ranges with preview_frames. help topic shot_log explains first use and partial logs.", "", "Tools by step:", ...groups, ...(more.length ? [`- More: ${more.join(", ")}`] : []), "", `Help topics: ${HELP_TOPICS.join(", ")}, or any tool's name for its parameters and an example.`].join("\n");
   }
   if (t === "design") return DESIGN;
   if (t === "catalog") return `list_catalog returns every name the tools accept. Sections: ${Object.keys(fullCatalog() as object).filter((k) => k !== "sections" && k !== "note").join(", ")}. Call it with a section for details (effect parameter ranges, template text counts) and with section "stickers" and a query to search stickers.`;
@@ -459,6 +481,16 @@ export const PROMPTS = [
       { name: "theme", description: "What the edit is about (a trip, a team, a season...)", required: true },
       { name: "length", description: "Seconds (default 30)", required: false },
       { name: "media", description: "Paths of the clips and the music track", required: false },
+    ],
+  },
+  {
+    name: "documentary",
+    title: "Make an interview or documentary piece",
+    description: "Cut an interview-led story with cutaways from the footage given, following the documentary playbook.",
+    arguments: [
+      { name: "story", description: "What the piece is about, and who speaks in it", required: true },
+      { name: "length", description: "Target seconds (default 90)", required: false },
+      { name: "media", description: "Paths of the interviews, the b-roll and the music", required: false },
     ],
   },
   {
@@ -532,7 +564,7 @@ export function agentPlaybook(): string {
     "     `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;",
     "     npm test fails when this file is out of date. Do not edit by hand. -->",
     "",
-    "How an AI model should make a video with OpenFrame's MCP tools. A model gets the same text three ways: the `help` tool (topics `ad`, `epic_edit`, `voiceover`, `social_short`, `design`), the MCP prompts `make_ad`, `epic_edit` and `social_short`, and the resources `guide://...`. Every tool is in [[MCP tools]]; connecting is in [[Automation]].",
+    "How an AI model should make a video with OpenFrame's MCP tools. A model gets the same text three ways: the `help` tool (topics `ad`, `epic_edit`, `documentary`, `voiceover`, `social_short`, `design`), the MCP prompts `make_ad`, `epic_edit`, `documentary` and `social_short`, and the resources `guide://...`. Every tool is in [[MCP tools]]; connecting is in [[Automation]].",
     "",
     "## Design rules",
     "",
