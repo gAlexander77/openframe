@@ -7,11 +7,12 @@ Claude Code or Codex pickup. Read it before resuming previous tasks.
 
 - **One branch holds everything: `main`.** The owner asked (2026-11-19) for
   every branch to be brought into one, then for whatever was still missing
-  to be added, merged and pushed. `improvements-10` and `improvements-11`
-  are merged into the local `main`. The remote branches `bg-removal`,
-  `compound-clips` and `timeline-ux` are WIP backups from 2026-10-14 whose
-  features were finished on `main` on 2026-10-16; they hold nothing to
-  merge. Deleting them on the remote is the owner's call.
+  to be added, merged and pushed. `main` is now the only branch, here and
+  on the remote: on 2026-11-20 the owner had every finished branch
+  deleted. `improvements-6` to `-11` were merged. Three were not: the WIP
+  backups from 2026-10-14 whose features were finished on `main` two days
+  later, `bg-removal` (`c531030`), `compound-clips` (`fe824b7`) and
+  `timeline-ux` (`9dcbccf`). Every file they touched exists on `main`.
 - **Nothing is open on GitHub**: no pull request, no issue.
 - **Pushed on 2026-11-20**, as the owner asked: `origin/main` holds
   everything. The stored `gh` token had expired and the session had no
