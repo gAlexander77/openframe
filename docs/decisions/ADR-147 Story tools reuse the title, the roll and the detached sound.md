@@ -86,7 +86,48 @@ names, sound, match color, captions, credits.
 - None of the seven has a button yet. The in-app assistant and outside
   agents reach them through the registry.
 
+## The playbook run end to end, the same day
+
+`scripts/drive/documentary-flow.js` runs the documentary playbook over MCP on
+two synthesized interviews. Its first runs found five things, each fixed:
+
+- **A J or L cut's join was a click to the check.** Two different sounds
+  butted together measure as a hole a few milliseconds long, and
+  `check_project` answered `click_at_join` for a join `jl_cut` had just made.
+  The join now gets the 30 ms crossfade a song splice gets, where the clips
+  allow one (their own speed, file before the incoming sound to rise over);
+  otherwise a butt cut, as before.
+- **A number came as two words.** Whisper stamps "12,000" as "12" and
+  ",000", so a caption began with a comma. `monotonicWords` joins a word
+  that starts with `.`, `,` or `:` and a digit to a word ending in a digit
+  just before it ("3" ".5", "10" ":30").
+- **A word shorter than a frame fell out of its caption.** "year," was
+  stamped 20 ms long; mapped to frames it had no length and `timelineWords`
+  dropped it. A word that starts inside the clip keeps one frame.
+- **A ripple trim left the next shot's sound out of sync, without a word.**
+  With both sounds detached, trimming the first picture's end moved the
+  second picture, but its sound's new place was still taken by the first
+  sound, so linkage left it where it was. `trim_clip` on a picture whose
+  sound is detached now moves the sound's same edge by the same amount (a
+  J or L cut keeps its offset); trimming the audio clip itself still moves
+  the sound alone, which is how a split edit is made by hand. The timeline's
+  own trim (the drag) is unchanged: it shows the red out-of-sync counts.
+- **Out of sync is now said.** After any agent command, a detached sound
+  that was in sync with its picture and no longer is gets a note naming the
+  two clips, the seconds, and the call that lines them up
+  (`sync_to_clip` with offset 0). It is a safety net for the edits that
+  still move one of the two alone (`slip_clip`, `move_clip`, a blocked
+  ripple).
+
+`jl_cut`'s note also says how to get the handle it lacks when the source
+runs out: end the outgoing clip earlier in its file, or start the incoming
+one later, with `trim_clip` and ripple.
+
 ## Checked
+
+`scripts/drive/documentary-flow.js`: every word that still plays is in the
+captions, the check answers "ok: nothing found", the mix passes the online
+spec at -14 LUFS.
 
 `scripts/drive/story-tools.js`, over MCP in the web build: the exported
 sound's beeps move as an L cut and a J cut say they should; the counter's

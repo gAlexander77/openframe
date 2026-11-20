@@ -2013,13 +2013,35 @@ at once, on branch `improvements-10`
   genre the playbooks did not cover. `suggest_edit_points` now names
   `jl_cut` in its J and L cut advice.
 
-**Checked.** tsc; 2,022 unit tests (in the first full run two pitch-shift
-tests timed out at 5 s under load; they pass alone in 2 s and in the next
-full run, and do not touch this change); `scripts/drive/story-tools.js` over MCP in the web
-build, and a contact sheet of the counter, the timer, the roll, the
-captions and the bar looked at by eye. Rust was not changed, so its gates
-were not run. `export_frame` wrote no file: it needs the desktop app, which
-was not started in this round.
+**The playbook run end to end.** `scripts/drive/documentary-flow.js` then ran
+the documentary playbook over MCP on two synthesized interviews (flite
+speech over a plain picture, with a pause before and after the talk, added
+to `make-fixtures.mjs`). It found what the tool-by-tool drive could not:
+
+- a J or L cut's join was a `click_at_join` warning from `check_project`
+  (the join now gets a 30 ms crossfade);
+- Whisper's "12,000" came as "12" and ",000", so a caption began with a
+  comma, and "year," (stamped 20 ms long) fell out of its caption;
+- a ripple trim of a picture whose sound is detached left the next shot's
+  sound where it was, half a second out of sync, with nothing said
+  (`trim_clip` now takes the detached sound along, and any agent edit that
+  leaves a detached sound out of sync says so and names `sync_to_clip`).
+
+After the fixes the flow ends with every spoken word in the captions,
+"ok: nothing found" from the check and -14 LUFS passing the online spec.
+
+**Checked.** tsc; the production build; 2,026 unit tests (in the first full
+run two pitch-shift tests timed out at 5 s under load; they pass alone in
+2 s and in every later full run, and do not touch this change);
+`story-tools.js` and `documentary-flow.js` over MCP in the web build, a
+contact sheet of each looked at by eye, and twenty-four existing drives
+around text, captions, shapes, linked audio and the check. One of them,
+`script-captions.js`, first read `add_voiceover`'s answer as undefined: on a
+fresh browser profile the voice model downloads first and the answer is a
+job (trap 29 of [[Driving the app]]); its `call` now follows the job.
+`ad-spot.js` could not run: its downloaded fixture answered 429. Rust
+was not changed, so its gates were not run. `export_frame` wrote no file:
+it needs the desktop app, which was not started in this round.
 
 ### Lessons paid for in this round
 
@@ -2035,6 +2057,16 @@ was not started in this round.
 - **Compare a new picture path with the old one, pixel for pixel.** The
   counter's held number against a plain title of the same words: zero
   pixels differ, so everything a title does applies.
+- **Run the playbook, not only its tools.** Each tool passed its own
+  drive; the five problems above only showed when the steps ran in order
+  on something like real footage. A playbook is a program: give it a
+  drive.
+- **A hint is a promise.** `jl_cut` said to trim first and call again;
+  doing exactly that hit the sync bug. Follow a new hint's recipe in a
+  drive before shipping the hint.
+- **Fixtures need handles.** Speech that starts on a file's first frame and
+  ends on its last cannot be J or L cut; real takes have a pause at both
+  ends, and so do the interview fixtures now.
 - **A parked branch is not open work.** The remote backups looked unmerged
   to git and were long finished; the handoff said so, and a file-by-file
   look at `main` confirmed it before anything was touched.

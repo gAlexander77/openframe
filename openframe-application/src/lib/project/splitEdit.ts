@@ -6,6 +6,7 @@
 
 import { createTrack } from "./defaults";
 import { clipEnd, detachAudio, findClip, getAsset, moveClip, rollBounds, rollEdit, sourceTimeAt, type TrimStop } from "./ops";
+import { MUSIC_CROSSFADE, MusicCutError, setCrossfade } from "../musicCut";
 import type { AudioClip, Clip, Id, Project, VideoClip } from "./types";
 
 export interface SplitEdit {
@@ -20,19 +21,25 @@ export interface SplitEdit {
   stop?: { clip: Clip; edge: "start" | "end"; why: TrimStop };
 }
 
+/** The audio clip an earlier detach made of a video clip's sound: same
+ * file, same group, still in sync; of several, the one most under it. */
+export function soundMate(p: Project, v: VideoClip): AudioClip | undefined {
+  const inSync = (a: AudioClip) => Math.abs(sourceTimeAt(a, v.start, p.fps) - sourceTimeAt(v, v.start, p.fps)) < (0.5 * p.fps.den) / p.fps.num;
+  const overlap = (a: Clip) => Math.min(clipEnd(a), clipEnd(v)) - Math.max(a.start, v.start);
+  const mates = p.tracks.flatMap((t) => t.clips).filter((c): c is AudioClip => c.type === "audio" && !!v.group && c.group === v.group && c.assetId === v.assetId && inSync(c));
+  return mates.sort((a, b) => overlap(b) - overlap(a))[0];
+}
+
 /** The audio clip that plays a video clip's sound: one an earlier detach
- * made (same file, same group, still in sync), else a new one. */
+ * made, else a new one. */
 function soundOf(p: Project, videoId: Id): { project: Project; id: Id } {
   const v = findClip(p, videoId)?.clip;
   if (!v) throw new Error(`no clip with id ${videoId}`);
   if (v.type !== "video") throw new Error(`${videoId} is ${v.type === "audio" || v.type === "image" || v.type === "adjustment" ? "an" : "a"} ${v.type} clip: a J or L cut is made at the cut between two video clips`);
   if (getAsset(p, v.assetId)?.hasAudio === false) throw new Error(`${videoId} has no sound (its file is silent)`);
   if (v.muted) {
-    const inSync = (a: AudioClip) => Math.abs(sourceTimeAt(a, v.start, p.fps) - sourceTimeAt(v, v.start, p.fps)) < (0.5 * p.fps.den) / p.fps.num;
-    const overlap = (a: Clip) => Math.min(clipEnd(a), clipEnd(v)) - Math.max(a.start, v.start);
-    const mates = p.tracks.flatMap((t) => t.clips).filter((c): c is AudioClip => c.type === "audio" && !!v.group && c.group === v.group && c.assetId === v.assetId && inSync(c));
-    const mate = mates.sort((a, b) => overlap(b) - overlap(a))[0];
-    if (!mate) throw new Error(`${videoId} is muted and no detached sound of it is on the timeline`);
+    const mate = soundMate(p, v);
+    if (!mate) throw new Error(`${videoId} is muted and no detached sound of it is in sync with it on the timeline (sync_to_clip lines one up again)`);
     return { project: p, id: mate.id };
   }
   const before = new Set(p.tracks.flatMap((t) => t.clips.map((c) => c.id)));
@@ -75,6 +82,17 @@ export function splitEdit(p: Project, leftId: Id, rightId: Id, by: number): Spli
   const at = Math.min(Math.max(want, bounds.lo), bounds.hi);
   const [clip, why] = want < bounds.lo ? bounds.loBy : bounds.hiBy;
   q = rollEdit(q, a.id, b.id, at);
+  // Two different sounds butted together tick: check_project measures the
+  // hole at the join. The crossfade a song splice gets, where the clips
+  // allow one (their own speed, room for the incoming sound to rise).
+  if (!(findClip(q, a.id)!.clip as AudioClip).crossfade) {
+    try {
+      q = setCrossfade(q, a.id, MUSIC_CROSSFADE);
+    } catch (e) {
+      // Not a join that can crossfade: a butt cut, as before.
+      if (!(e instanceof MusicCutError)) throw e;
+    }
+  }
   return { project: q, audio: [a.id, b.id], trackId: findClip(q, a.id)!.track.id, cut, at, ...(at !== want ? { stop: { clip, edge: clip.id === a.id ? "end" as const : "start" as const, why } } : {}) };
 }
 

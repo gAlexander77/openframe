@@ -1,8 +1,9 @@
 // J and L cuts (jl_cut, ADR-147).
 import { describe, expect, it } from "vitest";
-import { runCommand, type CommandReport } from "../commands";
+import { runAgentCommand, runCommand, type CommandReport } from "../commands";
 import { createProject, createTrack } from "./defaults";
 import { clipEnd, findClip, mainTrack } from "./ops";
+import { currentOffset } from "./sync";
 import type { AudioClip, Project, VideoClip } from "./types";
 
 const fps = { num: 30, den: 1 };
@@ -37,6 +38,8 @@ describe("jl_cut", () => {
     const [la, ra] = sounds(q);
     expect([span(la.clip), span(ra.clip)]).toEqual([[0, 4.5, 0], [4.5, 8, 10.5]]);
     expect(la.track).toBe(ra.track);
+    // The join of two different sounds is crossfaded, as check_project asks of one (30 ms).
+    expect([la.clip.crossfade, ra.clip.crossfade]).toEqual([0.03, undefined]);
     // The pictures keep their cut, give their sound away and stay grouped with it.
     for (const [video, sound] of [[a, la.clip], [b, ra.clip]] as const) {
       const v = findClip(q, video)!.clip as VideoClip;
@@ -73,7 +76,11 @@ describe("jl_cut", () => {
     const report: CommandReport = {};
     const q = runCommand(p, "jl_cut", { clip_id: ids(p)[0], by: -0.5 }, report);
     expect(sounds(q).map((s) => span(s.clip))).toEqual([[0, 4, 4], [4, 8, 0]]);
+    // No file before the incoming sound to rise over: a butt cut, not an error.
+    expect(sounds(q)[0].clip.crossfade).toBeUndefined();
     expect(report.notes!.join(" ")).toMatch(/Stopped at 0 s, not 0\.5 s: .*the source starts there/);
+    // And how to get the handle it lacks.
+    expect(report.notes![1]).toContain(`To let it lead, start ${ids(p)[1]} later in its file first (trim_clip edge start, ripple true)`);
   });
 
   it("puts both sounds on one audio track when a song is in the way of one of them", () => {
@@ -96,5 +103,51 @@ describe("jl_cut", () => {
     expect(() => runCommand(p, "jl_cut", { clip_id: a, by: 0.5 })).toThrow(`${b} has no sound`);
     const gap = runCommand(shots(["v", 0, 4]), "add_media_clip", { asset_id: "v", start: 5, in: 10, duration: 2 });
     expect(() => runCommand(gap, "jl_cut", { clip_id: ids(gap)[0], by: 0.5 })).toThrow("no clip touches");
+  });
+});
+
+describe("a picture and its detached sound through later edits", () => {
+  const straight = () => {
+    const p = shots(["v", 0, 4], ["v", 10, 4]);
+    return { p: runAgentCommand(p, "jl_cut", { clip_id: ids(p)[0], by: 0 }), a: ids(p)[0], b: ids(p)[1] };
+  };
+  const pictures = (p: Project) => mainTrack(p).clips.map((c) => [c.start / 30, clipEnd(c) / 30]);
+
+  it("trim_clip on the picture takes its sound's edge along, and the next shot's sound follows its picture", () => {
+    const { p, a } = straight();
+    const report: CommandReport = {};
+    const q = runAgentCommand(p, "trim_clip", { clip_id: a, edge: "end", to: 3.5, ripple: true }, report);
+    expect(pictures(q)).toEqual([[0, 3.5], [3.5, 7.5]]);
+    expect(sounds(q).map((s) => span(s.clip))).toEqual([[0, 3.5, 0], [3.5, 7.5, 10]]);
+    expect(report.notes).toBeUndefined();
+    // The trim jl_cut names when the source runs out now leaves it room: an L cut of the trimmed 0.5 s.
+    expect(sounds(runAgentCommand(q, "jl_cut", { clip_id: a, by: 0.5 })).map((s) => span(s.clip))).toEqual([[0, 4, 0], [4, 7.5, 10.5]]);
+  });
+
+  it("keeps an L cut's offset through the picture's trim, at either edge", () => {
+    const { p, a, b } = straight();
+    const l = runAgentCommand(p, "jl_cut", { clip_id: a, by: 0.5 });
+    const end = runAgentCommand(l, "trim_clip", { clip_id: a, edge: "end", to: 3, ripple: true });
+    expect([pictures(end), sounds(end).map((s) => span(s.clip))]).toEqual([[[0, 3], [3, 7]], [[0, 3.5, 0], [3.5, 7, 10.5]]]);
+    // The incoming shot's head trimmed a second, without ripple: its sound's head goes with it.
+    const head = runAgentCommand(l, "trim_clip", { clip_id: b, edge: "start", to: 5 });
+    expect([pictures(head), sounds(head).map((s) => span(s.clip))]).toEqual([[[0, 4], [5, 8]], [[0, 4.5, 0], [5.5, 8, 11.5]]]);
+    for (const q of [end, head]) for (const [v, s] of [[a, 0], [b, 1]] as const) expect(Math.abs(currentOffset(q, sounds(q)[s].clip.id, v))).toBeLessThan(1e-6);
+  });
+
+  it("says when an edit leaves a detached sound out of sync, with the call that lines it up", () => {
+    const { p, b } = straight();
+    const rb = sounds(p)[1].clip.id;
+    const report: CommandReport = {};
+    const off = runAgentCommand(p, "slip_clip", { clip_id: rb, by: 1 }, report);
+    expect(report.notes!.join(" ")).toContain(`${rb}, the sound of ${b}, is now 1 s out of sync with its picture`);
+    expect(report.notes!.join(" ")).toContain(`sync_to_clip {clip_id: "${rb}", to_clip_id: "${b}", offset: 0}`);
+    const fixed: CommandReport = {};
+    const q = runAgentCommand(off, "sync_to_clip", { clip_id: rb, to_clip_id: b, offset: 0 }, fixed);
+    expect(Math.abs(currentOffset(q, rb, b))).toBeLessThan(1e-6);
+    // An edit that keeps them together says nothing.
+    const quiet: CommandReport = {};
+    runAgentCommand(p, "set_param", { clip_ids: [rb], path: "volume", value: 0.8 }, quiet);
+    expect(quiet.notes).toBeUndefined();
   });
 });

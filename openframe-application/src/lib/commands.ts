@@ -58,7 +58,7 @@ import { relinkAsset } from "./project/relink";
 import { closeAllGaps, closeGap, nudgeClips } from "./project/gaps";
 import { replaceClip } from "./project/replace";
 import { NAME_MAX, renameClips, renameMedia } from "./project/rename";
-import { syncClip, syncProblem } from "./project/sync";
+import { lostSync, syncClip, syncProblem } from "./project/sync";
 import { groupClips, regroupCopies, ungroupClips } from "./project/groups";
 import { editFolder, organizeMedia, removeMedia, unusedMedia } from "./project/mediaOrganization";
 import { applyEffectPreset } from "./effectPresets";
@@ -78,7 +78,7 @@ import { AD_ELEMENTS, addAdElement, SPOTS, titleWrap, type AdBackground, type Ad
 import { isFootage, placeOnTop, placeStack, underAdjustmentNote } from "./overlays";
 import { COUNTER_FORMATS, COUNTER_MAX_DECIMALS, COUNTER_TOKEN } from "./counter";
 import { creditsRoll, creditsStyle, CREDITS_BLOCK, CREDITS_LINE_SECONDS } from "./credits";
-import { cutNeighbors, splitEdit } from "./project/splitEdit";
+import { cutNeighbors, soundMate, splitEdit } from "./project/splitEdit";
 import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
 import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW_PARAMS } from "./shadow";
 import { BORDER_DEFAULT, BORDER_PARAMS, BORDER_WIDTH_MAX, cleanBorder } from "./border";
@@ -932,14 +932,23 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "trim_clip",
-    description: "Move a clip's start or end edge to a time. Limited by the source media and neighbors (the answer says where it stopped and why); ripple=true shifts later clips instead of stopping at them.",
+    description: "Move a clip's start or end edge to a time. Limited by the source media and neighbors (the answer says where it stopped and why); ripple=true shifts later clips instead of stopping at them. A picture whose sound is detached (detach_audio, jl_cut) takes its sound along: the sound's same edge moves by the same amount, a J or L cut keeping its offset; trimming the audio clip itself moves the sound alone.",
     input: S.obj({ clip_id: S.str("Clip id"), edge: S.str("Which edge", { enum: ["start", "end"] }), to: S.num("Seconds", { minimum: 0 }), ripple: S.bool("Shift later clips") }, ["clip_id", "edge", "to"]),
     run: (p, a, report) => {
       const { clip } = clipOrThrow(p, a.clip_id);
       const edge = a.edge === "start" ? "start" : "end", ripple = a.ripple === true;
       const stop = ops.trimStop(p, clip.id, edge, f(p, a.to), ripple);
       if (stop && report) (report.notes ??= []).push(`Stopped at ${+framesToSeconds(stop.at, p.fps).toFixed(3)} s, not ${a.to} s: ${trimStopReason(p, clip, edge, stop.why)}.`);
-      return ops.trimClip(p, clip.id, edge, f(p, a.to), ripple);
+      const q = ops.trimClip(p, clip.id, edge, f(p, a.to), ripple);
+      // A picture's detached sound takes the same trim on the same edge, a
+      // J or L cut keeping its offset: trimmed alone, the picture's ripple
+      // left the next shot's sound blocked behind this one's, out of sync
+      // (ADR-147). The sound's own trim still moves the sound alone.
+      const mate = clip.type === "video" && clip.muted ? soundMate(p, clip) : undefined;
+      const now = ops.findClip(q, clip.id)?.clip;
+      if (!mate || !now || now.duration === clip.duration) return q;
+      const by = edge === "end" ? now.duration - clip.duration : clip.duration - now.duration;
+      return ops.trimClip(q, mate.id, edge, (edge === "end" ? ops.clipEnd(mate) : mate.start) + by, ripple);
     },
   },
   {
@@ -966,7 +975,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "jl_cut",
-    description: "J cut or L cut (a split edit) at the cut between two video clips that touch: the sound's cut moves off the picture's, the way dialog, interviews and scene changes are cut so they do not feel chopped. by is where the sound's cut goes, in seconds from the picture's cut: positive is an L cut (the outgoing clip's sound runs on under the incoming picture: a speaker finishes the thought over what they describe), negative a J cut (the incoming clip's sound starts under the outgoing picture: the next scene is heard before it is seen); 0 makes the cut straight again. 0.3 to 1 s is usual. Each clip's sound moves to an audio clip of its own (grouped with its picture, as detach_audio does), the two on one audio track, and the cut between them rolls, so both stay in sync and nothing else moves; calling it again on the same cut moves the same sound cut. The sound that grows needs that much more of its file past the cut, and the answer says where it stopped and why. It answers the two audio clips: set_crossfade on the first softens the join, preview_audio hears it.",
+    description: "J cut or L cut (a split edit) at the cut between two video clips that touch: the sound's cut moves off the picture's, the way dialog, interviews and scene changes are cut so they do not feel chopped. by is where the sound's cut goes, in seconds from the picture's cut: positive is an L cut (the outgoing clip's sound runs on under the incoming picture: a speaker finishes the thought over what they describe), negative a J cut (the incoming clip's sound starts under the outgoing picture: the next scene is heard before it is seen); 0 makes the cut straight again. 0.3 to 1 s is usual. Each clip's sound moves to an audio clip of its own (grouped with its picture, as detach_audio does), the two on one audio track, and the cut between them rolls, so both stay in sync and nothing else moves; calling it again on the same cut moves the same sound cut. The sound that grows needs that much more of its file past the cut, and the answer says where it stopped and why. The join gets a 30 ms crossfade so it does not tick (set_crossfade on the first audio clip changes it). It answers the two audio clips; preview_audio hears the join. Keep the cut clear of words: the sound that shrinks loses that much of its head or tail.",
     input: S.obj(
       {
         clip_id: S.str("A video clip on one side of the cut"),
@@ -993,7 +1002,9 @@ export const COMMANDS: Command[] = [
           : d < 0 ? `J cut: ${right.id}'s sound (${ra}) starts ${s(d)} s before its picture, under ${left.id}, where ${left.id}'s sound (${la}) ends.`
           : `Straight cut: the sounds of ${left.id} and ${right.id} (${la}, ${ra}) meet at the picture's cut.`,
         );
-        if (r.stop) report.notes.push(`Stopped at ${s(d)} s, not ${Math.abs(by)} s: ${r.stop.clip.id}: ${trimStopReason(q, r.stop.clip, r.stop.edge, r.stop.why)}.`);
+        // Out of file on the side that grows: say which trim leaves it a handle.
+        const handle = r.stop?.why !== "source" ? "" : by > 0 ? ` To let it run on, end ${left.id} earlier in its file first (trim_clip edge end, ripple true), then call again.` : ` To let it lead, start ${right.id} later in its file first (trim_clip edge start, ripple true), then call again.`;
+        if (r.stop) report.notes.push(`Stopped at ${s(d)} s, not ${Math.abs(by)} s: ${r.stop.clip.id}: ${trimStopReason(q, r.stop.clip, r.stop.edge, r.stop.why)}.${handle}`);
       }
       return q;
     },
@@ -3630,7 +3641,15 @@ export function runAgentCommand(p: Project, name: string, args: unknown = {}, re
   agentLinkage = linkage;
   try {
     const next = runCommand(p, name, args, report);
-    return next === p ? p : ops.settle(p, next, { magnet: false, linkage });
+    if (next === p) return p;
+    const out = ops.settle(p, next, { magnet: false, linkage });
+    // A detached sound an edit left behind its picture is said, with the
+    // call that lines it up again: it used to go without a word (ADR-147).
+    for (const l of report ? lostSync(p, out) : []) {
+      const note = `${l.audio}, the sound of ${l.video}, is now ${+Math.abs(l.seconds).toFixed(3)} s out of sync with its picture (its place on its track was taken, or one of the two moved alone): sync_to_clip {clip_id: "${l.audio}", to_clip_id: "${l.video}", offset: 0} lines it up again.`;
+      if (!report!.notes?.includes(note)) (report!.notes ??= []).push(note);
+    }
+    return out;
   } finally {
     agentLinkage = outer;
   }

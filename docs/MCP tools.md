@@ -673,7 +673,7 @@ Split a video or audio clip at several SOURCE times (seconds into its media file
 
 ### trim_clip
 
-Move a clip's start or end edge to a time. Limited by the source media and neighbors (the answer says where it stopped and why); ripple=true shifts later clips instead of stopping at them.
+Move a clip's start or end edge to a time. Limited by the source media and neighbors (the answer says where it stopped and why); ripple=true shifts later clips instead of stopping at them. A picture whose sound is detached (detach_audio, jl_cut) takes its sound along: the sound's same edge moves by the same amount, a J or L cut keeping its offset; trimming the audio clip itself moves the sound alone.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -758,7 +758,7 @@ Example:
 
 ### jl_cut
 
-J cut or L cut (a split edit) at the cut between two video clips that touch: the sound's cut moves off the picture's, the way dialog, interviews and scene changes are cut so they do not feel chopped. by is where the sound's cut goes, in seconds from the picture's cut: positive is an L cut (the outgoing clip's sound runs on under the incoming picture: a speaker finishes the thought over what they describe), negative a J cut (the incoming clip's sound starts under the outgoing picture: the next scene is heard before it is seen); 0 makes the cut straight again. 0.3 to 1 s is usual. Each clip's sound moves to an audio clip of its own (grouped with its picture, as detach_audio does), the two on one audio track, and the cut between them rolls, so both stay in sync and nothing else moves; calling it again on the same cut moves the same sound cut. The sound that grows needs that much more of its file past the cut, and the answer says where it stopped and why. It answers the two audio clips: set_crossfade on the first softens the join, preview_audio hears it.
+J cut or L cut (a split edit) at the cut between two video clips that touch: the sound's cut moves off the picture's, the way dialog, interviews and scene changes are cut so they do not feel chopped. by is where the sound's cut goes, in seconds from the picture's cut: positive is an L cut (the outgoing clip's sound runs on under the incoming picture: a speaker finishes the thought over what they describe), negative a J cut (the incoming clip's sound starts under the outgoing picture: the next scene is heard before it is seen); 0 makes the cut straight again. 0.3 to 1 s is usual. Each clip's sound moves to an audio clip of its own (grouped with its picture, as detach_audio does), the two on one audio track, and the cut between them rolls, so both stay in sync and nothing else moves; calling it again on the same cut moves the same sound cut. The sound that grows needs that much more of its file past the cut, and the answer says where it stopped and why. The join gets a 30 ms crossfade so it does not tick (set_crossfade on the first audio clip changes it). It answers the two audio clips; preview_audio hears the join. Keep the cut clear of words: the sound that shrinks loses that much of its head or tail.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|

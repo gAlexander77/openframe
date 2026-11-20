@@ -183,7 +183,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   sound is extracted onto one audio track and the cut between the two
   sounds rolls off the picture's cut, later for an L cut and earlier for
   a J cut, measured from the picture's cut so a second call moves the
-  same cut ([[ADR-147 Story tools reuse the title, the roll and the detached sound]]).
+  same cut, the join crossfaded 30 ms so it does not tick. An agent's
+  `trim_clip` on a picture whose sound is extracted moves the sound's
+  same edge with it, and any agent edit that leaves an extracted sound
+  out of sync with its picture says so and names the call that lines
+  them up ([[ADR-147 Story tools reuse the title, the roll and the detached sound]]).
 - **Selected edit points:** click a clip edge with Select to draw a bracket;
   add other edges with Shift, or choose both touching sides with Alt or a
   double-click for a roll. Extend Edit moves them to the playhead, and the

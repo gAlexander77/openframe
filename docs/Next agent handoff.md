@@ -20,6 +20,15 @@ Claude Code or Codex pickup. Read it before resuming previous tasks.
   `jl_cut`, `add_counter`, `set_counter`, `add_credits`, `highlight_words`,
   `add_progress_bar`, `export_frame`, and a `documentary` playbook and
   prompt. 204 tools.
+- **Also fixed in it**, found by running the documentary playbook end to
+  end (`scripts/drive/documentary-flow.js`): numbers split across caption
+  words, words shorter than a frame dropped from captions, and a ripple
+  trim that left detached sound out of sync. `trim_clip` on a picture now
+  takes its detached sound along, and any agent edit that leaves one out of
+  sync says so. The timeline's own drag trim is unchanged.
+- **`ad-spot.js` did not run in this round**: it needs the downloaded
+  `person-pan.mp4`, and the download answered 429. Rerun it once the
+  fixture is there.
 - **Next for these tools:**
   - buttons for them (a counter and a credits card in the Text tab, J/L
     cut in the clip menu, Save frame as JPEG); today only the in-app

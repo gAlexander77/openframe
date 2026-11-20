@@ -21,6 +21,9 @@ export function monotonicWords(words: Word[]): Word[] {
   for (const w of [...words].filter(w => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start && w.text.trim()).sort((a, b) => a.start - b.start)) {
     const last = out.at(-1);
     if (last && w.start < last.end && key(w.text) && key(w.text) === key(last.text)) { last.end = Math.max(last.end, w.end); continue; }
+    // Whisper stamps a number's parts as words of their own ("12", ",000";
+    // "3", ".5"; "10", ":30"): one word, as it is written.
+    if (last && /\d$/.test(last.text.trim()) && /^[.,:]\d/.test(w.text.trim()) && w.start - last.end < 0.3) { last.text = last.text.trimEnd() + w.text.trim(); last.end = Math.max(last.end, w.end); continue; }
     const start = Math.max(0, w.start, last?.end ?? 0);
     if (w.end > start) out.push({ ...w, start });
   }
