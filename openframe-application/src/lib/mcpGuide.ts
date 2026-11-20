@@ -42,7 +42,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   {
     name: "Timeline",
     blurb: "Place, cut, move and arrange clips. batch runs many edits as one undo step.",
-    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "extend_edit", "trim_edits", "edit_from_source", "roll_edit", "jl_cut", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_enabled", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
+    tools: ["add_media_clip", "add_slideshow", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "extend_edit", "trim_edits", "edit_from_source", "roll_edit", "jl_cut", "punch_in_cuts", "switch_angles", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_enabled", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
   },
   {
     name: "Music, beats and markers",
@@ -149,6 +149,9 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_speed_ramp: { clip_id: "c_7", at: 8.4, moment: "slow" },
   roll_edit: { clip_id: "c_7", to: 8 },
   jl_cut: { clip_id: "c_7", by: 0.6 },
+  punch_in_cuts: { scale: 1.15, focus: { x: 0.5, y: 0.38 } },
+  switch_angles: { angles: ["c_wide", "c_close"], cuts: [{ at: 4.2, angle: "c_close" }, { at: 9.6, angle: "c_wide" }], sound_from: "c_wide" },
+  add_slideshow: { asset_ids: ["a_1", "a_2", "a_3"], seconds_each: 3.5 },
   add_counter: { text: "{n}+ creators", from: 0, to: 12500, start: 3, duration: 3, count_seconds: 1.5, style: { size: 150 } },
   add_credits: { text: "Directed by\nJordan Lee\n\nEdited by\nSam Rivera", start: 62 },
   highlight_words: { words: ["free", "today"], color: "#ffd84d", scale: 1.15 },
@@ -363,7 +366,7 @@ ${DESIGN_POINTER}`,
 1. new_project; import_media the interviews, the b-roll and the music. preview_media each file; in the desktop app analyze_footage the b-roll, so find_shots can search it by what it shows (help topic shot_log).
 2. Hear it before cutting: add_media_clip each interview on the main track, then get_transcript: its words with source seconds. Choose the lines that tell the story and their order on paper first: a strong first line (the hook), one idea a line, the ending last.
 3. Cut the talk (the radio edit): cut_ranges removes what is not used (source seconds, so one transcript stays valid through every cut); remove_silences and remove_filler_words tighten what is left; move_clip reorders lines. Cut in the breath between words, never inside one; preview_audio hears each join.
-4. Smooth the joins once the cuts are final (a sound moved off its picture is no longer cut with it): jl_cut at the cuts between speakers and scenes, by 0.3 to 1 s. An L cut lets a line finish over the next picture; a J cut lets the next voice start before its face. set_crossfade softens a sound join. Two takes in one framing cut together jump: cover the join with a cutaway (next step) or punch one side in (set_param transform.scale 1.15), as suggest_edit_points advises.
+4. Smooth the joins once the cuts are final (a sound moved off its picture is no longer cut with it): jl_cut at the cuts between speakers and scenes, by 0.3 to 1 s. An L cut lets a line finish over the next picture; a J cut lets the next voice start before its face. set_crossfade softens a sound join. Two pieces of one take cut together jump: cover the join with a cutaway (next step), or punch_in_cuts, which draws every other piece a little larger at every such cut in one call. Two cameras on the talk: sync_audio the second to the first, then switch_angles cuts between them.
 5. Cover with b-roll: add_track (video) once, then add_media_clip with that track_id and fit fill over the words each shot illustrates, 2 to 5 s each, starting a few frames after a cut in the talk and never across a change of subject; its own sound low under the voice (set_param volume 0.1 to 0.2) or off. Show the speaker when they first speak and on the lines that matter most. frame_region pushes slowly into photos and documents.
 6. Names and facts: add_ad_element lower_third (or add_text_template lowerThird) on each speaker's first appearance, 3 to 6 s; add_counter counts a number up as it is said; add_marker with chapter true marks the parts of a longer piece.
 7. Sound: normalize_loudness the talk, and add_audio_insert preset dialog_cleanup on its audio track (jl_cut puts it on one); music low under the talk with duck_under_speech, up in the pauses between parts (open_at); add_ambience under silent b-roll; set_fades at the end.
@@ -388,10 +391,10 @@ ${DESIGN_POINTER}`,
     title: "A short for TikTok, Reels or Shorts",
     text: `Making a vertical short from a talking-head clip or screen recording:
 1. new_project; set_project 1080x1920; import_media.
-2. add_media_clip the clip; remove_silences and remove_filler_words tighten the talk.
-3. auto_reframe the clip to 9:16 (or frame_region onto the speaker or the part of the screen that matters); set_canvas_fill blur for anything that does not fill the frame.
+2. add_media_clip the clip, and frame it for the tall canvas before cutting it up, so every piece takes the framing with it: auto_reframe to 9:16 (it follows the speaker), or frame_region onto the speaker or the part of the screen that matters; set_canvas_fill blur for anything that does not fill the frame.
+3. remove_silences and remove_filler_words tighten the talk; punch_in_cuts then hides the jump cuts they leave, every other piece a little larger about the speaker's face.
 4. Captions a few words at a time (the pop look): a voiceover made here captions itself so, add_voiceover caption_words 2 or 3 (each word timed to the voice; a caption of one word keeps its color, the highlight lights the word being spoken among several); for recorded speech, auto_captions captions what the people on the timeline say: words_per_caption 2 or 3 and look pop. check_project reads such captions as the line they make. On a tall canvas captions sit at y 0.05, clear of the apps' captions and buttons; set_caption_look y, size and maxWidth move, size and narrow every caption at once. highlight_words colors the one or two words a sentence that carry the point, in every caption at once.
-5. Hook title in the first second (add_text, on 9:16 size 70-110 with 2-4 words a line; ordinary titles size 50-90; with a box or outline), a few stickers or sound effects on punchlines (add_sticker, add_sound_effect); add_counter for a number that counts up; add_progress_bar last, for a list or a tutorial.
+5. Hook title in the first second (add_text at y about -0.2: higher runs under the apps' tabs; on 9:16 size 70-110 with 2-4 words a line; ordinary titles size 50-90; with a box or outline), a few stickers or sound effects on punchlines (add_sticker, add_sound_effect); add_counter for a number that counts up; add_progress_bar last, for a list or a tutorial.
 6. Music low under the voice (duck_under_speech), set_fades, normalize_loudness.
 7. preview_frames, then export_video with the social preset sizes (1080p), and export_frame for its cover.
 

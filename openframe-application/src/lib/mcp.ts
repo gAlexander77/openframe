@@ -49,6 +49,14 @@ function appAnswer(value: unknown): unknown {
 }
 const appJson = (value: unknown) => json(appAnswer(value));
 
+/** The middle of every shot on the main track, in seconds: at most `max`,
+ * spread evenly over the cut when there are more (preview_frames). */
+export function shotTimes(d: { tracks: { main?: boolean; clips: { start: number; end: number }[] }[] }, max = 24): number[] {
+  const mids = (d.tracks.find((t) => t.main)?.clips ?? []).map((c) => +((c.start + c.end) / 2).toFixed(3));
+  if (mids.length <= max) return mids;
+  return Array.from({ length: max }, (_, i) => mids[Math.round((i * (mids.length - 1)) / (max - 1))]);
+}
+
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 export interface JsonRpcRequest {
@@ -725,20 +733,22 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "preview_frames",
-    description: "See several moments at once: one JPEG contact sheet of the frames at the given times, each stamped with its time. Check a whole edit in one call, then preview_frame a moment that needs a closer look.",
+    description: "See several moments at once: one JPEG contact sheet of the frames at the given times, each stamped with its time. Without times it shows the middle of every shot on the main track (up to 24, spread evenly over the cut when there are more) and answers the times it chose: the whole edit in one look. Then preview_frame a moment that needs a closer look.",
     inputSchema: obj(
       {
         ...BEFORE_SCHEMA,
-        times: { type: "array", items: { type: "number", minimum: 0 }, description: "Seconds, up to 24" },
+        times: { type: "array", items: { type: "number", minimum: 0 }, description: "Seconds, up to 24; default the middle of every shot on the main track" },
         columns: columns(4),
         tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Width of each frame, default 320" },
       },
-      ["times"],
+      [],
     ),
     call: async (h, a) => {
-      const times = (a.times as number[]).slice(0, 24);
-      if (!times.length) throw new Error("times needs at least one time");
-      return { content: [{ type: "image", data: await h.sheet(times, Number(a.tile_width ?? 320), Number(a.columns ?? 4), a.before === true, a.before_clip_ids as string[] | undefined), mimeType: "image/jpeg" }] };
+      const given = a.times !== undefined;
+      const times = given ? (a.times as number[]).slice(0, 24) : shotTimes(h.describe() as { tracks: { main?: boolean; clips: { start: number; end: number }[] }[] });
+      if (!times.length) throw new Error(given ? "times needs at least one time" : "The main track is empty: give times");
+      const image = { type: "image" as const, data: await h.sheet(times, Number(a.tile_width ?? 320), Number(a.columns ?? 4), a.before === true, a.before_clip_ids as string[] | undefined), mimeType: "image/jpeg" };
+      return { content: given ? [image] : [image, { type: "text", text: JSON.stringify({ times }) }] };
     },
   },
   {
@@ -1010,11 +1020,11 @@ APP_TOOLS.push(
   {
     name: "sync_audio",
     description:
-      "Line up a separately recorded sound (a lav, a recorder) with the camera clip of the same take by matching their waveforms on this computer (CapCut's Sync video and audio, Resolve's Auto Sync Audio), then move the audio clip into sync, exact to the sample (one undo step; sound before 0 is trimmed off its head). Answers the offset (audio source seconds minus video source seconds) and a confidence; refuses when the sounds do not clearly match. sync_to_clip places it by a known offset instead.",
+      "Line up a separately recorded sound (a lav, a recorder) with the camera clip of the same take by matching their waveforms on this computer (CapCut's Sync video and audio, Resolve's Auto Sync Audio), then move the audio clip into sync, exact to the sample (one undo step; sound before 0 is trimmed off its head). Answers the offset (audio source seconds minus video source seconds) and a confidence; refuses when the sounds do not clearly match. sync_to_clip places it by a known offset instead. A second camera syncs the same way, for switch_angles: clip_id its video clip (on a track above the main one, never on the main track) and video_clip_id the camera it lines up with.",
     inputSchema: obj(
       {
-        clip_id: { type: "string", description: "The audio clip to move" },
-        video_clip_id: { type: "string", description: "The camera clip; default the video with sound that plays with it longest" },
+        clip_id: { type: "string", description: "The audio clip to move; or a second camera's video clip, with video_clip_id" },
+        video_clip_id: { type: "string", description: "The camera clip; default the video with sound that plays with it longest (required when clip_id is a video)" },
         mute_camera: { type: "boolean", description: "Set the video's volume to 0 (default false)" },
       },
       ["clip_id"],

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeProject, runCommand, type CommandReport } from "./commands";
-import { describeChanges, handleMcp, listTools, type McpHost, TOOLS_META, toolsFingerprint } from "./mcp";
+import { describeChanges, handleMcp, listTools, type McpHost, TOOLS_META, toolsFingerprint, shotTimes } from "./mcp";
 import { createProject } from "./project/defaults";
 import type { Project } from "./project/types";
 
@@ -273,6 +273,22 @@ describe("MCP edits answer with what changed", () => {
     const r = await call(h, "tools/call", { name: "preview_frames", arguments: { times: [1, 2, 3] } });
     expect((r!.result as { content: { type: string }[] }).content[0]).toMatchObject({ type: "image" });
     expect(h.sheets).toEqual([[[1, 2, 3], 320, 4]]);
+  });
+
+  it("looks at the middle of every shot when preview_frames is given no times, and says which", async () => {
+    const h = host();
+    expect(text(await call(h, "tools/call", { name: "preview_frames", arguments: {} }))).toContain("The main track is empty");
+    await run(h, "add_media_clip", { asset_id: "a1", start: 0, duration: 2 });
+    await run(h, "add_media_clip", { asset_id: "a1", start: 2, in: 5, duration: 4 });
+    const r = await call(h, "tools/call", { name: "preview_frames", arguments: {} });
+    const content = (r!.result as { content: { type: string; text?: string }[] }).content;
+    expect(content.map((c) => c.type)).toEqual(["image", "text"]);
+    expect(JSON.parse(content[1].text!)).toEqual({ times: [1, 4] });
+    expect(h.sheets.at(-1)).toEqual([[1, 4], 320, 4]);
+    // More shots than a sheet holds: spread evenly, the first and last kept.
+    const many = { tracks: [{ main: true, clips: Array.from({ length: 50 }, (_, i) => ({ start: i, end: i + 1 })) }] };
+    const picked = shotTimes(many);
+    expect([picked.length, picked[0], picked.at(-1)]).toEqual([24, 0.5, 49.5]);
   });
 });
 

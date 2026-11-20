@@ -1273,7 +1273,13 @@ function cameraFor(audio: AudioClip, videoId?: Id): VideoClip {
  */
 export async function syncAudio(clipId?: Id, opts: { videoId?: Id; muteCamera?: boolean } = {}): Promise<SyncEdit> {
   const scope = projectWork.capture();
-  const t = targetFor("sync", clipId);
+  // A second camera (ADR-148): a video clip named outright, with the camera
+  // it syncs to, moves into sync like a recorder's sound. The tool's own
+  // target stays an audio clip, so a selection of both still picks the audio.
+  const named = clipId && opts.videoId ? ops.findClip(store.get().project, clipId)?.clip : undefined;
+  const camera2 = named?.type === "video" ? { clip: named, asset: ops.getAsset(store.get().project, named.assetId) } : null;
+  if (camera2 && !camera2.asset?.hasAudio) refuse(`${camera2.asset?.name ?? clipId} has no sound of its own to match`);
+  const t = camera2 ? (camera2 as Target) : targetFor("sync", clipId);
   if (typeof t === "string") refuse(t);
   const { clip, asset } = t;
   const video = cameraFor(clip as AudioClip, opts.videoId);

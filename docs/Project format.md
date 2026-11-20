@@ -88,6 +88,11 @@ Clip    = video | audio | image | text | color | adjustment | compound   (see ty
             tapeStop? (sound design; see Sound design below)
           text clips may carry wordTimes?: number[] (frames from the clip's start
             each word is spoken) and style.highlight?: color of the spoken word
+          video clips may carry punch?: { scale, fx, fy, to }: the punch-in
+            punch_in_cuts applied (already in transform and its keys):
+            times the scale, about the point (fx, fy) of the frame, and the
+            scale it left; kept so a second call takes it back first
+            (src/lib/punchIn.ts, ADR-148)
           text clips may carry counter?: { from, to, seconds, decimals?,
             format?: number | plain | time, ease? }: every {n} in the text
             reads as a number running from `from` to `to` over `seconds` from

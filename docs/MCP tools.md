@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 204 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 207 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -46,7 +46,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Shot log**: `analyze_footage`, `get_shot_log`, `find_shots`, `suggest_edit_points`, `describe_moment`
 - **Clips**: `find_highlights`, `add_highlight_markers`, `apply_stream_layout`, `create_clips`, `export_projects`
 - **Media**: `import_media`, `create_proxies`, `delete_proxies`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
-- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `extend_edit`, `trim_edits`, `edit_from_source`, `roll_edit`, `jl_cut`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
+- **Timeline**: `add_media_clip`, `add_slideshow`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `extend_edit`, `trim_edits`, `edit_from_source`, `roll_edit`, `jl_cut`, `punch_in_cuts`, `switch_angles`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `move_motion_point`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `apply_layout`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
 - **Graphics and compositing**: `add_shape`, `set_shape`, `add_progress_bar`, `add_callout`, `set_anchor`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
@@ -580,6 +580,28 @@ Example:
 {"name":"add_media_clip","arguments":{"asset_id":"a_123","start":0,"duration":3.5,"in":12}}
 ```
 
+### add_slideshow
+
+Lay pictures (or video clips) end to end as a slideshow in one call: each is on for seconds_each (or they share duration equally), filling the frame, with a slow steady Ken Burns move (a push in, a drift, a pull out, a drift back, in turn, so no two neighbors move alike) and a transition at every cut. For photo montages, recaps and runs of b-roll. It goes at start on the main track (default: after what is there), or on track_id, over whatever is there. Each picture is an ordinary clip afterwards: frame_region reframes one on what matters in it, set_transition changes a cut, trim_clip a length. For pictures cut on the music use cut_to_beats instead, then frame_region. Example: {asset_ids: ['a_1', 'a_2', 'a_3'], seconds_each: 3.5}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_ids` | string[] | yes | Pictures or videos, in the order shown (an id may repeat) |
+| `start` | number |  | Timeline seconds; default the end of the track it goes on (0..) |
+| `seconds_each` | number |  | Seconds each one is on; default 3 (0.2..) |
+| `duration` | number |  | Instead of seconds_each: seconds for the whole slideshow, shared equally (0.5..) |
+| `motion` | "ken_burns" \| "none" |  | ken_burns (default): a slow move on each; none: still |
+| `transition` | "dissolve" \| "dipBlack" \| "dipWhite" \| "wipeLeft" \| "wipeRight" \| "wipeUp" \| "wipeDown" \| "circleOpen" \| "clockWipe" \| "slideLeft" \| "slideRight" \| "pushLeft" \| "pushUp" \| "zoomIn" \| "zoomOut" \| "spin" \| "blur" \| "pixelate" \| "glitch" \| "flash" \| "whipLeft" \| "whipRight" \| "zoomPunch" \| "spinBlur" \| "none" |  | The transition at every cut; default dissolve |
+| `transition_seconds` | number |  | Seconds each transition takes; default 0.5, at most a third of the shorter picture (0.05..) |
+| `fit` | "fill" \| "fit" \| "blur" |  | fill (default) covers the frame; fit shows all of each picture, with bands; blur fits it over a blurred copy of itself |
+| `track_id` | string |  | Video track id; default the main track |
+
+Example:
+
+```json
+{"name":"add_slideshow","arguments":{"asset_ids":["a_1","a_2","a_3"],"seconds_each":3.5}}
+```
+
 ### add_color_clip
 
 Add a solid color layer (backgrounds, flashes, title cards). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.
@@ -770,6 +792,43 @@ Example:
 
 ```json
 {"name":"jl_cut","arguments":{"clip_id":"c_7","by":0.6}}
+```
+
+### punch_in_cuts
+
+Hide the jump cuts in a talking head by punching in: where two pieces of one shot meet with something cut out between them (after remove_silences, remove_filler_words or cut_ranges), every other piece is drawn a little larger, so each cut reads as a change of shot size instead of a jump. The standard fix for interviews, vlogs and shorts cut from one take; suggest_edit_points advises it cut by cut. scale is how much larger (default 1.15: 1.1 to 1.25 reads as meant, less reads as a mistake); focus is the point of the frame that stays where it is, fractions from its top left (default {x: 0.5, y: 0.4}, where a framed face sits: put it on the eyes when the speaker is off center, as preview_frame shows). Every video clip on the main track is considered unless clip_ids names them. Calling again starts from each piece's own framing, so it never compounds, and after more cuts it evens the pattern out; off: true removes the punch-ins. Framing that is keyed (auto_reframe, a frame_region move, tracking) is scaled key by key, so frame the take first and punch in after; a piece reframed since its punch-in keeps the new framing as its own. A cutaway over a cut hides it too: punch in where there is none.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] |  | Video clips to consider; default every video clip on the main track |
+| `scale` | number |  | How much larger the punched-in pieces are; default 1.15 (1.02..2) |
+| `focus` | { x, y } |  | The point of the frame that stays where it is; default {x: 0.5, y: 0.4} |
+| `focus.x` | number | yes | Across the frame, 0 left to 1 right (0..1) |
+| `focus.y` | number | yes | Down the frame, 0 top to 1 bottom (0..1) |
+| `off` | boolean |  | Remove the punch-ins instead |
+
+Example:
+
+```json
+{"name":"punch_in_cuts","arguments":{"scale":1.15,"focus":{"x":0.5,"y":0.38}}}
+```
+
+### switch_angles
+
+Multicam: cut between camera angles of one moment (two cameras on an interview, a wide and a close shot of a talk, a screen and a face). The angles are clips of the same event stacked on different video tracks and already in sync: sync_audio lines a second camera up with the first by their sound, sync_to_clip by a known offset. The first of angles shows until the first cut; each cut's angle shows from its at on. Nothing is split: each angle keeps its place, and the switch is an opacity key that holds (describe_project shows them), so sync cannot slip and calling again with other cuts replaces the program (cuts [] shows the first angle throughout). sound_from keeps one clip's sound, an angle's or a separate recording's (an audio clip), and mutes the other angles; without it the sound is left as it is, and the answer says when more than one angle is heard. Switch a few frames before a new speaker starts (get_transcript has the words' times), hold the wide shot while people talk over each other, and keep switches more than 1.5 s apart. Example: {angles: ['c_wide', 'c_close'], cuts: [{at: 4.2, angle: 'c_close'}, {at: 9.6, angle: 'c_wide'}], sound_from: 'c_wide'}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `angles` | string[] | yes | The angle clips, two or more, on different video tracks; the first shows until the first cut |
+| `cuts` | { at, angle }[] | yes | The switches, in any order; [] shows the first angle throughout |
+| `cuts[].at` | number | yes | Timeline seconds the angle takes over (0..) |
+| `cuts[].angle` | string | yes | The clip id of the angle to show from then |
+| `sound_from` | string |  | The one clip whose sound is kept: an angle, or an audio clip (a recorder's); the other angles are muted |
+
+Example:
+
+```json
+{"name":"switch_angles","arguments":{"angles":["c_wide","c_close"],"cuts":[{"at":4.2,"angle":"c_close"},{"at":9.6,"angle":"c_wide"}],"sound_from":"c_wide"}}
 ```
 
 ### slip_clip
@@ -3176,12 +3235,12 @@ Take steady background noise (hiss, hum, fans, room tone) out of a clip's sound 
 
 ### sync_audio
 
-Line up a separately recorded sound (a lav, a recorder) with the camera clip of the same take by matching their waveforms on this computer (CapCut's Sync video and audio, Resolve's Auto Sync Audio), then move the audio clip into sync, exact to the sample (one undo step; sound before 0 is trimmed off its head). Answers the offset (audio source seconds minus video source seconds) and a confidence; refuses when the sounds do not clearly match. sync_to_clip places it by a known offset instead.
+Line up a separately recorded sound (a lav, a recorder) with the camera clip of the same take by matching their waveforms on this computer (CapCut's Sync video and audio, Resolve's Auto Sync Audio), then move the audio clip into sync, exact to the sample (one undo step; sound before 0 is trimmed off its head). Answers the offset (audio source seconds minus video source seconds) and a confidence; refuses when the sounds do not clearly match. sync_to_clip places it by a known offset instead. A second camera syncs the same way, for switch_angles: clip_id its video clip (on a track above the main one, never on the main track) and video_clip_id the camera it lines up with.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `clip_id` | string | yes | The audio clip to move |
-| `video_clip_id` | string |  | The camera clip; default the video with sound that plays with it longest |
+| `clip_id` | string | yes | The audio clip to move; or a second camera's video clip, with video_clip_id |
+| `video_clip_id` | string |  | The camera clip; default the video with sound that plays with it longest (required when clip_id is a video) |
 | `mute_camera` | boolean |  | Set the video's volume to 0 (default false) |
 | `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
@@ -3233,13 +3292,13 @@ Example:
 
 ### preview_frames
 
-See several moments at once: one JPEG contact sheet of the frames at the given times, each stamped with its time. Check a whole edit in one call, then preview_frame a moment that needs a closer look.
+See several moments at once: one JPEG contact sheet of the frames at the given times, each stamped with its time. Without times it shows the middle of every shot on the main track (up to 24, spread evenly over the cut when there are more) and answers the times it chose: the whole edit in one look. Then preview_frame a moment that needs a closer look.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `before` | boolean |  | Bypass the look for an ungraded comparison, without editing the project (default false) |
 | `before_clip_ids` | string[] |  | Clip IDs whose look to bypass when before is true; default all visible clips, including adjustment layers |
-| `times` | number[] | yes | Seconds, up to 24 |
+| `times` | number[] |  | Seconds, up to 24; default the middle of every shot on the main track |
 | `columns` | integer |  | Tiles a row, at most 8; default 4 (1..8) |
 | `tile_width` | integer |  | Width of each frame, default 320 (120..640) |
 | `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |

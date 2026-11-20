@@ -79,6 +79,8 @@ import { isFootage, placeOnTop, placeStack, underAdjustmentNote } from "./overla
 import { COUNTER_FORMATS, COUNTER_MAX_DECIMALS, COUNTER_TOKEN } from "./counter";
 import { creditsRoll, creditsStyle, CREDITS_BLOCK, CREDITS_LINE_SECONDS } from "./credits";
 import { cutNeighbors, soundMate, splitEdit } from "./project/splitEdit";
+import { punchInCuts, PUNCH_FOCUS, PUNCH_SCALE } from "./punchIn";
+import { AngleError, switchAngles } from "./multicam";
 import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
 import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW_PARAMS } from "./shadow";
 import { BORDER_DEFAULT, BORDER_PARAMS, BORDER_WIDTH_MAX, cleanBorder } from "./border";
@@ -363,6 +365,15 @@ const RUN_STYLE = {
   underline: S.bool("Underline letters"),
   scale: S.num("Size multiplier relative to the base size", { minimum: 0.25, maximum: 4 }),
 };
+
+/** A slideshow's moves, in turn: push in, drift right, pull out, drift left
+ * (parts of the picture, as frame_region takes them). */
+const KEN_BURNS: [Region, Region][] = [
+  [{ x: 0, y: 0, w: 1, h: 1 }, { x: 0.07, y: 0.07, w: 0.86, h: 0.86 }],
+  [{ x: 0, y: 0.06, w: 0.88, h: 0.88 }, { x: 0.12, y: 0.06, w: 0.88, h: 0.88 }],
+  [{ x: 0.07, y: 0.07, w: 0.86, h: 0.86 }, { x: 0, y: 0, w: 1, h: 1 }],
+  [{ x: 0.12, y: 0.06, w: 0.88, h: 0.88 }, { x: 0, y: 0.06, w: 0.88, h: 0.88 }],
+];
 
 /** highlight_words' color when none is given: the marker sweep's yellow. */
 const HIGHLIGHT_COLOR = "#ffd84d";
@@ -718,6 +729,60 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "add_slideshow",
+    description: "Lay pictures (or video clips) end to end as a slideshow in one call: each is on for seconds_each (or they share duration equally), filling the frame, with a slow steady Ken Burns move (a push in, a drift, a pull out, a drift back, in turn, so no two neighbors move alike) and a transition at every cut. For photo montages, recaps and runs of b-roll. It goes at start on the main track (default: after what is there), or on track_id, over whatever is there. Each picture is an ordinary clip afterwards: frame_region reframes one on what matters in it, set_transition changes a cut, trim_clip a length. For pictures cut on the music use cut_to_beats instead, then frame_region. Example: {asset_ids: ['a_1', 'a_2', 'a_3'], seconds_each: 3.5}.",
+    input: S.obj(
+      {
+        asset_ids: S.ids("Pictures or videos, in the order shown (an id may repeat)"),
+        start: S.num("Timeline seconds; default the end of the track it goes on", { minimum: 0 }),
+        seconds_each: S.num("Seconds each one is on; default 3", { minimum: 0.2 }),
+        duration: S.num("Instead of seconds_each: seconds for the whole slideshow, shared equally", { minimum: 0.5 }),
+        motion: S.str("ken_burns (default): a slow move on each; none: still", { enum: ["ken_burns", "none"] }),
+        transition: S.str("The transition at every cut; default dissolve", { enum: [...Object.keys(TRANSITIONS), "none"] }),
+        transition_seconds: S.num("Seconds each transition takes; default 0.5, at most a third of the shorter picture", { minimum: 0.05 }),
+        fit: S.str("fill (default) covers the frame; fit shows all of each picture, with bands; blur fits it over a blurred copy of itself", { enum: ["fill", "fit", "blur"] }),
+        track_id: S.str("Video track id; default the main track"),
+      },
+      ["asset_ids"],
+    ),
+    run: (p, a, report) => {
+      const ids = a.asset_ids as Id[];
+      if (!ids.length) throw new CommandError("asset_ids needs at least one picture");
+      if (a.duration !== undefined && a.seconds_each !== undefined) throw new CommandError("give seconds_each (each picture) or duration (the whole slideshow), not both");
+      for (const id of ids) {
+        const asset = ops.getAsset(p, id);
+        if (!asset) throw new CommandError(`no asset with id ${id}`);
+        if (asset.kind === "audio") throw new CommandError(`${asset.name} is sound only: a slideshow takes pictures and videos`);
+      }
+      const track = a.track_id !== undefined ? trackOrThrow(p, a.track_id) : ops.mainTrack(p);
+      if (track.kind !== "video") throw new CommandError(`track ${track.id} is an audio track`);
+      const each = a.duration !== undefined ? Number(a.duration) / ids.length : Number(a.seconds_each ?? 3);
+      const fit = a.fit ?? "fill";
+      let q = p, cursor = a.start !== undefined ? f(p, a.start) : ops.timelineEnd([track]);
+      const made: Clip[] = [];
+      ids.forEach((asset_id, i) => {
+        const before = new Set(q.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+        // Each starts where the one before really ended: a video shorter than its turn leaves no gap.
+        q = COMMAND_INDEX.get("add_media_clip")!.run(q, { asset_id, start: framesToSeconds(cursor, p.fps), duration: each, fit, track_id: track.id });
+        const clip = q.tracks.flatMap((t) => t.clips).find((c) => !before.has(c.id))!;
+        if (a.motion !== "none") {
+          const [from, to] = KEN_BURNS[i % KEN_BURNS.length];
+          q = frameMoves(q, clip.id, [{ region: from, f: 0 }, { region: to, f: clip.duration - 1, ease: "linear" }], fit === "fill" ? "fill" : "fit");
+        }
+        made.push(clip);
+        cursor = ops.clipEnd(clip);
+      });
+      if (a.transition !== "none") {
+        made.slice(0, -1).forEach((c, i) => {
+          const frames = Math.max(2, Math.min(f(p, a.transition_seconds ?? 0.5), Math.floor(Math.min(c.duration, made[i + 1].duration) / 3)));
+          q = ops.setTransition(q, c.id, { type: String(a.transition ?? "dissolve"), duration: frames });
+        });
+      }
+      if (report) (report.notes ??= []).push(`${made.length} picture${made.length === 1 ? "" : "s"} from ${+framesToSeconds(made[0].start, p.fps).toFixed(3)} to ${+framesToSeconds(cursor, p.fps).toFixed(3)} s on ${track.name}.`);
+      return q;
+    },
+  },
+  {
     name: "add_text",
     description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). It lands above everything at that time (titles, shapes, a grade or beat hits), sharing a free titles track when one is there; on track_id it goes where asked, and the answer notes an adjustment layer above it (its grade or zoom applies to the title too). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; \n breaks a line where you choose.",
     input: S.obj(
@@ -1007,6 +1072,48 @@ export const COMMANDS: Command[] = [
         if (r.stop) report.notes.push(`Stopped at ${s(d)} s, not ${Math.abs(by)} s: ${r.stop.clip.id}: ${trimStopReason(q, r.stop.clip, r.stop.edge, r.stop.why)}.${handle}`);
       }
       return q;
+    },
+  },
+  {
+    name: "punch_in_cuts",
+    description: `Hide the jump cuts in a talking head by punching in: where two pieces of one shot meet with something cut out between them (after remove_silences, remove_filler_words or cut_ranges), every other piece is drawn a little larger, so each cut reads as a change of shot size instead of a jump. The standard fix for interviews, vlogs and shorts cut from one take; suggest_edit_points advises it cut by cut. scale is how much larger (default ${PUNCH_SCALE}: 1.1 to 1.25 reads as meant, less reads as a mistake); focus is the point of the frame that stays where it is, fractions from its top left (default {x: ${PUNCH_FOCUS.x}, y: ${PUNCH_FOCUS.y}}, where a framed face sits: put it on the eyes when the speaker is off center, as preview_frame shows). Every video clip on the main track is considered unless clip_ids names them. Calling again starts from each piece's own framing, so it never compounds, and after more cuts it evens the pattern out; off: true removes the punch-ins. Framing that is keyed (auto_reframe, a frame_region move, tracking) is scaled key by key, so frame the take first and punch in after; a piece reframed since its punch-in keeps the new framing as its own. A cutaway over a cut hides it too: punch in where there is none.`,
+    input: S.obj({
+      clip_ids: S.ids("Video clips to consider; default every video clip on the main track"),
+      scale: S.num(`How much larger the punched-in pieces are; default ${PUNCH_SCALE}`, { minimum: 1.02, maximum: 2 }),
+      focus: S.obj({ x: S.num("Across the frame, 0 left to 1 right", { minimum: 0, maximum: 1 }), y: S.num("Down the frame, 0 top to 1 bottom", { minimum: 0, maximum: 1 }) }, ["x", "y"], `The point of the frame that stays where it is; default {x: ${PUNCH_FOCUS.x}, y: ${PUNCH_FOCUS.y}}`),
+      off: S.bool("Remove the punch-ins instead"),
+    }),
+    run: (p, a, report) => {
+      const ids = a.clip_ids ? (a.clip_ids as Id[]).map((id) => clipOrThrow(p, id).clip.id) : undefined;
+      const r = punchInCuts(p, { ...(ids ? { ids } : {}), ...(a.scale !== undefined ? { scale: Number(a.scale) } : {}), ...(a.focus ? { focus: a.focus as { x: number; y: number } } : {}), off: a.off === true });
+      if (!r.cuts && a.off !== true) throw new CommandError(`no jump cuts ${ids ? "among those clips" : "on the main track"}: a jump cut is two pieces of one file that meet with something cut out between them (remove_silences and cut_ranges make them)`);
+      if (report) (report.notes ??= []).push(a.off === true ? "Punch-ins removed." : `${r.cuts} jump cut${r.cuts === 1 ? "" : "s"}: ${r.punched.length} of ${r.pieces} pieces punched in to ${a.scale ?? PUNCH_SCALE}x.`);
+      return r.project;
+    },
+  },
+  {
+    name: "switch_angles",
+    description: "Multicam: cut between camera angles of one moment (two cameras on an interview, a wide and a close shot of a talk, a screen and a face). The angles are clips of the same event stacked on different video tracks and already in sync: sync_audio lines a second camera up with the first by their sound, sync_to_clip by a known offset. The first of angles shows until the first cut; each cut's angle shows from its at on. Nothing is split: each angle keeps its place, and the switch is an opacity key that holds (describe_project shows them), so sync cannot slip and calling again with other cuts replaces the program (cuts [] shows the first angle throughout). sound_from keeps one clip's sound, an angle's or a separate recording's (an audio clip), and mutes the other angles; without it the sound is left as it is, and the answer says when more than one angle is heard. Switch a few frames before a new speaker starts (get_transcript has the words' times), hold the wide shot while people talk over each other, and keep switches more than 1.5 s apart. Example: {angles: ['c_wide', 'c_close'], cuts: [{at: 4.2, angle: 'c_close'}, {at: 9.6, angle: 'c_wide'}], sound_from: 'c_wide'}.",
+    input: S.obj(
+      {
+        angles: S.ids("The angle clips, two or more, on different video tracks; the first shows until the first cut"),
+        cuts: { type: "array", description: "The switches, in any order; [] shows the first angle throughout", items: S.obj({ at: S.num("Timeline seconds the angle takes over", { minimum: 0 }), angle: S.str("The clip id of the angle to show from then") }, ["at", "angle"]) },
+        sound_from: S.str("The one clip whose sound is kept: an angle, or an audio clip (a recorder's); the other angles are muted"),
+      },
+      ["angles", "cuts"],
+    ),
+    run: (p, a, report) => {
+      try {
+        const r = switchAngles(p, a.angles as Id[], (a.cuts as { at: number; angle: string }[]).map((c) => ({ at: f(p, c.at), angle: String(c.angle) })), a.sound_from === undefined ? undefined : String(a.sound_from));
+        if (report) {
+          const s = (frame: number) => +framesToSeconds(frame, p.fps).toFixed(3);
+          (report.notes ??= []).push(`Program: ${r.program.slice(0, 24).map((c) => `${c.angle} from ${s(c.at)} s`).join(", ")}${r.program.length > 24 ? `, and ${r.program.length - 24} more switches` : ""}.`);
+          if (r.sounding.length > 1) report.notes.push(`${r.sounding.length} angles are heard at once (${r.sounding.join(", ")}): sound_from keeps one.`);
+        }
+        return r.project;
+      } catch (e) {
+        throw e instanceof AngleError ? new CommandError(e.message) : e;
+      }
     },
   },
   {
@@ -3746,6 +3853,7 @@ export function describeProject(p: Project) {
         ...("fadeOutCurve" in c && c.fadeOutCurve ? { fade_out_curve: c.fadeOutCurve } : {}),
         ...("crossfadeCurve" in c && c.crossfadeCurve ? { crossfade_curve: c.crossfadeCurve } : {}),
         ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),
+        ...(c.type === "video" && c.punch ? { punch_in: c.punch.scale } : {}),
         ...("blend" in c && c.blend !== "normal" ? { blend: c.blend } : {}),
         ...((c.type === "video" || c.type === "image") && c.chromaKey?.enabled ? { chroma_key: c.chromaKey.color } : {}),
         ...((c.type === "video" || c.type === "image") && c.canvas ? { canvas_fill: c.canvas.type } : {}),

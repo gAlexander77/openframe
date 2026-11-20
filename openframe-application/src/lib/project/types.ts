@@ -1001,7 +1001,21 @@ export type VideoClip = ClipBase &
      * or a source rate unlike the project's), mix them by where the frame
      * falls instead of repeating one. */
     frameBlend?: boolean;
+    /** The punch-in punch_in_cuts gave this piece of a cut-up shot
+     * (lib/punchIn.ts, ADR-148): already in `transform`, kept so punching
+     * in again starts from the piece's own framing. */
+    punch?: Punch;
   };
+
+/** A punch-in as applied: times the scale, about the point (fx, fy) of
+ * the frame (fractions from its top left), and the scale it left the
+ * clip at, by which a later reframing is told from the punch-in. */
+export interface Punch {
+  scale: number;
+  fx: number;
+  fy: number;
+  to: number;
+}
 export type AudioClip = ClipBase &
   Sound &
   Timed & {
