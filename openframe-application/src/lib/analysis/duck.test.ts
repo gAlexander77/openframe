@@ -88,6 +88,16 @@ describe("where the music comes up between lines (film test 2, ADR-114)", () => 
     expect(plan.dips).toBe(1);
   });
 
+  it("opens at the music's own level when a second of title comes before the first line, and comes up after the last", () => {
+    // The blind documentary test (ADR-148): a first line 1 s in. Under the
+    // 1.1 s that holds a pause between lines down, yet nothing pumps at the
+    // song's own start: up for the title, down 0.1 s before the voice.
+    const plan = duckPlan([[30, 200]], 0, 240, T);
+    expect(k(plan.keys)).toEqual([[27, 1], [30, LOW], [200, LOW], [212, 1]]);
+    // A stretch at an edge under half the gap is still a blip and stays down.
+    expect(k(duckPlan([[12, 200]], 0, 210, T).keys)).toEqual([[0, LOW], [209, LOW]]);
+  });
+
   it("comes up on a moment asked for (a drop), however short its pause, and down after it", () => {
     const plan = duckPlan(lines, 0, 1440, { ...T, open: [240] });
     expect(k(plan.keys)).toEqual([[0, LOW], [220, LOW], [232, 1], [247, 1], [250, LOW], [415, LOW], [427, 1]]);

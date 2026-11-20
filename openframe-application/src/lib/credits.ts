@@ -64,9 +64,11 @@ export function creditsRoll(p: Project, text: string, start: number, style: Part
   if (!blocks.length) return { clips: [], frames: 0, lineSeconds: 0, lines: 0 };
   // Heights of the frame a second: the roll travels its own height plus one frame's.
   const speed = o.frames !== undefined ? ((1 + off) * fps) / Math.max(1, o.frames) : 1 / (o.lineSeconds ?? CREDITS_LINE_SECONDS);
+  const total = o.frames ?? Math.ceil(((1 + off) / speed) * fps);
   const clips = blocks.map((b) => {
     const from = Math.max(0, Math.floor(((b.off - b.pad) / speed) * fps));
-    const to = Math.ceil(((1 + b.off + b.h + b.pad) / speed) * fps);
+    // Never past the length asked for: the margin a raster has around its letters is empty.
+    const to = Math.min(total, Math.ceil(((1 + b.off + b.h + b.pad) / speed) * fps));
     const duration = Math.max(2, to - from);
     // Where its center is at a frame of the roll: every block on one line
     // of motion, whatever frame its clip starts on.
@@ -79,7 +81,7 @@ export function creditsRoll(p: Project, text: string, start: number, style: Part
       keyframes: { "transform.y": [{ f: 0, v: y(from) }, { f: duration - 1, v: y(from + duration - 1) }] },
     } as TextClip;
   });
-  return { clips, frames: Math.ceil(((1 + off) / speed) * fps), lineSeconds: +(1 / speed).toFixed(2), lines };
+  return { clips, frames: total, lineSeconds: +(1 / speed).toFixed(2), lines };
 }
 
 /** A title riding a credits roll: keyed from below the frame to above it. */

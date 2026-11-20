@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeProject, runCommand, type CommandReport } from "./commands";
-import { describeChanges, handleMcp, listTools, type McpHost, TOOLS_META, toolsFingerprint } from "./mcp";
+import { describeChanges, handleMcp, listTools, type McpHost, TOOLS_META, toolsFingerprint, shotTimes } from "./mcp";
 import { createProject } from "./project/defaults";
 import type { Project } from "./project/types";
 
@@ -273,6 +273,22 @@ describe("MCP edits answer with what changed", () => {
     const r = await call(h, "tools/call", { name: "preview_frames", arguments: { times: [1, 2, 3] } });
     expect((r!.result as { content: { type: string }[] }).content[0]).toMatchObject({ type: "image" });
     expect(h.sheets).toEqual([[[1, 2, 3], 320, 4]]);
+  });
+
+  it("looks at the middle of every shot when preview_frames is given no times, and says which", async () => {
+    const h = host();
+    expect(text(await call(h, "tools/call", { name: "preview_frames", arguments: {} }))).toContain("The main track is empty");
+    await run(h, "add_media_clip", { asset_id: "a1", start: 0, duration: 2 });
+    await run(h, "add_media_clip", { asset_id: "a1", start: 2, in: 5, duration: 4 });
+    const r = await call(h, "tools/call", { name: "preview_frames", arguments: {} });
+    const content = (r!.result as { content: { type: string; text?: string }[] }).content;
+    expect(content.map((c) => c.type)).toEqual(["image", "text"]);
+    expect(JSON.parse(content[1].text!)).toEqual({ times: [1, 4] });
+    expect(h.sheets.at(-1)).toEqual([[1, 4], 320, 4]);
+    // More shots than a sheet holds: spread evenly, the first and last kept.
+    const many = { tracks: [{ main: true, clips: Array.from({ length: 50 }, (_, i) => ({ start: i, end: i + 1 })) }] };
+    const picked = shotTimes(many);
+    expect([picked.length, picked[0], picked.at(-1)]).toEqual([24, 0.5, 49.5]);
   });
 });
 
@@ -856,8 +872,8 @@ it("formats internal AI answers only at the MCP boundary", async () => {
     const r = await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, h);
     return JSON.parse((r!.result as { content: { text: string }[] }).content[0].text);
   };
-  expect(await call("get_transcript", { clip_id: "c1" })).toEqual({ clip_id: "c1", words: [{ text: "to", start: 26.1, end: 26.235 }] });
-  expect(await call("normalize_loudness", { clip_ids: ["c1"] })).toEqual([{ clip_id: "c1", lufs: -20.123, gain: 1.616, gain_db: 4.2, limited_by: "peak" }]);
+  expect(await call("get_transcript", { clip_id: "c1" })).toEqual({ clip_id: "c1", sentences: [{ text: "to", start: 26.1, end: 26.23 }], words: [{ text: "to", start: 26.1, end: 26.235 }] });
+  expect(await call("normalize_loudness", { clip_ids: ["c1"] })).toEqual([{ clip_id: "c1", lufs: -20.123, gain: 1.616, gain_db: 4.2, limited_by: "peak", now_lufs: -15.96 }]);
 });
 
 
@@ -981,5 +997,72 @@ describe("MCP shot log surface", () => {
     const h = host();
     for (const [name, args] of [["analyze_footage", { asset_id: "a1", interval: 3 }], ["find_shots", { query: "NASA", limit: 101 }], ["get_shot_log", { asset_id: "a1", format: "html" }], ["suggest_edit_points", { ranges: [{ start: -1, end: 3 }] }], ["describe_moment", { time: -1 }]] as const) expect((await call(h, "tools/call", { name, arguments: args }))!.result).toMatchObject({ isError: true });
     expect(text(await call(h, "tools/call", { name: "analyze_footage", arguments: { asset_id: "a1" } }))).toContain("Shot logs need the desktop app");
+  });
+});
+
+// What the blind documentary test found in the tool layer (ADR-148).
+describe("what a blind documentary test found", () => {
+  const invoke = async (h: McpHost, name: string, args: object) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
+
+  it("does not hand a second call of a long tool the first call's job", async () => {
+    const h: McpHost = host();
+    const finish: ((value: unknown) => void)[] = [], asked: unknown[] = [];
+    h.ai = async (_tool, target) => { asked.push(target); return new Promise(resolve => { finish.push(resolve); }); };
+    const first = await invoke(h, "split_scenes", { clip_id: "c_reel_1", wait: 0 });
+    // Another reel while the first is at work: told so, by job, not answered with the first one's job.
+    const other = await call(h, "tools/call", { name: "split_scenes", arguments: { clip_id: "c_reel_2", wait: 0 } });
+    expect(other!.result).toMatchObject({ isError: true });
+    expect(text(other)).toContain(`split_scenes is still at work on an earlier call (job ${first.job_id}`);
+    expect(asked).toEqual(["c_reel_1"]);
+    // The same call again still follows its job.
+    expect((await invoke(h, "split_scenes", { clip_id: "c_reel_1", wait: 0 })).job_id).toBe(first.job_id);
+    // And once the first is done, the other runs: a call that waits its turn gets its own answer.
+    const second = invoke(h, "split_scenes", { clip_id: "c_reel_2", wait: 5 });
+    finish[0]({ cuts: [1] });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    finish[1]?.({ cuts: [2, 3] });
+    expect(await second).toEqual({ cuts: [2, 3] });
+    expect(asked).toEqual(["c_reel_1", "c_reel_2"]);
+  });
+
+  it("job_status waits for a job when asked, one call instead of a poll", async () => {
+    const h: McpHost = host();
+    let finish!: (value: unknown) => void;
+    h.ai = async () => new Promise(resolve => { finish = resolve; });
+    const job = await invoke(h, "get_transcript", { clip_id: "c1", wait: 0 });
+    expect((await invoke(h, "job_status", { job_id: job.job_id })).state).toBe("running");
+    const waited = invoke(h, "job_status", { job_id: job.job_id, wait: 5 });
+    finish({ words: [{ text: " Done.", start: 0, end: 0.4 }] });
+    expect(await waited).toMatchObject({ state: "done", result: { sentences: [{ text: "Done.", start: 0, end: 0.4 }] } });
+  });
+
+  it("answers a transcript as sentences with the pause after each, and the words unless told not", async () => {
+    const h: McpHost = host();
+    const w = (t: string, start: number, end: number) => ({ text: t, start, end });
+    h.ai = async () => ({ clipId: "c1", model: "base.en", words: [w(" Not", 5.8, 6.1), w(" quite.", 6.1, 6.56), w(" They", 6.62, 6.8), w(" differ", 6.8, 7.2), w(" So", 9, 9.2), w(" what", 9.2, 9.4), w(" then?", 9.4, 11.9)] });
+    const full = await invoke(h, "get_transcript", { clip_id: "c1" });
+    // A sentence ends at its punctuation, or at a long pause where there is none; the last word's end is where it was said, not where the silence ends.
+    expect(full.sentences).toEqual([{ text: "Not quite.", start: 5.8, end: 6.56, pause_after: 0.06 }, { text: "They differ", start: 6.62, end: 7.2, pause_after: 1.8 }, { text: "So what then?", start: 9, end: 10.05 }]);
+    expect(full.words).toHaveLength(7);
+    expect(await invoke(h, "get_transcript", { clip_id: "c1", words: false })).not.toHaveProperty("words");
+  });
+
+  it("answers a reel's shot list from preview_media, and says where it cannot", async () => {
+    const asked: unknown[] = [];
+    const h: McpHost = { ...host(), mediaShots: async (id, o) => { asked.push([id, o]); return { image: "/9j/", shots: [{ n: 1, start: 0, end: 4.2 }, { n: 2, start: 4.2, end: 9 }], total: 60, more_from: 9 }; } };
+    const r = await call(h, "tools/call", { name: "preview_media", arguments: { asset_id: "a1", shots: true, from: 0 } });
+    const content = (r!.result as { content: { type: string; text?: string }[] }).content;
+    expect(content[0].type).toBe("image");
+    expect(JSON.parse(content[1].text!)).toMatchObject({ shots: [{ n: 1, start: 0, end: 4.2 }, { n: 2, start: 4.2, end: 9 }], total: 60, more: "shots past 9 s: call again with from 9" });
+    expect(asked).toEqual([["a1", { from: 0, tileWidth: 240, columns: 6 }]]);
+    expect(text(await call(host(), "tools/call", { name: "preview_media", arguments: { asset_id: "a1", shots: true } }))).toContain("cannot find a file's shots");
+    expect(text(await call(h, "tools/call", { name: "preview_media", arguments: { shots: true } }))).toContain("shots needs asset_id");
+  });
+
+  it("says where a normalized clip's loudness is now, not only where it was", async () => {
+    const h: McpHost = host();
+    h.ai = async () => [{ clipId: "c1", lufs: -15.68, gain: 1.0839, limitedBy: null }];
+    expect(await invoke(h, "normalize_loudness", { clip_ids: ["c1"], target: -15 })).toEqual([{ clip_id: "c1", lufs: -15.68, gain: 1.084, limited_by: null, gain_db: 0.7, now_lufs: -14.98 }]);
   });
 });

@@ -174,6 +174,16 @@ const jobs = {
     ff("-f", "lavfi", "-i", burn(640, 360, 30), "-i", syncMaster(), "-filter_complex", "[1:a]atrim=start=2:duration=12,asetpts=PTS-STARTPTS,highpass=f=250,aecho=0.8:0.7:35|80:0.35|0.2[a]", "-map", "0:v", "-map", "[a]", "-t", "12", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-b:a", "128k", join(out, "sync-camera.mp4")),
   "sync-lav.wav": () =>
     ff("-i", syncMaster(), "-f", "lavfi", "-i", "anoisesrc=color=pink:amplitude=0.02:sample_rate=48000:seed=7", "-filter_complex", "[0:a]atrim=start=0.63,asetpts=PTS-STARTPTS,lowpass=f=4000,volume=0.35[v];[v][1:a]amix=inputs=2:duration=first:normalize=0", "-ac", "1", "-c:a", "pcm_s16le", join(out, "sync-lav.wav")),
+  // A second camera on the same take (scripts/drive/cut-tools.js): a plain
+  // teal picture, so a frame says which angle shows, and the take's sound as
+  // another microphone heard it, starting 1.5 s later than sync-camera.mp4:
+  // a moment at camera second t is at this file's second t - 1.5.
+  "sync-camera-b.mp4": () =>
+    ff("-f", "lavfi", "-i", `color=c=0x2a9d8f:size=640x360:rate=30,drawtext=${font}text='CAMERA B':fontsize=40:fontcolor=white:x=(w-tw)/2:y=h-th-30`, "-i", syncMaster(), "-filter_complex", "[1:a]atrim=start=3.5:duration=10,asetpts=PTS-STARTPTS,lowpass=f=5000,volume=0.6[a]", "-map", "0:v", "-map", "[a]", "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-b:a", "128k", join(out, "sync-camera-b.mp4")),
+  // A reel of three shots, cut at 2 and 4 s (scripts/drive/cut-tools.js):
+  // preview_media shots must find exactly those.
+  "three-shots.mp4": () =>
+    ff("-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30:duration=2", "-f", "lavfi", "-i", "smptebars=size=640x360:rate=30:duration=2", "-f", "lavfi", "-i", "color=c=0x2a9d8f:size=640x360:rate=30:duration=2", "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]", "-map", "[v]", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", join(out, "three-shots.mp4")),
   // Two interviews for the documentary drive
   // (scripts/drive/documentary-flow.js): synthesized speech with a known
   // script, two voices, each over a plain picture naming its speaker, so a

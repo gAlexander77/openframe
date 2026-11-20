@@ -6,43 +6,86 @@ Claude Code or Codex pickup. Read it before resuming previous tasks.
 ## Current state - 2026-11-19 (read first)
 
 - **One branch holds everything: `main`.** The owner asked (2026-11-19) for
-  every branch to be brought into one. `improvements-6` to `improvements-9`
-  were already merged, and this round's `improvements-10` is merged into
-  the local `main`. The remote branches `bg-removal`, `compound-clips` and
-  `timeline-ux` are WIP backups from 2026-10-14 whose features were
-  finished on `main` on 2026-10-16; they hold nothing to merge. Deleting
-  them on the remote is the owner's call.
+  every branch to be brought into one, then for whatever was still missing
+  to be added, merged and pushed. `improvements-10` and `improvements-11`
+  are merged into the local `main`. The remote branches `bg-removal`,
+  `compound-clips` and `timeline-ux` are WIP backups from 2026-10-14 whose
+  features were finished on `main` on 2026-10-16; they hold nothing to
+  merge. Deleting them on the remote is the owner's call.
 - **Nothing is open on GitHub**: no pull request, no issue.
-- **Not pushed.** That session had no git or `gh` credentials. The local
-  `main` is ahead of `origin/main`; the owner pushes.
-- **This round** ([[History]], 2026-11-19;
-  [[ADR-147 Story tools reuse the title, the roll and the detached sound]]):
-  `jl_cut`, `add_counter`, `set_counter`, `add_credits`, `highlight_words`,
-  `add_progress_bar`, `export_frame`, and a `documentary` playbook and
-  prompt. 204 tools.
-- **Also fixed in it**, found by running the documentary playbook end to
-  end (`scripts/drive/documentary-flow.js`): numbers split across caption
-  words, words shorter than a frame dropped from captions, and a ripple
-  trim that left detached sound out of sync. `trim_clip` on a picture now
-  takes its detached sound along, and any agent edit that leaves one out of
-  sync says so. The timeline's own drag trim is unchanged.
-- **`ad-spot.js` did not run in this round**: it needs the downloaded
-  `person-pan.mp4`, and the download answered 429. Rerun it once the
-  fixture is there.
-- **Next for these tools:**
-  - buttons for them (a counter and a credits card in the Text tab, J/L
-    cut in the clip menu, Save frame as JPEG); today only the in-app
-    assistant and outside agents reach them;
-  - a desktop run of `export_frame` (the web build can only refuse it);
-  - a blind test of the `documentary` playbook with real interview
-    footage, as rounds 5 to 7 tested the others;
+- **Not pushed, though the owner asked for it.** These sessions had no git
+  or `gh` credentials (the stored `gh` token is invalid). The local `main`
+  is ahead of `origin/main`: `gh auth login`, then `git push origin main`.
+- **The owner's direction (2026-11-19):** the project is for an AI to make
+  every editing decision itself and produce the best video it can. Judge
+  work by what an agent with only the MCP tools ends up making.
+- **These two rounds** ([[History]], 2026-11-19): 207 tools.
+  - [[ADR-147 Story tools reuse the title, the roll and the detached sound]]:
+    `jl_cut`, `add_counter`, `set_counter`, `add_credits`,
+    `highlight_words`, `add_progress_bar`, `export_frame`, a `documentary`
+    playbook and prompt.
+  - [[ADR-148 Punch-ins keep what they applied, angles switch by held opacity, a slideshow is ordinary clips]]:
+    `punch_in_cuts`, `switch_angles` (and a second camera in
+    `sync_audio`), `add_slideshow`, `preview_frames` without times.
+- **Playbooks have drives now**: `documentary-flow.js` and
+  `social-short-flow.js` run their playbook's steps in order over MCP and
+  end on a clean `check_project`. Running them found more than the
+  tool-by-tool drives did (numbers split across caption words, words under
+  a frame dropped from captions, a ripple trim that left detached sound out
+  of sync). Give the `ad` and `epic_edit` playbooks the same.
+- **Agents and sync**: `trim_clip` on a picture takes its detached sound
+  along, and any agent edit that leaves a detached sound out of sync says
+  so and names `sync_to_clip`. The timeline's own drag trim is unchanged.
+- **A blind test ran on real footage** (a fresh model, only the MCP tools,
+  a NASA interview and two b-roll reels; [[History]], 2026-11-19, later).
+  Fifteen findings; most are fixed: captions that lost or split words and
+  broke lines badly, a shot list for a reel (`preview_media` with
+  `shots: true`), a ripple move (`move_clip` with `mode: "insert"`),
+  sentences in `get_transcript`, a `job_status` that waits, a second call
+  of a long tool no longer handed the first one's job.
+- **Not fixed from it:**
+  - `generate_music` places a score whose fit it reports as failed, and
+    its ring ending is cut short;
+  - a whole talk on one clip is one "line" to `duck_under_speech`, so a
+    final hit near its end counts as inside it;
+  - `check_project` passes a film whose loudness fails the spec (it does
+    not measure loudness) and says nothing of stray markers;
+  - nothing says whether a clip's sound already carries music;
+  - burned-in text and graphics are read only by the desktop shot log;
+  - `duck_under_speech`'s description is about 4,000 characters, too long
+    to use; several other descriptions are as long.
+- **To run a blind test again**: build, copy `dist` somewhere of its own,
+  serve it with the fixtures (a 40-line static server does it), point
+  `scripts/mcp-web.mjs --base` at it, and give the tester a small client
+  that calls the bridge and saves images to files. The tester must be told
+  to listen (`preview_audio`): this one never did.
+- **The sweep of every web drive (238), 2026-11-20:** 206 passed at once
+  and 12 more alone (they had run beside a blind tester's jobs). Of the
+  other 20, none is this work's doing:
+  - 14 need a fixture this machine lacks: the downloaded `person-pan.mp4`
+    (the download answered 429) or a private one (`launch.mp4`,
+    `roaster.mp4`);
+  - `clip-template`, `monitor-mute`, `speed` and `web-capabilities` (HEVC)
+    fail the same way on `d64df36`, the code before these rounds: this
+    session had no GPU or audio device (Windows session 0);
+  - `shotlog.js` is desktop-only, and `film5-layout.test.js` is a test
+    file that sits among the drives.
+  Rerun those 18 on a machine with a desktop before reading them.
+- **The desktop app was not run.** The sessions ran in Windows session 0
+  with the screen locked; `npm run tauri dev` dies with "WebView2: Invalid
+  window handle" there. `export_frame` has written no real file yet: run
+  it once on the desktop.
+- **`ad-spot.js` did not run**: it needs the downloaded `person-pan.mp4`,
+  and the download answered 429. Rerun it once the fixture is there.
+- **Next:**
+  - buttons for the new tools; today only the in-app assistant and outside
+    agents reach them;
+  - a dissolve between angles in `switch_angles` (hard cuts only), and a
+    switch by who is speaking;
   - a counting title that is split or head-trimmed restarts its count
     (ADR-147 says what a fix needs).
-- **Still missing against the big editors**, from the same survey:
-  multicam (sync by sound exists; an angle switch does not), optical-flow
-  slow motion, a luma key, curved text, a slideshow maker (stills on the
-  beat or a set length, with moves), an audio spectrum graphic.
-- **Test media**: `node scripts/make-fixtures.mjs` and
+- **Still missing against the big editors**: optical-flow slow motion, a
+  luma key, curved text, an audio spectrum graphic.- **Test media**: `node scripts/make-fixtures.mjs` and
   `npm i --prefix scratch playwright-core` are needed once per checkout
   (both git-ignored); `person-pan.mp4` is downloaded and can fail with a
   429, which only the drives that use it notice.

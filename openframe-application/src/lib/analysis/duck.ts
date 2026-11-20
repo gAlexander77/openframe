@@ -120,7 +120,13 @@ export function duckPlan(speech: [number, number][], lo: number, hi: number, o: 
   // music's volume by every moment it holds.
   const pause = (a: number, b: number, before?: { d: number }, after?: { d: number }) => {
     const ms = moments.filter((m) => m >= a && m < b && !inLine(m));
-    if (!ms.length && b - a < o.gap) {
+    // Between two lines a short swell pumps. At the bed's own edges there
+    // is nothing to pump against: the music opens at its level and dips
+    // into the first line, and comes up after the last, unless that stretch
+    // is a blip (under half the gap). A film with a second of title before
+    // its first line opened 15 dB down for that second (ADR-148).
+    const least = before && after ? o.gap : Math.ceil(o.gap / 2);
+    if (!ms.length && b - a < least) {
       if (!before) keys.push({ f: lo, g: low(after!.d) });
       else if (!after) keys.push({ f: hi - 1, g: low(before.d) });
       else {

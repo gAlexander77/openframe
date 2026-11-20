@@ -35,7 +35,7 @@ import type { SoundCue } from "./lib/sfx";
 import { loudnessReport } from "./state/delivery";
 import { autoCaptions } from "./state/captions";
 import { clipTranscript } from "./state/transcript";
-import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, keepFilterLoudness, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
+import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, assetShots, duckUnderSpeech, keepFilterLoudness, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
 import { importLuts } from "./state/luts";
 import { importEach, importFiles } from "./state/media";
 import { mediaName, sourceName } from "./lib/mediaKind";
@@ -340,6 +340,18 @@ const mcpHost: McpHost = {
     }
     const pics = await sourceFrames(a, times, tileWidth, projectWork.capture());
     return tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: a.width || 16, h: a.height || 9 })), tileWidth, columns);
+  },
+  mediaShots: async (assetId, o) => {
+    const a = store.get().project.assets.find((x) => x.id === assetId);
+    if (!a) throw new Error(`No asset ${assetId}; describe_project lists them`);
+    const all = (await assetShots(assetId)).map((s, i) => ({ n: i + 1, ...s }));
+    const inside = all.filter((s) => s.end > (o.from ?? 0) && s.start < (o.to ?? Infinity));
+    // A sheet holds 48 shots: the rest are a second call's, from where this one ends.
+    const shots = inside.slice(0, 48);
+    const mids = shots.map((s) => +((s.start + s.end) / 2).toFixed(3));
+    const pics = await sourceFrames(a, mids, o.tileWidth, projectWork.capture());
+    const image = await tiles(shots.map((s, i) => ({ src: pics[i], label: `${s.n}: ${+s.start.toFixed(1)}-${+s.end.toFixed(1)} s`, w: a.width || 16, h: a.height || 9 })), o.tileWidth, o.columns);
+    return { image, shots, total: all.length, ...(inside.length > shots.length ? { more_from: shots[shots.length - 1].end } : {}) };
   },
   fileSheet: async (src, given, count, tileWidth, columns) => {
     const signal = projectWork.capture();

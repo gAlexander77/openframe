@@ -18,8 +18,17 @@ export interface Word {
 export function monotonicWords(words: Word[]): Word[] {
   const out: Word[] = [];
   const key = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-  for (const w of [...words].filter(w => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start && w.text.trim()).sort((a, b) => a.start - b.start)) {
+  // A word Whisper stamps with no length is still a word that was said
+  // ("long" in "long-term" came so, and fell out of its caption): it keeps
+  // a twentieth of a second.
+  const timed = words.filter(w => Number.isFinite(w.start) && Number.isFinite(w.end) && w.text.trim()).map(w => (w.end > w.start ? w : { ...w, end: w.start + 0.05 }));
+  for (const w of timed.sort((a, b) => a.start - b.start)) {
     const last = out.at(-1);
+    // The second half of a hyphenated word is stamped as a word of its own
+    // ("-term", "-trapping"), and so is what follows an apostrophe when it
+    // carries no space: one word, as it is written.
+    const text = w.text.trim();
+    if (last && w.start - last.end < 0.3 && /[\p{L}\p{N}]$/u.test(last.text.trim()) && (/^-[\p{L}\p{N}]/u.test(text) || (/^['’]\p{L}/u.test(text) && !/^\s/.test(w.text)))) { last.text = last.text.trimEnd() + text; last.end = Math.max(last.end, w.end); continue; }
     if (last && w.start < last.end && key(w.text) && key(w.text) === key(last.text)) { last.end = Math.max(last.end, w.end); continue; }
     // Whisper stamps a number's parts as words of their own ("12", ",000";
     // "3", ".5"; "10", ":30"): one word, as it is written.
@@ -71,6 +80,9 @@ const SENTENCE_END = /[.!?…]["')\]]?$/;
 
 /** Words a caption line should not end on. */
 export const WEAK = new Set(["a", "an", "the", "of", "to", "and", "or", "but", "by", "in", "on", "at", "for", "with", "from", "as", "is", "my", "your", "our", "their", "this", "that", "i", "we", "you"]);
+
+/** Words a phrase begins with: a line or a caption breaks well before one. */
+export const STARTERS = new Set(["and", "but", "or", "so", "because", "that", "which", "who", "when", "while", "where", "if", "than", "then", "in", "on", "at", "over", "under", "from", "with", "without", "for", "by", "into", "across", "through", "about", "after", "before", "between", "to", "as"]);
 
 /**
  * Group words into captions: break at sentence ends, at pauses, and before a
@@ -137,15 +149,35 @@ export function readableCaptions(input: Word[], o: LineOptions = DEFAULT_LINES, 
   const ws = monotonicWords(input).filter(w => w.start < limit);
   const n = ws.length, cost = Array(n + 1).fill(Infinity), next = Array(n).fill(0), cues: Caption[] = [];
   cost[n] = 0;
+  const tidy = (s: string) => s.replace(/\s+([,.!?;:])/g, "$1");
+  const bare = (i: number) => ws[i].text.trim().toLowerCase().replace(/[^a-z']/g, "");
   const wrap = (a: number, b: number) => {
+    const all = ws.slice(a, b).map((w) => w.text.trim());
+    const whole = tidy(all.join(" "));
+    if (whole.length <= o.maxChars) return whole;
+    // Two lines of about one length, broken where a phrase begins: never a
+    // word left alone on the second line ("in the / surface"), and not a
+    // little word left hanging at the end of the first.
+    let best = "", cost = Infinity;
+    for (let k = 1; k < all.length; k++) {
+      const l1 = tidy(all.slice(0, k).join(" ")), l2 = tidy(all.slice(k).join(" "));
+      if (l1.length > o.maxChars || l2.length > o.maxChars) continue;
+      const c = Math.abs(l1.length - l2.length) + (WEAK.has(bare(a + k - 1)) ? 8 : 0) - (/[,;:.!?]$/.test(all[k - 1]) ? 6 : STARTERS.has(bare(a + k)) ? 4 : 0);
+      if (c < cost) { cost = c; best = `${l1}\n${l2}`; }
+    }
+    // No two lines hold it: three or more, which the caller rules out.
+    if (best) return best;
     const lines = [""];
-    for (const w of ws.slice(a, b)) {
-      const t = w.text.trim(), last = lines.length - 1;
+    for (const t of all) {
+      const last = lines.length - 1;
       if (lines[last] && lines[last].length + t.length + 1 > o.maxChars) lines.push(t);
       else lines[last] += (lines[last] ? " " : "") + t;
     }
-    return lines.join("\n").replace(/\s+([,.!?;:])/g, "$1");
+    return tidy(lines.join("\n"));
   };
+  // Sentence ends inside words i..j-2: a cue that runs on into the next sentence.
+  const ends: number[] = [0];
+  ws.forEach((w, i) => ends.push(ends[i] + (SENTENCE_END.test(w.text.trim()) ? 1 : 0)));
   const cue = (i: number, j: number): Caption => {
     const text = wrap(i, j), start = ws[i].start;
     const need = Math.max(5 / 6, text.replace(/\s+/g, " ").trim().length / 19);
@@ -157,7 +189,12 @@ export function readableCaptions(input: Word[], o: LineOptions = DEFAULT_LINES, 
       if (j > i + 1 && (lines.length > 2 || ws[j - 1].end - ws[i].start > Math.max(o.maxDuration, 5))) break;
       const duration = c.end - c.start;
       const cps = c.text.replace(/\s+/g, " ").trim().length / Math.max(0.001, duration);
-      const penalty = 1 + (SENTENCE_END.test(ws[j - 1].text) ? 0 : /[,;:]$/.test(ws[j - 1].text) ? 0.3 : 1.2)
+      // Ends cost least at a sentence end, then at a comma, then where the
+      // next word begins a phrase ("... temperature / over the whole
+      // globe"); a sentence that ends inside the cue costs more than the
+      // cue it would take to end there.
+      const penalty = 1 + (SENTENCE_END.test(ws[j - 1].text.trim()) ? 0 : /[,;:]$/.test(ws[j - 1].text.trim()) ? 0.3 : j < n && STARTERS.has(bare(j)) ? 0.8 : 1.6)
+        + (ends[j - 1] - ends[i]) * 2.5
         + (WEAK.has(ws[j - 1].text.toLowerCase()) ? 3 : 0)
         + (j - i === 1 ? 4 : 0) + Math.max(0, 5 / 6 - duration) * 1000 + Math.max(0, cps - 20) * 100;
       if (penalty + cost[j] < cost[i]) { cost[i] = penalty + cost[j]; next[i] = j; }

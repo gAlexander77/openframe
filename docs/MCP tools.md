@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 204 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 207 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -24,13 +24,13 @@ Before you start: help (the tools by step), help with topic ad, epic_edit, docum
 Long tools answer their result or a running job_id within 45 s (wait: 0 returns immediately). Poll job_status with job_id until done, then read result; cancel_job stops it. Text results stay up to 30 minutes within a 32 MiB budget; delivered image/audio payloads are released; export_status also follows the latest export.
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
-2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
+2. import_media the footage, music, logo and pictures by absolute path (the browser build: by URL); preview_media shows what is inside each video, to choose the moments worth using, and with shots true every shot of a reel between its own cuts.
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
 4. Lay shots under each line with add_media_clip; where recorded talk meets the next shot, jl_cut lets its sound run on under the picture or lead it (J and L cuts); frame_region zooms a shot onto the part that matters and moves between regions (moves); on a screen recording add_callout rings the part the voice names and stays on it through the zooms; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards; add_counter for a number that counts up or a countdown, add_credits for a credits roll.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
-8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (MP3 with M4A or WAV fallback, its format and measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
+8. Check: preview_frames (a contact sheet of many moments; with no times, the middle of every shot), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (MP3 with M4A or WAV fallback, its format and measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
 9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video. export_frame writes one frame as a picture: the cover or thumbnail.
 Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
@@ -46,7 +46,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Shot log**: `analyze_footage`, `get_shot_log`, `find_shots`, `suggest_edit_points`, `describe_moment`
 - **Clips**: `find_highlights`, `add_highlight_markers`, `apply_stream_layout`, `create_clips`, `export_projects`
 - **Media**: `import_media`, `create_proxies`, `delete_proxies`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
-- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `extend_edit`, `trim_edits`, `edit_from_source`, `roll_edit`, `jl_cut`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
+- **Timeline**: `add_media_clip`, `add_slideshow`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `extend_edit`, `trim_edits`, `edit_from_source`, `roll_edit`, `jl_cut`, `punch_in_cuts`, `switch_angles`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `move_motion_point`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `apply_layout`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
 - **Graphics and compositing**: `add_shape`, `set_shape`, `add_progress_bar`, `add_callout`, `set_anchor`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
@@ -580,6 +580,28 @@ Example:
 {"name":"add_media_clip","arguments":{"asset_id":"a_123","start":0,"duration":3.5,"in":12}}
 ```
 
+### add_slideshow
+
+Lay pictures (or video clips) end to end as a slideshow in one call: each is on for seconds_each (or they share duration equally), filling the frame, with a slow steady Ken Burns move (a push in, a drift, a pull out, a drift back, in turn, so no two neighbors move alike) and a transition at every cut. For photo montages, recaps and runs of b-roll. It goes at start on the main track (default: after what is there), or on track_id, over whatever is there. Each picture is an ordinary clip afterwards: frame_region reframes one on what matters in it, set_transition changes a cut, trim_clip a length. For pictures cut on the music use cut_to_beats instead, then frame_region. Example: {asset_ids: ['a_1', 'a_2', 'a_3'], seconds_each: 3.5}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_ids` | string[] | yes | Pictures or videos, in the order shown (an id may repeat) |
+| `start` | number |  | Timeline seconds; default the end of the track it goes on (0..) |
+| `seconds_each` | number |  | Seconds each one is on; default 3 (0.2..) |
+| `duration` | number |  | Instead of seconds_each: seconds for the whole slideshow, shared equally (0.5..) |
+| `motion` | "ken_burns" \| "none" |  | ken_burns (default): a slow move on each; none: still |
+| `transition` | "dissolve" \| "dipBlack" \| "dipWhite" \| "wipeLeft" \| "wipeRight" \| "wipeUp" \| "wipeDown" \| "circleOpen" \| "clockWipe" \| "slideLeft" \| "slideRight" \| "pushLeft" \| "pushUp" \| "zoomIn" \| "zoomOut" \| "spin" \| "blur" \| "pixelate" \| "glitch" \| "flash" \| "whipLeft" \| "whipRight" \| "zoomPunch" \| "spinBlur" \| "none" |  | The transition at every cut; default dissolve |
+| `transition_seconds` | number |  | Seconds each transition takes; default 0.5, at most a third of the shorter picture (0.05..) |
+| `fit` | "fill" \| "fit" \| "blur" |  | fill (default) covers the frame; fit shows all of each picture, with bands; blur fits it over a blurred copy of itself |
+| `track_id` | string |  | Video track id; default the main track |
+
+Example:
+
+```json
+{"name":"add_slideshow","arguments":{"asset_ids":["a_1","a_2","a_3"],"seconds_each":3.5}}
+```
+
 ### add_color_clip
 
 Add a solid color layer (backgrounds, flashes, title cards). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.
@@ -772,6 +794,43 @@ Example:
 {"name":"jl_cut","arguments":{"clip_id":"c_7","by":0.6}}
 ```
 
+### punch_in_cuts
+
+Hide the jump cuts in a talking head by punching in: where two pieces of one shot meet with something cut out between them (after remove_silences, remove_filler_words or cut_ranges), every other piece is drawn a little larger, so each cut reads as a change of shot size instead of a jump. The standard fix for interviews, vlogs and shorts cut from one take; suggest_edit_points advises it cut by cut. scale is how much larger (default 1.15: 1.1 to 1.25 reads as meant, less reads as a mistake); focus is the point of the frame that stays where it is, fractions from its top left (default {x: 0.5, y: 0.4}, where a framed face sits: put it on the eyes when the speaker is off center, as preview_frame shows). Every video clip on the main track is considered unless clip_ids names them. Calling again starts from each piece's own framing, so it never compounds, and after more cuts it evens the pattern out; off: true removes the punch-ins. Framing that is keyed (auto_reframe, a frame_region move, tracking) is scaled key by key, so frame the take first and punch in after; a piece reframed since its punch-in keeps the new framing as its own. A cutaway over a cut hides it too: punch in where there is none.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] |  | Video clips to consider; default every video clip on the main track |
+| `scale` | number |  | How much larger the punched-in pieces are; default 1.15 (1.02..2) |
+| `focus` | { x, y } |  | The point of the frame that stays where it is; default {x: 0.5, y: 0.4} |
+| `focus.x` | number | yes | Across the frame, 0 left to 1 right (0..1) |
+| `focus.y` | number | yes | Down the frame, 0 top to 1 bottom (0..1) |
+| `off` | boolean |  | Remove the punch-ins instead |
+
+Example:
+
+```json
+{"name":"punch_in_cuts","arguments":{"scale":1.15,"focus":{"x":0.5,"y":0.38}}}
+```
+
+### switch_angles
+
+Multicam: cut between camera angles of one moment (two cameras on an interview, a wide and a close shot of a talk, a screen and a face). The angles are clips of the same event stacked on different video tracks and already in sync: sync_audio lines a second camera up with the first by their sound, sync_to_clip by a known offset. The first of angles shows until the first cut; each cut's angle shows from its at on. Nothing is split: each angle keeps its place, and the switch is an opacity key that holds (describe_project shows them), so sync cannot slip and calling again with other cuts replaces the program (cuts [] shows the first angle throughout). sound_from keeps one clip's sound, an angle's or a separate recording's (an audio clip), and mutes the other angles; without it the sound is left as it is, and the answer says when more than one angle is heard. Switch a few frames before a new speaker starts (get_transcript has the words' times), hold the wide shot while people talk over each other, and keep switches more than 1.5 s apart. Example: {angles: ['c_wide', 'c_close'], cuts: [{at: 4.2, angle: 'c_close'}, {at: 9.6, angle: 'c_wide'}], sound_from: 'c_wide'}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `angles` | string[] | yes | The angle clips, two or more, on different video tracks; the first shows until the first cut |
+| `cuts` | { at, angle }[] | yes | The switches, in any order; [] shows the first angle throughout |
+| `cuts[].at` | number | yes | Timeline seconds the angle takes over (0..) |
+| `cuts[].angle` | string | yes | The clip id of the angle to show from then |
+| `sound_from` | string |  | The one clip whose sound is kept: an angle, or an audio clip (a recorder's); the other angles are muted |
+
+Example:
+
+```json
+{"name":"switch_angles","arguments":{"angles":["c_wide","c_close"],"cuts":[{"at":4.2,"angle":"c_close"},{"at":9.6,"angle":"c_wide"}],"sound_from":"c_wide"}}
+```
+
 ### slip_clip
 
 Slip a video or audio clip: play a later (by > 0) or earlier (by < 0) part of its source, keeping its place and length on the timeline, as when a shot's cut lands right but its moment is wrong. by is seconds of the source file, like in and cut_ranges, at any speed or ramp: in moves by exactly that much. Stops at the ends of the source, and says so.
@@ -789,13 +848,14 @@ Example:
 
 ### move_clip
 
-Move a clip to a time and (optionally) another track of the same kind. Overwrites whatever is under its new position.
+Move a clip to a time and (optionally) another track of the same kind. By default it overwrites whatever is under its new position and leaves a gap where it was. mode insert reorders instead (a ripple move): the gap it leaves closes and it is inserted at start, the clips from there on moving later, so a line or a shot changes place in the cut and nothing is lost. With insert, start is a time on the timeline as it is before the move: the start of the clip it should come before, or the end of the track to go last. What sits on the moved shot (its titles, its captions, its detached sound) goes with it.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Clip id |
 | `start` | number | yes | Seconds (0..) |
 | `track_id` | string |  | Destination track id |
+| `mode` | "overwrite" \| "insert" |  | overwrite (default) covers what is at start and leaves a gap behind; insert closes the gap and pushes the clips from start on later |
 
 ### nudge_clips
 
@@ -1301,11 +1361,13 @@ Edit a timeline marker's position, label or color without moving clips. Times ar
 
 ### delete_markers
 
-Delete the specified timeline markers together. Unknown ids reject the whole edit.
+Delete timeline markers together: the ones named (unknown ids reject the whole edit), every marker with a label (label 'Scene' clears what split_scenes left, 'Beat' a song's beats; any case), or all of them (all: true).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `marker_ids` | string[] | yes | Marker ids |
+| `marker_ids` | string[] |  | Marker ids |
+| `label` | string |  | Every marker with this label, any case |
+| `all` | boolean |  | Every marker on the timeline |
 
 ## Picture and motion
 
@@ -2054,8 +2116,7 @@ Titles, counters, credits, templates, stickers, captions and the transcript.
 
 ### add_text
 
-Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). It lands above everything at that time (titles, shapes, a grade or beat hits), sharing a free titles track when one is there; on track_id it goes where asked, and the answer notes an adjustment layer above it (its grade or zoom applies to the title too). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; 
- breaks a line where you choose.
+Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). It lands above everything at that time (titles, shapes, a grade or beat hits), sharing a free titles track when one is there; on track_id it goes where asked, and the answer notes an adjustment layer above it (its grade or zoom applies to the title too). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; \n in text breaks a line where you choose.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2376,11 +2437,12 @@ Find and replace in every caption's text (CapCut's caption Find and replace), e.
 
 ### get_transcript
 
-Hear a video or audio clip's speech on this machine (Whisper) and return its words with source-second times. Hears only the clip's source window plus 3 s context per edge, merging cached windows. Reports audio_seconds actually heard (0 when cached), hearing elapsed_seconds and model (default base.en). Delete words by passing their spans to cut_ranges (Premiere's text-based editing).
+Hear a video or audio clip's speech on this machine (Whisper) and return what is said with source-second times: sentences (each with its text, where it starts and ends in the file, and pause_after, the breath before the next one: the place to cut), and every word. Choose the lines to keep by sentence, then cut with cut_ranges from one sentence's end to the next kept one's start (Premiere's text-based editing); words false answers the sentences alone, a few hundred bytes a minute instead of several thousand. Hears only the clip's source window plus 3 s context per edge, merging cached windows. Reports audio_seconds actually heard (0 when cached), hearing elapsed_seconds and model (default base.en). A last word's end can run on into the silence after it: trust starts, and a sentence's end is where its last word was said, not where the next begins.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
+| `words` | boolean |  | false: the sentences alone (default true: every word too) |
 | `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ## Brand and ad elements
@@ -3132,7 +3194,7 @@ Example:
 
 ### normalize_loudness
 
-Measure clips' loudness (EBU R128) and set their volume to reach a target without their true peak passing the ceiling (-1 dBTP; -2 for ATSC). -14 LUFS suits social video, -16 podcasts, -23 European broadcast, -24 US TV. spec names a delivery spec instead (its target and ceiling). A ducked clip keeps its duck: its volume keys scale so the loudest is the new level. Each clip is measured alone through its pitch, filters, saturation, ring modulation, compressor, fades and effect tails, using the export mixer at unit clip gain (track/master faders excluded). measure_loudness checks the mix.
+Measure clips' loudness (EBU R128) and set their volume to reach a target without their true peak passing the ceiling (-1 dBTP; -2 for ATSC). Each clip answers lufs (what it measured before), gain_db (what was applied) and now_lufs (where that leaves it); limited_by says when the peak ceiling held it short of the target. -14 LUFS suits social video, -16 podcasts, -23 European broadcast, -24 US TV. spec names a delivery spec instead (its target and ceiling). A ducked clip keeps its duck: its volume keys scale so the loudest is the new level. Each clip is measured alone through its pitch, filters, saturation, ring modulation, compressor, fades and effect tails, using the export mixer at unit clip gain (track/master faders excluded). measure_loudness checks the mix.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -3176,12 +3238,12 @@ Take steady background noise (hiss, hum, fans, room tone) out of a clip's sound 
 
 ### sync_audio
 
-Line up a separately recorded sound (a lav, a recorder) with the camera clip of the same take by matching their waveforms on this computer (CapCut's Sync video and audio, Resolve's Auto Sync Audio), then move the audio clip into sync, exact to the sample (one undo step; sound before 0 is trimmed off its head). Answers the offset (audio source seconds minus video source seconds) and a confidence; refuses when the sounds do not clearly match. sync_to_clip places it by a known offset instead.
+Line up a separately recorded sound (a lav, a recorder) with the camera clip of the same take by matching their waveforms on this computer (CapCut's Sync video and audio, Resolve's Auto Sync Audio), then move the audio clip into sync, exact to the sample (one undo step; sound before 0 is trimmed off its head). Answers the offset (audio source seconds minus video source seconds) and a confidence; refuses when the sounds do not clearly match. sync_to_clip places it by a known offset instead. A second camera syncs the same way, for switch_angles: clip_id its video clip (on a track above the main one, never on the main track) and video_clip_id the camera it lines up with.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `clip_id` | string | yes | The audio clip to move |
-| `video_clip_id` | string |  | The camera clip; default the video with sound that plays with it longest |
+| `clip_id` | string | yes | The audio clip to move; or a second camera's video clip, with video_clip_id |
+| `video_clip_id` | string |  | The camera clip; default the video with sound that plays with it longest (required when clip_id is a video) |
 | `mute_camera` | boolean |  | Set the video's volume to 0 (default false) |
 | `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
@@ -3213,7 +3275,7 @@ Look at the media and the result, check it against the rules, then export.
 
 ### preview_media
 
-Look inside imported media before using it: a video's own frames at source seconds (times), or `count` frames spread over the whole file (default 12), as one contact sheet; a still picture whole, labeled with its size. Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action) and to see what a photo shows before framing it. file instead of asset_id looks inside a file without importing it: an exported video (the path export_video or export_versions answered) to see what was delivered, frame by frame as the file has it, not the timeline; the answer adds the file's length, size and chapters (titles and seconds from Nero MP4/MOV chapter tables, as OpenFrame writes; other chapter formats are not inspected).
+Look inside imported media before using it: a video's own frames at source seconds (times), or `count` frames spread over the whole file (default 12), as one contact sheet; a still picture whole, labeled with its size. Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action) and to see what a photo shows before framing it. shots: true answers a shot list of a video instead: every shot between its own cuts as a tile, numbered, with its source seconds, so a cutaway is taken from inside one shot (a clip that runs across a cut shows two) and a reel's own title cards and graphics are seen before they are used; read a b-roll reel this way before placing any of it. file instead of asset_id looks inside a file without importing it: an exported video (the path export_video or export_versions answered) to see what was delivered, frame by frame as the file has it, not the timeline; the answer adds the file's length, size and chapters (titles and seconds from Nero MP4/MOV chapter tables, as OpenFrame writes; other chapter formats are not inspected).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -3221,8 +3283,11 @@ Look inside imported media before using it: a video's own frames at source secon
 | `file` | string |  | Instead of asset_id: a video or picture file to look inside without importing it, e.g. an exported file's path (desktop: an absolute path; the browser build: a URL) |
 | `times` | number[] |  | Source seconds, up to 24 |
 | `count` | integer |  | Frames spread over the file when times is not given; default 12 (2..24) |
+| `shots` | boolean |  | true: a shot list instead. One tile for every shot of the video (its own cuts, found on this computer), labeled with its number and source seconds, and the shots as text. The first call takes about as long as the video plays; later ones are instant |
+| `from` | number |  | With shots: only the shots after this source second (0..) |
+| `to` | number |  | With shots: only the shots before this source second (0..) |
 | `columns` | integer |  | Tiles a row, at most 8; default 4 (1..8) |
-| `tile_width` | integer |  | Default 320 (120..640) |
+| `tile_width` | integer |  | Default 320 (240 with shots) (120..640) |
 | `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
@@ -3233,13 +3298,13 @@ Example:
 
 ### preview_frames
 
-See several moments at once: one JPEG contact sheet of the frames at the given times, each stamped with its time. Check a whole edit in one call, then preview_frame a moment that needs a closer look.
+See several moments at once: one JPEG contact sheet of the frames at the given times, each stamped with its time. Without times it shows the middle of every shot on the main track (up to 24, spread evenly over the cut when there are more) and answers the times it chose: the whole edit in one look. Then preview_frame a moment that needs a closer look.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `before` | boolean |  | Bypass the look for an ungraded comparison, without editing the project (default false) |
 | `before_clip_ids` | string[] |  | Clip IDs whose look to bypass when before is true; default all visible clips, including adjustment layers |
-| `times` | number[] | yes | Seconds, up to 24 |
+| `times` | number[] |  | Seconds, up to 24; default the middle of every shot on the main track |
 | `columns` | integer |  | Tiles a row, at most 8; default 4 (1..8) |
 | `tile_width` | integer |  | Width of each frame, default 320 (120..640) |
 | `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
@@ -3454,11 +3519,12 @@ No parameters.
 
 ### job_status
 
-Progress, stage, elapsed seconds, quiet_seconds since the last progress callback and complete finished answer of a long tool. Without an ID lists every running and recent job. Text results stay up to 30 minutes within a 32 MiB budget (128 recent jobs); delivered image/audio payloads are released. Switching projects cancels running work and releases answers. Export jobs also remain visible through export_status.
+Progress, stage, elapsed seconds, quiet_seconds since the last progress callback and complete finished answer of a long tool. wait holds the answer until the job finishes, up to that many seconds: one call instead of polling. Without an ID lists every running and recent job. Text results stay up to 30 minutes within a 32 MiB budget (128 recent jobs); delivered image/audio payloads are released. Switching projects cancels running work and releases answers. Export jobs also remain visible through export_status.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `job_id` | string |  | Job ID returned by a long tool; omit to list running and recent jobs |
+| `wait` | number |  | With job_id: seconds to wait for the job to finish before answering (default 0: answer at once) (0..45) |
 
 ### cancel_job
 

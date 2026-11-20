@@ -355,6 +355,36 @@ export async function analyzeScenes(clipId?: Id, opts: Partial<SceneSettings> = 
   });
 }
 
+const shotLists = new Map<string, { start: number; end: number }[]>();
+
+/**
+ * A video file's shots, by its own cuts: source seconds, the whole file
+ * (preview_media shots, ADR-148). The same detector as Split scenes, run on
+ * the file rather than on a clip, so a reel can be read before any of it
+ * is on the timeline. Kept for the session by file.
+ */
+export async function assetShots(assetId: Id): Promise<{ start: number; end: number }[]> {
+  const asset = ops.getAsset(store.get().project, assetId);
+  if (!asset) throw new Error(`No asset ${assetId}; describe_project lists them`);
+  if (asset.kind !== "video") throw new Error(`${asset.name} is not a video: shots are found in videos`);
+  const known = shotLists.get(asset.src);
+  if (known) return known;
+  const signal = projectWork.capture(), o = state.settings.scenes;
+  const id = toast(`Finding the shots in ${asset.name}`, "progress");
+  try {
+    const { times, scores } = await frameScores(asset, 0, asset.duration, {}, (x) => updateToast(id, { progress: x }), signal);
+    signal.throwIfAborted();
+    const k = 2 ** (0.5 - o.sensitivity);
+    const cuts = sceneCuts(times, scores, { detector: o.detector, adaptiveThreshold: 3 * k * k, threshold: 27 * k, minContentVal: 15 * k, minScene: o.minScene }).filter((t) => t > 0 && t < asset.duration);
+    const edges = [0, ...cuts, asset.duration];
+    const shots = edges.slice(0, -1).map((s, i) => ({ start: +s.toFixed(3), end: +edges[i + 1].toFixed(3) }));
+    shotLists.set(asset.src, shots);
+    return shots;
+  } finally {
+    dismiss(id);
+  }
+}
+
 export interface BeatAnalysis {
   /** Source seconds. */
   beats: number[];
@@ -1080,7 +1110,7 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
   for (const { moment, line } of cuesUnderLines(moments, lines, frames(DUCK_ATTACK), opens.map((x) => x.frame))) {
     const v = voices.find((x) => moment.frame >= x.span[0] - frames(DUCK_ATTACK) && moment.frame < x.span[1]);
     const at = sec(moment.frame);
-    notes.push(`${moment.label[0].toUpperCase()}${moment.label.slice(1)} at ${at} s falls inside a line (${sec(lines[line][0])}-${sec(lines[line][1])} s${v ? `, ${v.top}` : ""}) and plays ${lineDb?.[line] ?? depth} dB down under it: move_clip the line to start at ${+(at + 0.5).toFixed(2)} s or later, then duck again with open_at [${at}], to let it be heard.`);
+    notes.push(`${moment.label[0].toUpperCase()}${moment.label.slice(1)} at ${at} s falls inside a line (${sec(lines[line][0])}-${sec(lines[line][1])} s${v ? `, ${v.top}` : ""}) and plays ${lineDb?.[line] ?? depth} dB down under it. To let it be heard, move the music rather than the talk when the talk is cut to picture: fit_music (or generate_music again) so the hit lands after the line ends at ${sec(lines[line][1])} s; or move_clip the line to start at ${+(at + 0.5).toFixed(2)} s or later. Then duck again with open_at [${at}].`);
   }
   for (const o of open) if (o.up && o.up[1] - o.up[0] < 0.2) notes.push(`The music is up for only ${+(o.up[1] - o.up[0]).toFixed(2)} s around ${o.at} s (the lines either side are close): move a line to give it room.`);
   if (handReplaced.length) notes.push(`Volume keys made by hand under a line were replaced (${handReplaced.join(", ")} s): the duck sets the level a voice is heard over.`);
@@ -1273,7 +1303,13 @@ function cameraFor(audio: AudioClip, videoId?: Id): VideoClip {
  */
 export async function syncAudio(clipId?: Id, opts: { videoId?: Id; muteCamera?: boolean } = {}): Promise<SyncEdit> {
   const scope = projectWork.capture();
-  const t = targetFor("sync", clipId);
+  // A second camera (ADR-148): a video clip named outright, with the camera
+  // it syncs to, moves into sync like a recorder's sound. The tool's own
+  // target stays an audio clip, so a selection of both still picks the audio.
+  const named = clipId && opts.videoId ? ops.findClip(store.get().project, clipId)?.clip : undefined;
+  const camera2 = named?.type === "video" ? { clip: named, asset: ops.getAsset(store.get().project, named.assetId) } : null;
+  if (camera2 && !camera2.asset?.hasAudio) refuse(`${camera2.asset?.name ?? clipId} has no sound of its own to match`);
+  const t = camera2 ? (camera2 as Target) : targetFor("sync", clipId);
   if (typeof t === "string") refuse(t);
   const { clip, asset } = t;
   const video = cameraFor(clip as AudioClip, opts.videoId);

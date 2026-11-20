@@ -155,3 +155,19 @@ it("film 5: readable automatic captions merge shaft and other orphan cues", () =
   expect(checkProject(p).findings.filter(f => f.rule === "caption_too_fast")).toEqual([]);
   expect(caps.every((c, i) => !i || c.start >= caps[i - 1].end)).toBe(true);
 });
+
+// The blind documentary test: "We have seen an increase in the / surface", and
+// "century and a half. And that / temperature continues to rise." (ADR-148).
+it("ends a cue with its sentence, and balances two lines where a phrase begins", () => {
+  const said = "We have seen an increase in the surface temperature averaged over the whole globe over the past century and a half. And that temperature continues to rise. That's global warming.";
+  // Said at an easy pace (2.5 words a second): faster, a short cue reads too fast and joins its neighbor.
+  const ws = said.split(" ").map((text, i) => ({ text, start: i * 0.4, end: i * 0.4 + 0.36 }));
+  const caps = readableCaptions(ws).map((c) => c.text);
+  // No cue runs on from one sentence into the next.
+  expect(caps.filter((c) => /[.!?] \S|[.!?]\n\S/.test(c))).toEqual([]);
+  expect(caps.slice(-2)).toEqual(["And that temperature\ncontinues to rise.", "That's global warming."]);
+  // No word alone on a second line, no line over the limit, every word kept in order.
+  for (const c of caps) for (const line of c.split("\n")) expect(line.length).toBeLessThanOrEqual(32);
+  expect(caps.filter((c) => c.includes("\n") && c.split("\n")[1].split(" ").length < 2)).toEqual([]);
+  expect(caps.join(" ").replace(/\n/g, " ")).toBe(said);
+});

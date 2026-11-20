@@ -8,7 +8,7 @@ import { measureMix, type MixMeasurement } from "../engine/mixdown";
 import { duckRangeContext } from "../lib/analysis/duck";
 import { checkSpec, LOUDNESS_SPECS, PROGRAM_KINDS, rangeVerdict, SPEC_IDS, type ProgramKind, type SpecId } from "../lib/analysis/delivery";
 import { toDbtp } from "../lib/analysis/truePeak";
-import { clipEnd, projectDuration } from "../lib/project/ops";
+import { clipEnd, getAsset, projectDuration } from "../lib/project/ops";
 import { framesToSeconds } from "../lib/time";
 import { currentScreen } from "./project";
 import { projectWork } from "./projectWork";
@@ -59,13 +59,21 @@ export async function loudnessReport(spec = "", opts: ReportOptions = {}) {
         if (!stems.has(key)) stems.set(key, measureMix(isolateTracks(p, ids), start, end, { signal }));
         return stems.get(key)!;
       };
-      for (const t of p.tracks.filter(t => t.kind === "audio")) {
+      // A video track whose footage carries its own sound is a stem too: an
+      // interview left on the main track was missing from the list, and
+      // with it the voice's margin over the music (ADR-148).
+      const sounding = (t: (typeof p.tracks)[number]) => t.kind === "video" && !t.muted && t.clips.some((c) => (c.type === "video" || c.type === "compound") && !c.muted && !c.disabled && (c.type === "compound" || getAsset(p, c.assetId)?.hasAudio !== false));
+      for (const t of p.tracks.filter(t => t.kind === "audio" || sounding(t))) {
         const s = await stem([t.id]);
-        tracks.push({ track_id: t.id, name: t.name, role: trackRole(t, assetsOf(p)), integrated_lufs: round(s.integrated),
+        tracks.push({ track_id: t.id, name: t.name, role: t.kind === "video" ? "picture" : trackRole(t, assetsOf(p)), integrated_lufs: round(s.integrated),
           short_term_max_lufs: round(s.shortTermMax), loudness_range_lu: round(s.range),
           ...(opts.per_second ? { short_term: s.shortTerm.map(x => ({ end: round(start + x.end, 2), lufs: round(x.lufs) })) } : {}) });
       }
-      const dialog = p.tracks.filter(t => isDialog(t, p)).map(t => t.id);
+      // With no dialog track, the footage's own sound is the voice.
+      const voiced = p.tracks.filter(t => isDialog(t, p));
+      const fromPicture = !voiced.length;
+      const voiceTracks = fromPicture ? p.tracks.filter(sounding) : voiced;
+      const dialog = voiceTracks.map(t => t.id);
       const music = p.tracks.filter(t => isMusic(t, p)).map(t => t.id);
       if (dialog.length && music.length) {
         const voice = await stem(dialog);
@@ -76,7 +84,7 @@ export async function loudnessReport(spec = "", opts: ReportOptions = {}) {
         };
         // The lines: the voice clips, each from its first word to its last.
         const fps = p.fps;
-        const said = p.tracks.filter((t) => isDialog(t, p) && !t.muted).flatMap((t) => t.clips)
+        const said = voiceTracks.filter((t) => !t.muted).flatMap((t) => t.clips)
           .filter((c) => (c.type === "audio" || c.type === "video") && !c.disabled && !c.muted)
           .map((c) => [Math.max(start, framesToSeconds(c.start, fps)), Math.min(end, framesToSeconds(clipEnd(c), fps))] as [number, number])
           .filter(([a, b]) => b > a)
@@ -85,6 +93,7 @@ export async function loudnessReport(spec = "", opts: ReportOptions = {}) {
           .sort((x, y) => x[0] - y[0]);
         const speaking = speechWindows(said, 0.001);
         balance = {
+          ...(fromPicture ? { voice_from: "the footage's own sound (role picture): there is no dialog track, so the video tracks that sound are taken as the voice" } : {}),
           dialog_tracks: dialog,
           music_tracks: music,
           program: { window: "program", means: BALANCE_WINDOWS.program, start: round(start, 2), end: round(end, 2), ...lu(voice.integrated, bed.integrated) },
