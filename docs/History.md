@@ -1978,3 +1978,99 @@ three pass alone or after a runner fix.
   touchdown; the saved log, read offline, showed which words to trust.
 - **Drives must not depend on load order.** Resource timing keeps 250
   entries; the app outgrew it.
+
+## 2026-11-19 — Every branch accounted for, and the story tools (Claude Code)
+
+The owner asked for every branch to be brought into one, for whatever was
+still open to be understood, and then for the MCP tools to be improved so
+an AI makes better videos, adding what the big editors have and OpenFrame
+lacked.
+
+**Branches.** `main` already held everything. `improvements-6` to
+`improvements-9` are merged (pull requests 1 to 4), and GitHub lists no open
+pull request or issue. The three remote branches not merged, `bg-removal`,
+`compound-clips` and `timeline-ux`, are the WIP backups parked on
+2026-10-14: each feature was finished and landed on `main` on 2026-10-16
+in other commits (ADR-032 and 033, ADR-037, ADR-046 and 047), and every
+file they add exists on `main` in a longer, finished form. Nothing was
+merged from them and they were left where they are.
+
+**What the survey found.** The 197 tools were read against Premiere,
+Resolve, Final Cut, VEGAS and CapCut. Seven gaps were small enough to close
+at once, on branch `improvements-10`
+([[ADR-147 Story tools reuse the title, the roll and the detached sound]]):
+
+- `jl_cut`: a J or L cut in one call. The shot log advised them, but the
+  edit was two calls with placeholder ids.
+- `add_counter` and `set_counter`: a title whose number counts (a
+  statistic, a countdown, a stopwatch).
+- `add_credits`: a credits roll at one steady speed.
+- `highlight_words`: chosen words styled in every caption at once.
+- `add_progress_bar`: a line that fills over the video.
+- `export_frame`: a frame written as a PNG or JPEG, for a cover or a
+  thumbnail.
+- A `documentary` playbook and prompt for an interview with cutaways, the
+  genre the playbooks did not cover. `suggest_edit_points` now names
+  `jl_cut` in its J and L cut advice.
+
+**The playbook run end to end.** `scripts/drive/documentary-flow.js` then ran
+the documentary playbook over MCP on two synthesized interviews (flite
+speech over a plain picture, with a pause before and after the talk, added
+to `make-fixtures.mjs`). It found what the tool-by-tool drive could not:
+
+- a J or L cut's join was a `click_at_join` warning from `check_project`
+  (the join now gets a 30 ms crossfade);
+- Whisper's "12,000" came as "12" and ",000", so a caption began with a
+  comma, and "year," (stamped 20 ms long) fell out of its caption;
+- a ripple trim of a picture whose sound is detached left the next shot's
+  sound where it was, half a second out of sync, with nothing said
+  (`trim_clip` now takes the detached sound along, and any agent edit that
+  leaves a detached sound out of sync says so and names `sync_to_clip`).
+
+After the fixes the flow ends with every spoken word in the captions,
+"ok: nothing found" from the check and -14 LUFS passing the online spec.
+
+**Checked.** tsc; the production build; 2,026 unit tests (in the first full
+run two pitch-shift tests timed out at 5 s under load; they pass alone in
+2 s and in every later full run, and do not touch this change);
+`story-tools.js` and `documentary-flow.js` over MCP in the web build, a
+contact sheet of each looked at by eye, and twenty-four existing drives
+around text, captions, shapes, linked audio and the check. One of them,
+`script-captions.js`, first read `add_voiceover`'s answer as undefined: on a
+fresh browser profile the voice model downloads first and the answer is a
+job (trap 29 of [[Driving the app]]); its `call` now follows the job.
+`ad-spot.js` could not run: its downloaded fixture answered 429. Rust
+was not changed, so its gates were not run. `export_frame` wrote no file:
+it needs the desktop app, which was not started in this round.
+
+### Lessons paid for in this round
+
+- **A template must pass the app's own check.** The roll's first default
+  size, 48, is one under the readable floor on 16:9 (49); the drive's
+  `check_project` call caught it, as ADR-143 had already taught for clip
+  templates. Run the check on what a new tool makes before choosing its
+  defaults.
+- **Prove sound with a fixture that says where it is.** `flash-beep-30.mp4`
+  beeps half a second into every second, so six onset times in the exported
+  WAV showed whose sound plays on each side of a J or L cut; clip times in
+  the project could not.
+- **Compare a new picture path with the old one, pixel for pixel.** The
+  counter's held number against a plain title of the same words: zero
+  pixels differ, so everything a title does applies.
+- **Run the playbook, not only its tools.** Each tool passed its own
+  drive; the five problems above only showed when the steps ran in order
+  on something like real footage. A playbook is a program: give it a
+  drive.
+- **A hint is a promise.** `jl_cut` said to trim first and call again;
+  doing exactly that hit the sync bug. Follow a new hint's recipe in a
+  drive before shipping the hint.
+- **Fixtures need handles.** Speech that starts on a file's first frame and
+  ends on its last cannot be J or L cut; real takes have a pause at both
+  ends, and so do the interview fixtures now.
+- **A parked branch is not open work.** The remote backups looked unmerged
+  to git and were long finished; the handoff said so, and a file-by-file
+  look at `main` confirmed it before anything was touched.
+- **`gh` and `git push` may have no credentials in a session.** The public
+  API (`api.github.com/repos/<owner>/<repo>/pulls`) and `git ls-remote
+  origin 'refs/pull/*'` answer what is open without them; pushing waits for
+  the owner.

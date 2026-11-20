@@ -22,7 +22,13 @@ export function speechWindow(p: Project, c: AudioClip | VideoClip, start = 0, en
  * and the requested timeline window. Never carries a word across a cut. */
 export function timelineWords(p: Project, c: AudioClip | VideoClip, words: Word[], start = 0, end = Infinity): Word[] {
   const from = Math.max(start, framesToSeconds(c.start, p.fps)), to = Math.min(end, framesToSeconds(c.start + c.duration, p.fps));
-  return words.map((w) => ({ text: w.text.trim(), start: Math.max(from, framesToSeconds(frameOfSource(c, w.start, p.fps), p.fps)), end: Math.min(to, framesToSeconds(frameOfSource(c, w.end, p.fps), p.fps)) })).filter((w) => w.text && w.end > w.start);
+  // A word shorter than a frame (Whisper stamps some 20 ms long) keeps one
+  // frame: rounded to no length, "year," fell out of its caption.
+  const frame = framesToSeconds(1, p.fps);
+  return words.map((w) => {
+    const at = framesToSeconds(frameOfSource(c, w.start, p.fps), p.fps);
+    return { text: w.text.trim(), start: Math.max(from, at), end: Math.min(to, Math.max(at + frame, framesToSeconds(frameOfSource(c, w.end, p.fps), p.fps))) };
+  }).filter((w) => w.text && w.end > w.start);
 }
 
 /** The ranges to cut for the words `cut` picks (runs merged). Each run's

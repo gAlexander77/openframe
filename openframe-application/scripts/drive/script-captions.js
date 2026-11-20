@@ -15,10 +15,23 @@ async (page) => {
   await page.waitForFunction(() => !!window.videoEditor);
   await page.locator(".create-card").click();
   await page.locator(".timeline-panel").waitFor();
-  const call = async (name, args = {}) => {
+  const rpc = async (name, args = {}) => {
     const r = await page.evaluate(([name, args]) => window.videoEditor.mcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }), [name, args]);
     if (r.error || r.result?.isError) throw new Error(`${name}: ${r.error?.message ?? r.result.content[0].text}`);
     return JSON.parse(r.result.content[0].text);
+  };
+  // A long tool answers a job (trap 29): on a fresh browser profile the
+  // voice model downloads first, and add_voiceover's answer was read as
+  // undefined.
+  const call = async (name, args = {}) => {
+    let answer = await rpc(name, args);
+    while (answer && answer.state === "running" && answer.job_id) {
+      await page.waitForTimeout(2000);
+      const s = await rpc("job_status", { job_id: answer.job_id });
+      if (s.state === "failed") throw new Error(`${name}: ${JSON.stringify(s)}`);
+      if (s.state === "done") answer = s.result;
+    }
+    return answer;
   };
   const details = {};
   const origin = await page.evaluate(() => location.origin);

@@ -269,6 +269,52 @@ export async function saveStill(name: string, resolution?: ExportSettings["resol
   return target.displayName;
 }
 
+export interface FrameExportOptions {
+  at: number;
+  name?: string;
+  format?: "png" | "jpg";
+  resolution?: ExportSettings["resolution"];
+  folder?: string;
+  replace?: boolean;
+}
+
+/**
+ * export_frame: one frame of the timeline written as a picture where an
+ * agent's videos go, with no dialog: a cover or a thumbnail (ADR-147).
+ * JPEG for upload limits (YouTube takes thumbnails up to 2 MB), PNG exact.
+ */
+export async function exportFrameForAgent(o: FrameExportOptions) {
+  const make = platform.createAgentExportTarget;
+  if (!make) throw new Error(o.folder !== undefined ? FOLDER_DESKTOP_ONLY : "Agents can export from the desktop app only.");
+  const { project: p } = exportSubject();
+  const end = projectDuration(p);
+  if (!end) throw new Error("The timeline is empty: there is no frame to export.");
+  const frame = secondsToFrames(o.at, p.fps);
+  if (frame >= end) throw new Error(`at ${o.at} s is past the end: the last frame is at ${+framesToSeconds(end - 1, p.fps).toFixed(3)} s`);
+  const short = o.resolution ? (RESOLUTIONS.find((r) => r.id === o.resolution)?.short ?? 1080) : Math.min(p.width, p.height);
+  const { width, height } = outputSize(p, short);
+  const signal = projectWork.capture();
+  let blob = await exportStill(p, frame, width, height, signal);
+  signal.throwIfAborted();
+  const jpg = o.format === "jpg";
+  if (jpg) {
+    const bmp = await createImageBitmap(blob);
+    const c = new OffscreenCanvas(bmp.width, bmp.height);
+    c.getContext("2d")!.drawImage(bmp, 0, 0);
+    bmp.close();
+    blob = await c.convertToBlob({ type: "image/jpeg", quality: 0.92 });
+  }
+  const name = safeFileName(o.name ?? `${p.name} cover`), extension = jpg ? "jpg" : "png";
+  const target = await make.call(platform, name, extension, o.folder, o.replace);
+  const w = target.writable.getWriter();
+  await w.write({ type: "write", data: new Uint8Array(await blob.arrayBuffer()), position: 0 });
+  await w.close();
+  const path = target.displayName;
+  const note = target.replaced ? replacedNote(path) : renamedNote(`${name}.${extension}`, path);
+  toast(`Saved ${path.split(/[\\/]/).pop()}`);
+  return { path, width, height, bytes: blob.size, at: +framesToSeconds(frame, p.fps).toFixed(3), ...(note ? { note } : {}) };
+}
+
 /**
  * Save the timeline as OpenTimelineIO (.otio) for Resolve, Premiere's OTIO
  * plugin and other editors. Call from the click handler. Returns the

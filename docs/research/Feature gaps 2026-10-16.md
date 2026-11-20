@@ -48,6 +48,14 @@ only, so the result could not be checked in the product. Link/unlink is
 mostly covered the CapCut way: detached sound under a main-track shot
 follows it through linkage, and Group links any clips for moves.
 
+**Updated 2026-11-19.** A survey of the MCP tools against the same five
+editors added what an agent could not reach: J and L cuts in one call
+(`jl_cut`), counting titles, a credits roll, caption keywords, a progress
+bar and a cover picture on disk
+([[ADR-147 Story tools reuse the title, the roll and the detached sound]]).
+Still open from it: multicam, optical flow, a luma key, curved text and a
+slideshow maker.
+
 **Updated 2026-10-17.** A second pass for everyday gaps, a UI code audit
 and the styling sweep are in [[Everyday gaps 2026-10-17]]; rows they
 touched read "yes" here with the date.
@@ -140,7 +148,7 @@ heights come from `trackHeight()` in `src/lib/timeline.ts`.
 | Collapse tracks, folder tracks | R | no | P2 | — |
 | Track targeting, source patching, sync lock | P R | no | P2 | Matters once insert/overwrite exist. The magnet covers the CapCut case. |
 | Add or delete a track from a menu | C P R V | partial: header menu > Delete track; tracks are added by drops and `add_track` | P2 | Header context menu. |
-| Cover button and cover designer | C | no | P2 | See §12. |
+| Cover button and cover designer | C | partial: agents write any frame as a picture with `export_frame` (2026-11-19, ADR-147); no button or designer | P2 | See §12. |
 | Global mute | P | no | P2 | A store flag in the master bus. |
 | Timeline view options: thumbnail mode, waveform size, clip names | P R F | no | P2 | Session preferences read by `ClipView.tsx`. |
 
@@ -227,7 +235,7 @@ Text styling is the Text tab in `Inspector.tsx`. Rasterizing is in
 | Transcript-based editing | C P R V | yes: Captions tab > Edit by transcript, `get_transcript` | — | A transcript panel; deleting words maps to `cut_ranges`. L. |
 | Translate captions / bilingual captions | C P | no | P1 | Whisper `task: "translate"` gives English cheaply (S). Other targets need a local MT model (NLLB/Marian ONNX, L). Bilingual = a second caption track. |
 | Caption find and replace | C P R | yes (`replace_caption_text`) | — | Pure function in `lib/captions.ts`. |
-| Keyword highlight, AI emojis | C | no | P2 | — |
+| Keyword highlight, AI emojis | C | partial: `highlight_words` styles chosen words in every caption (2026-11-19, ADR-147); the words are chosen by the caller, no emojis | P2 | — |
 | Saved text styles (save a title's look, reuse it) | C P | yes: Text tab > Saved styles (2026-10-17) | — | Added by the everyday-gaps pass; kept per viewer like effect presets, not in the project. |
 | Caption templates (one-click caption looks) | C R | yes: Captions tab > Looks, six, `set_caption_look` (2026-10-17) | — | Static looks plus the karaoke highlight; per-word motion (pop-in, bounce) is the upgrade. |
 | Captions in the export dialog (sidecar or embedded track) | C P R F | partial: SRT/VTT from the Captions tab; captions burn in because they are text clips | P2 | A Captions section in `ExportDialog.tsx`; an embedded track needs muxer support. |
@@ -320,7 +328,7 @@ are in `src/lib/export.ts`; encoding is in `src/engine/export.ts`.
 | MP4 chapters from markers | P F | partial: marker text export gives YouTube timestamps | P2 | Chapter atoms in the muxer, if mediabunny supports them; otherwise desktop FFmpeg. |
 | ProRes or DNxHR via FFmpeg | P R V F | no | P2 | Desktop only, through `src-tauri/src/ffmpeg.rs`. |
 | Alpha export (ProRes 4444, VP9 alpha, PNG sequence) | P R V F | no | P2 | — |
-| Cover / thumbnail designer | C | no | P2 | A still export with text layers. |
+| Cover / thumbnail designer | C | partial: `export_frame` (2026-11-19) writes a frame with its titles as PNG or JPEG; no designer | P2 | A still export with text layers. |
 | Save the current frame from the player | C P | yes: camera button, Mod+Shift+E (2026-10-17) | — | Added by the everyday-gaps pass; it was only in the export dialog. "Import into project" is not offered. |
 | Loudness-normalized export, true-peak limiter | P R V | partial: normalization to a target (sample peak held at -1 dBFS); no true-peak limiter | P2 | — |
 | Smart render (stream copy of untouched GOPs) | P V | no | P2 | — |

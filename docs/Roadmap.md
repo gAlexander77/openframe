@@ -31,6 +31,12 @@ None.
   translated captions (waits on a non-English speech fixture). Borders
   and shadows on pictures shipped (ADR-070, ADR-099).
 - **Proxies on the web** via mediabunny `Conversion` (short-GOP 720p).
+- **Buttons for the story tools** (2026-11-19, ADR-147): counting titles,
+  the credits roll, caption keywords, the progress bar, J/L cut and a
+  frame saved as JPEG are agent and assistant tools only. Then a desktop
+  run of `export_frame` and a blind test of the `documentary` playbook.
+- **Next from the 2026-11-19 survey of the MCP tools**: a slideshow maker,
+  a luma key, curved text, an audio spectrum graphic.
 
 ## Later
 

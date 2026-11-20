@@ -112,6 +112,8 @@ export interface McpHost {
   exportVideo(options: Record<string, unknown>): Promise<unknown>;
   /** The last export_video: running (with progress), done or failed. */
   exportStatus(): unknown;
+  /** export_frame: one frame written as a picture file, no dialog (desktop). */
+  exportFrame?(options: { at: number; name?: string; format?: "png" | "jpg"; resolution?: string; folder?: string; replace?: boolean }): Promise<unknown>;
   /** export_versions: one file per version, the project left as it is. */
   exportVersions(options: VersionsRequest): Promise<unknown>;
   /** One JPEG (base64) of every version at a few moments, nothing
@@ -588,7 +590,7 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "help",
-    description: "The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit, voiceover or social_short (step-by-step playbooks), design (the rules of thumb every playbook follows, given once here), catalog, params (set_param paths), or any tool's name for its parameters and an example call.",
+    description: "The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit, documentary, voiceover or social_short (step-by-step playbooks), design (the rules of thumb every playbook follows, given once here), catalog, params (set_param paths), or any tool's name for its parameters and an example call.",
     inputSchema: obj({ topic: { type: "string", description: `overview (default), ${HELP_TOPICS.slice(1).join(", ")}, or a tool's name` } }),
     call: (h, a) => ({ content: [{ type: "text", text: helpText(a.topic === undefined ? undefined : String(a.topic), listTools(), guideFor(h)) }] }),
   },
@@ -855,6 +857,26 @@ export const APP_TOOLS: AppTool[] = [
       if (a.replace === true && a.folder === undefined) throw new Error(REPLACE_NEEDS_FOLDER);
       if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
       return appJson(await h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end, captions: a.captions, chapters: a.chapters, folder: a.folder, replace: a.replace })));
+    },
+  },
+  {
+    name: "export_frame",
+    description: "Export one frame of the timeline as a picture file: a video's cover or thumbnail, a still for a post. It is written where export_video writes (the user's Videos folder, in a folder named after the app, or folder), never replacing a file unless replace is true with folder, and answers its path, size in pixels and bytes. Design the frame like any other: put a title, a sticker or a brighter grade on the moment that sells the video, look at it with preview_frame, then export it (the title can sit on a frame of its own after the end, cut off again afterwards, or stay if it belongs in the video). format jpg for uploads (YouTube takes a 16:9 thumbnail of 1280x720 or more, under 2 MB), png to keep every pixel. preview_media with file: the answer's path shows the saved picture.",
+    inputSchema: obj(
+      {
+        at: { type: "number", minimum: 0, description: "Timeline seconds of the frame" },
+        name: { type: "string", description: "File name without extension; default the project's name and 'cover'" },
+        format: { type: "string", enum: ["png", "jpg"], description: "png (default, exact) or jpg (smaller, for uploads)" },
+        resolution: { type: "string", enum: ["480p", "720p", "1080p", "2k", "4k"], description: "Short side; default the project's own size" },
+        folder: FOLDER,
+        replace: REPLACE,
+      },
+      ["at"],
+    ),
+    call: async (h, a) => {
+      if (a.replace === true && a.folder === undefined) throw new Error(REPLACE_NEEDS_FOLDER);
+      if (!h.exportFrame || h.canExport?.() === false) throw new Error(a.folder !== undefined ? FOLDER_DESKTOP_ONLY : "Agents can export from the desktop app only; preview_frame returns the picture itself.");
+      return appJson(await h.exportFrame(given({ at: Number(a.at), name: a.name, format: a.format, resolution: a.resolution, folder: a.folder, replace: a.replace }) as { at: number }));
     },
   },
   {
@@ -1395,24 +1417,24 @@ const APP_INDEX = new Map(APP_TOOLS.map((t) => [t.name, t]));
  * for the old 3.5 KB guide), so the guide itself is the help tool's
  * overview, read once when asked for.
  */
-const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable. Call help first: the steps that make a video, tool by tool; help with topic ad, epic_edit, voiceover or social_short is a playbook, with a tool's name its parameters and an example. Times are seconds; positions are fractions of the canvas from its center (x right, y down); rectangles (box, region) are a top-left corner and a size, fractions of the picture. Work in a new_project: the user's own projects stay untouched.`;
+const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable. Call help first: the steps that make a video, tool by tool; help with topic ad, epic_edit, documentary, voiceover or social_short is a playbook, with a tool's name its parameters and an example. Times are seconds; positions are fractions of the canvas from its center (x right, y down); rectangles (box, region) are a top-left corner and a size, fractions of the picture. Work in a new_project: the user's own projects stay untouched.`;
 
 /** The guide: the moves, in the order a video gets made (help's overview). */
 const GUIDE = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they share once, in added_clips_common or changed_clips_common (or per track, in *_clips_common_by_track), markers that moved with their clip are counted in moved_markers, and quiet: true on batch or any command it takes answers the ids alone; describe_project has the whole timeline, and its fields option only the parts asked for.
 The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
-Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
+Before you start: help (the tools by step), help with topic ad, epic_edit, documentary (an interview with cutaways), voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 Long tools answer their result or a running job_id within 45 s (wait: 0 returns immediately). Poll job_status with job_id until done, then read result; cancel_job stops it. Text results stay up to 30 minutes within a 32 MiB budget; delivered image/audio payloads are released; export_status also follows the latest export.
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
-4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and moves between regions (moves); on a screen recording add_callout rings the part the voice names and stays on it through the zooms; for music-driven edits, Music-synced below.
-5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
+4. Lay shots under each line with add_media_clip; where recorded talk meets the next shot, jl_cut lets its sound run on under the picture or lead it (J and L cuts); frame_region zooms a shot onto the part that matters and moves between regions (moves); on a screen recording add_callout rings the part the voice names and stays on it through the zooms; for music-driven edits, Music-synced below.
+5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards; add_counter for a number that counts up or a countdown, add_credits for a credits roll.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
 8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (MP3 with M4A or WAV fallback, its format and measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
-9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video.
+9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video. export_frame writes one frame as a picture: the cover or thumbnail.
 Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
 Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_reverb, set_echo, set_tape_stop; measure_loudness checks the mix against online, ebu_r128 or atsc_a85 before export.

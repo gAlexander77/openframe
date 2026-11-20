@@ -4,14 +4,14 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 197 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 204 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
 The server's instructions, kept short because some clients copy them into every tool's description ([[ADR-095 Media is known by its file, agents choose where files go, the guide is read once]]):
 
 ```text
-You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable. Call help first: the steps that make a video, tool by tool; help with topic ad, epic_edit, voiceover or social_short is a playbook, with a tool's name its parameters and an example. Times are seconds; positions are fractions of the canvas from its center (x right, y down); rectangles (box, region) are a top-left corner and a size, fractions of the picture. Work in a new_project: the user's own projects stay untouched.
+You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable. Call help first: the steps that make a video, tool by tool; help with topic ad, epic_edit, documentary, voiceover or social_short is a playbook, with a tool's name its parameters and an example. Times are seconds; positions are fractions of the canvas from its center (x right, y down); rectangles (box, region) are a top-left corner and a size, fractions of the picture. Work in a new_project: the user's own projects stay untouched.
 ```
 
 ## The guide (help's overview)
@@ -20,18 +20,18 @@ You are editing a video in the user's video editor (OpenFrame); every edit shows
 You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they share once, in added_clips_common or changed_clips_common (or per track, in *_clips_common_by_track), markers that moved with their clip are counted in moved_markers, and quiet: true on batch or any command it takes answers the ids alone; describe_project has the whole timeline, and its fields option only the parts asked for.
 The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
-Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
+Before you start: help (the tools by step), help with topic ad, epic_edit, documentary (an interview with cutaways), voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 Long tools answer their result or a running job_id within 45 s (wait: 0 returns immediately). Poll job_status with job_id until done, then read result; cancel_job stops it. Text results stay up to 30 minutes within a 32 MiB budget; delivered image/audio payloads are released; export_status also follows the latest export.
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
-4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and moves between regions (moves); on a screen recording add_callout rings the part the voice names and stays on it through the zooms; for music-driven edits, Music-synced below.
-5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
+4. Lay shots under each line with add_media_clip; where recorded talk meets the next shot, jl_cut lets its sound run on under the picture or lead it (J and L cuts); frame_region zooms a shot onto the part that matters and moves between regions (moves); on a screen recording add_callout rings the part the voice names and stays on it through the zooms; for music-driven edits, Music-synced below.
+5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards; add_counter for a number that counts up or a countdown, add_credits for a credits roll.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
 8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (MP3 with M4A or WAV fallback, its format and measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
-9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video.
+9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video. export_frame writes one frame as a picture: the cover or thumbnail.
 Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
 Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_reverb, set_echo, set_tape_stop; measure_loudness checks the mix against online, ebu_r128 or atsc_a85 before export.
@@ -46,16 +46,16 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Shot log**: `analyze_footage`, `get_shot_log`, `find_shots`, `suggest_edit_points`, `describe_moment`
 - **Clips**: `find_highlights`, `add_highlight_markers`, `apply_stream_layout`, `create_clips`, `export_projects`
 - **Media**: `import_media`, `create_proxies`, `delete_proxies`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
-- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `extend_edit`, `trim_edits`, `edit_from_source`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
+- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `extend_edit`, `trim_edits`, `edit_from_source`, `roll_edit`, `jl_cut`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `move_motion_point`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `apply_layout`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
-- **Graphics and compositing**: `add_shape`, `set_shape`, `add_callout`, `set_anchor`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
+- **Graphics and compositing**: `add_shape`, `set_shape`, `add_progress_bar`, `add_callout`, `set_anchor`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
-- **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `auto_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
+- **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_counter`, `set_counter`, `add_credits`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `auto_captions`, `set_caption_look`, `highlight_words`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
 - **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `apply_default_transitions`, `match_color`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, `set_colorize`
 - **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_pitch`, `apply_voice_preset`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `add_audio_insert`, `update_audio_insert`, `move_audio_insert`, `remove_audio_insert`, `set_dynamics`, `set_channel_fill`, `set_crossfade`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
-- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`, `job_status`, `cancel_job`
+- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_frame`, `export_status`, `job_status`, `cancel_job`
 
 ## Start here
 
@@ -63,11 +63,11 @@ Read before editing: the guide, the timeline and the names the tools accept.
 
 ### help
 
-The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit, voiceover or social_short (step-by-step playbooks), design (the rules of thumb every playbook follows, given once here), catalog, params (set_param paths), or any tool's name for its parameters and an example call.
+The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit, documentary, voiceover or social_short (step-by-step playbooks), design (the rules of thumb every playbook follows, given once here), catalog, params (set_param paths), or any tool's name for its parameters and an example call.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `topic` | string |  | overview (default), design, shot_log, stream_clips, ad, epic_edit, voiceover, social_short, catalog, params, or a tool's name |
+| `topic` | string |  | overview (default), design, shot_log, stream_clips, ad, epic_edit, documentary, voiceover, social_short, catalog, params, or a tool's name |
 
 Example:
 
@@ -673,7 +673,7 @@ Split a video or audio clip at several SOURCE times (seconds into its media file
 
 ### trim_clip
 
-Move a clip's start or end edge to a time. Limited by the source media and neighbors (the answer says where it stopped and why); ripple=true shifts later clips instead of stopping at them.
+Move a clip's start or end edge to a time. Limited by the source media and neighbors (the answer says where it stopped and why); ripple=true shifts later clips instead of stopping at them. A picture whose sound is detached (detach_audio, jl_cut) takes its sound along: the sound's same edge moves by the same amount, a J or L cut keeping its offset; trimming the audio clip itself moves the sound alone.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -754,6 +754,22 @@ Example:
 
 ```json
 {"name":"roll_edit","arguments":{"clip_id":"c_7","to":8}}
+```
+
+### jl_cut
+
+J cut or L cut (a split edit) at the cut between two video clips that touch: the sound's cut moves off the picture's, the way dialog, interviews and scene changes are cut so they do not feel chopped. by is where the sound's cut goes, in seconds from the picture's cut: positive is an L cut (the outgoing clip's sound runs on under the incoming picture: a speaker finishes the thought over what they describe), negative a J cut (the incoming clip's sound starts under the outgoing picture: the next scene is heard before it is seen); 0 makes the cut straight again. 0.3 to 1 s is usual. Each clip's sound moves to an audio clip of its own (grouped with its picture, as detach_audio does), the two on one audio track, and the cut between them rolls, so both stay in sync and nothing else moves; calling it again on the same cut moves the same sound cut. The sound that grows needs that much more of its file past the cut, and the answer says where it stopped and why. The join gets a 30 ms crossfade so it does not tick (set_crossfade on the first audio clip changes it). It answers the two audio clips; preview_audio hears the join. Keep the cut clear of words: the sound that shrinks loses that much of its head or tail.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | A video clip on one side of the cut |
+| `by` | number | yes | Seconds from the picture's cut to the sound's: positive an L cut (outgoing sound runs on), negative a J cut (incoming sound starts early), 0 a straight cut (-30..30) |
+| `edge` | "start" \| "end" |  | Which of the clip's cuts: end (default, with the next clip) or start (with the clip before) |
+
+Example:
+
+```json
+{"name":"jl_cut","arguments":{"clip_id":"c_7","by":0.6}}
 ```
 
 ### slip_clip
@@ -1760,6 +1776,25 @@ Example:
 {"name":"set_shape","arguments":{"clip_ids":["c_8"],"draw":1,"at":2.6}}
 ```
 
+### add_progress_bar
+
+Add a progress bar: a thin line along the bottom (or top) edge that fills from left to right as the video plays, so a viewer sees how far along it is (tutorials, list videos, shorts). It runs from start to end (default the whole project as it is now, so add it last), above everything. It is a line shape with shape.draw keyed 0 to 1: set_shape, set_param and delete_clips work on it; after the video's length changes, delete it and add it again.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `start` | number |  | Seconds it starts filling; default 0 (0..) |
+| `end` | number |  | Seconds it is full; default the project's end (0..) |
+| `edge` | "bottom" \| "top" |  | Which edge it runs along; default bottom |
+| `thickness` | number |  | Pixels at a 1080-pixel-tall canvas; default 10 (1..200) |
+| `color` | string |  | CSS color; default the brand kit's accent |
+| `opacity` | number |  | 0..1, default 1 (0..1) |
+
+Example:
+
+```json
+{"name":"add_progress_bar","arguments":{"color":"#ffd23f","thickness":12}}
+```
+
 ### add_callout
 
 Point at a part of a screen recording or shot, as explainers do: a ring, box or rounded box that draws on around region, with the rest of the frame dimmed through a hole the same shape, both pinned to clip_id's picture, so they stay on the part through that clip's zooms and pans (frame_region, keys) and any later edit of them; to glides them on to other parts. region is in fractions of that clip's source picture, as frame_region takes it (x, y its top-left corner): give the part itself, the ring is drawn a few pixels clear of it. Two shape layers, the dim under the ring, grouped (they move, copy and delete together; each edits like any shape), above everything at that time. Example, the Split button of a 2560x1440 recording, then the clip's edge: {clip_id: 'c_1', region: {x: 0.102, y: 0.542, w: 0.018, h: 0.03}, at: 14.2, duration: 4.3, to: [{region: {x: 0.515, y: 0.825, w: 0.06, h: 0.095}, at: 15.83}], sound: true}.
@@ -2015,7 +2050,7 @@ Frame blending (Premiere's): a slowed video clip, or one whose source rate diffe
 
 ## Text and captions
 
-Titles, templates, stickers, captions and the transcript.
+Titles, counters, credits, templates, stickers, captions and the transcript.
 
 ### add_text
 
@@ -2149,6 +2184,67 @@ Example:
 {"name":"animate_text_style","arguments":{"clip_id":"c_5","keys":[{"at":1,"letter_spacing":0,"ease":"easeOut"},{"at":2.5,"letter_spacing":24}]}}
 ```
 
+### add_counter
+
+Add a title that counts: a number running from one value to another, for a statistic that counts up ("0 to 12,500 creators"), a price, a score, a countdown or a stopwatch (Final Cut's Counting generator, After Effects' Numbers). text says where the number goes with {n} (default the number alone): "{n}+ creators", "${n}", "T-{n}". It counts over count_seconds from its start, then holds the last number for the rest of the clip, so give the clip time to be read after the count. format number groups thousands (12,500), plain does not (a year), time shows seconds as a clock (a 10 s countdown: from 10, to 0, format time, duration 10). A rising count never shows a number it has not reached, and a falling one never one it has passed. Everything else is add_text's: position, style, role, track_id; set_animation, set_text and keyframes work on it as on any title, and set_counter changes the numbers. Example: {text: '{n}+ creators', from: 0, to: 12500, start: 3, duration: 3, count_seconds: 1.5, style: {size: 150}}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `text` | string |  | The words, with {n} where the number goes; default "{n}" |
+| `from` | number | yes | The number it starts at |
+| `to` | number | yes | The number it ends on |
+| `count_seconds` | number |  | Seconds the count takes from the clip's start, the last number held for the rest of the clip; default the whole clip for format time, two thirds of it otherwise (0.04..) |
+| `decimals` | number |  | Decimal places shown, 0..6; default 0 (0..6) |
+| `format` | "number" \| "plain" \| "time" |  | number (default): thousands grouped, 12,500; plain: no grouping, for a year; time: the value is seconds, shown as a clock (1:05) |
+| `ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "smooth" \| "fastIn" \| "overshoot" \| "anticipate" \| "spring" \| "elastic" \| "bounce" |  | The count's curve: easeOut by default (fast, then settling on the number), linear for format time (a clock's pace) |
+| `start` | number | yes | Seconds (0..) |
+| `duration` | number | yes | Seconds the title is on screen (0.001..) |
+| `x` | number |  | Horizontal offset, -0.5..0.5 |
+| `y` | number |  | Vertical offset, -0.5..0.5 |
+| `style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text); its fields are add_text's style (help add_text) |
+| `role` | "headline" \| "subhead" \| "body" \| "label" \| "cta" \| "badge" |  | Style it from the brand kit first, as add_text does |
+| `track_id` | string |  | Track id; default above everything at that time |
+
+Example:
+
+```json
+{"name":"add_counter","arguments":{"text":"{n}+ creators","from":0,"to":12500,"start":3,"duration":3,"count_seconds":1.5,"style":{"size":150}}}
+```
+
+### set_counter
+
+Change a counting title's numbers (add_counter), or make any title count: its text must hold {n} where the number goes (set_text). Only what is given changes; off: true stops it counting, leaving the text as written.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Text clip id |
+| `from` | number |  | The number it starts at |
+| `to` | number |  | The number it ends on |
+| `count_seconds` | number |  | Seconds the count takes from the clip's start, the last number held for the rest of the clip; default the whole clip for format time, two thirds of it otherwise (0.04..) |
+| `decimals` | number |  | Decimal places shown, 0..6; default 0 (0..6) |
+| `format` | "number" \| "plain" \| "time" |  | number (default): thousands grouped, 12,500; plain: no grouping, for a year; time: the value is seconds, shown as a clock (1:05) |
+| `ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "smooth" \| "fastIn" \| "overshoot" \| "anticipate" \| "spring" \| "elastic" \| "bounce" |  | The count's curve: easeOut by default (fast, then settling on the number), linear for format time (a clock's pace) |
+| `off` | boolean |  | Stop counting |
+
+### add_credits
+
+Roll credits: lines of text travel up the frame at one steady speed, from below it to above it (Premiere's roll, Resolve's scroll, Final Cut's scrolling credits), for end credits, thanks and long lists. text is the lines, \n between them; an empty line leaves a gap one line high. Without duration every line crosses the frame in line_seconds (default 6: comfortable online, cinema runs 8 to 10, under 3 is hard to read) and the roll lasts as long as its lines need (the answer says how long, so the music and the end can be fitted to it); with duration the whole roll takes that long, and the answer says how long each line is on screen. It is made of grouped titles of up to 8 lines, each on screen only while it crosses, above everything at that time: they move and delete together, and set_text with their clip_ids restyles them. Put it over black (add_color_clip) or over the last shot dimmed. check_project does not judge a roll by how long it is up or where it enters and leaves. Example: {text: 'Directed by\nJordan Lee\n\nEdited by\nSam Rivera', start: 62}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `text` | string | yes | The lines, \n between them; an empty line is a gap |
+| `start` | number | yes | Seconds the first line enters at the bottom (0..) |
+| `duration` | number |  | Seconds the whole roll takes, first line in to last line out; default as long as line_seconds needs (0.5..) |
+| `line_seconds` | number |  | Seconds a line takes to cross the frame when duration is not given; default 6 (1..60) |
+| `x` | number |  | Horizontal offset from the center, -0.5..0.5; default 0 |
+| `style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text); its fields are add_text's style (help add_text) |
+
+Example:
+
+```json
+{"name":"add_credits","arguments":{"text":"Directed by\nJordan Lee\n\nEdited by\nSam Rivera","start":62}}
+```
+
 ### add_text_template
 
 Add a text template: a title design of text and box layers with in/out/loop animations, stacked above everything at that time. Templates: lowerThird, nameTag, subscribe, chapter, quote, countdown, location, opener, news, social, endCard, linkInBio. Word art (one styled text): neonPink, neonBlue, retro, comic, hollow, gold, fire, frost, yellow, hardShadow, candy, sticker, chroma, minimal, typewriter, highlight. texts replaces the template's words, text layers in order (bottom first).
@@ -2239,6 +2335,32 @@ Example:
 
 ```json
 {"name":"set_caption_look","arguments":{"look":"pop","y":-0.2,"size":52,"maxWidth":0.6}}
+```
+
+### highlight_words
+
+Make chosen words stand out in every caption at once (CapCut's keyword highlight): each whole-word match of words, in any case, takes the style given, as style_text_range styles a stretch of one title (color, weight, scale, italic, underline or gradient; with none given, the color #ffd84d). Pick the few words that carry the point (the number, the product, the verb), one or two a sentence. clip_ids styles titles instead of the captions; clear removes the styling from those words. The answer counts the matches of each word and names any word nothing says. A caption look's spoken-word highlight (style.highlight) still lights the word being said. Example: {words: ['free', 'today'], color: '#ffd84d', scale: 1.15}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `words` | string[] | yes | Words or short phrases to style wherever they are said, whole words only |
+| `clip_ids` | string[] |  | Text clips to style instead of every caption |
+| `match_case` | boolean |  | Match the case as written (default: any case) |
+| `color` | string |  | CSS fill color; replaces the range gradient |
+| `gradient` | { from, to, angle } |  | Linear fill gradient |
+| `gradient.from` | string | yes | Start CSS color |
+| `gradient.to` | string | yes | End CSS color |
+| `gradient.angle` | number | yes | Angle in degrees |
+| `weight` | number |  | Font weight (100..900) |
+| `italic` | boolean |  | Italic letters |
+| `underline` | boolean |  | Underline letters |
+| `scale` | number |  | Size multiplier relative to the base size (0.25..4) |
+| `clear` | boolean |  | Remove the styling from these words instead |
+
+Example:
+
+```json
+{"name":"highlight_words","arguments":{"words":["free","today"],"color":"#ffd84d","scale":1.15}}
 ```
 
 ### replace_caption_text
@@ -3303,6 +3425,25 @@ Example:
 
 ```json
 {"name":"export_versions","arguments":{"ratios":["16:9","9:16","1:1"],"durations":[15,6],"textless":true,"loudness":-14,"check":true}}
+```
+
+### export_frame
+
+Export one frame of the timeline as a picture file: a video's cover or thumbnail, a still for a post. It is written where export_video writes (the user's Videos folder, in a folder named after the app, or folder), never replacing a file unless replace is true with folder, and answers its path, size in pixels and bytes. Design the frame like any other: put a title, a sticker or a brighter grade on the moment that sells the video, look at it with preview_frame, then export it (the title can sit on a frame of its own after the end, cut off again afterwards, or stay if it belongs in the video). format jpg for uploads (YouTube takes a 16:9 thumbnail of 1280x720 or more, under 2 MB), png to keep every pixel. preview_media with file: the answer's path shows the saved picture.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `at` | number | yes | Timeline seconds of the frame (0..) |
+| `name` | string |  | File name without extension; default the project's name and 'cover' |
+| `format` | "png" \| "jpg" |  | png (default, exact) or jpg (smaller, for uploads) |
+| `resolution` | "480p" \| "720p" \| "1080p" \| "2k" \| "4k" |  | Short side; default the project's own size |
+| `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
+| `replace` | boolean |  | true: replace a file of the same name in folder (folder is required) when the export finishes, instead of taking a numbered name; nothing outside folder is touched |
+
+Example:
+
+```json
+{"name":"export_frame","arguments":{"at":3.5,"name":"spring-sale-cover","format":"jpg","resolution":"1080p"}}
 ```
 
 ### export_status

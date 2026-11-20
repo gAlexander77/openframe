@@ -22,7 +22,7 @@ import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
 import { findClip, projectDuration } from "./lib/project/ops";
 import { run } from "./state/actions";
-import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, saveVersionProjects, stillToUrl, versionsSheet, type AgentExportOptions, type VersionsOptions } from "./state/export";
+import { agentExportStatus, exportForAgent, exportFrameForAgent, exportVersions, renderToUrl, saveVersionProjects, stillToUrl, versionsSheet, type AgentExportOptions, type FrameExportOptions, type VersionsOptions } from "./state/export";
 import { retakeVoiceover, textToSpeech, voiceover, type VoiceLine, type VoiceoverOptions } from "./state/tts";
 import { reviewVoiceover } from "./state/voiceReview";
 import { autoAdjustClip } from "./state/autoColor";
@@ -381,6 +381,10 @@ const mcpHost: McpHost = {
     return exportForAgent(options as AgentExportOptions);
   },
   exportStatus: () => agentExportStatus(),
+  exportFrame: (options) => {
+    if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
+    return exportFrameForAgent(options as FrameExportOptions);
+  },
   exportVersions: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
     return exportVersions(options as VersionsOptions);

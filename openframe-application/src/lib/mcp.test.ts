@@ -624,6 +624,18 @@ describe("what the Codex film test found (2026-10-19)", () => {
     expect(h.exports).toHaveLength(1);
   });
 
+  it("exports a frame as a picture file through the host, and says where it cannot (ADR-147)", async () => {
+    const frames: unknown[] = [];
+    const h = { ...host(), exportFrame: async (o: unknown) => (frames.push(o), { path: "D:/Deliveries/Trip cover.jpg", width: 1920, height: 1080, bytes: 412345, at: 3.5 }) };
+    expect(await run(h, "export_frame", { at: 3.5, format: "jpg", folder: "D:/Deliveries" })).toEqual({ path: "D:/Deliveries/Trip cover.jpg", width: 1920, height: 1080, bytes: 412345, at: 3.5 });
+    expect(frames).toEqual([{ at: 3.5, format: "jpg", folder: "D:/Deliveries" }]);
+    expect(await err(h, "export_frame", { at: 1, replace: true })).toMatch(/replace needs folder/);
+    // The browser build, and a host that cannot: said, with the tool that shows the picture.
+    expect(await err({ ...h, canExport: () => false }, "export_frame", { at: 1 })).toMatch(/desktop app only; preview_frame/);
+    expect(await err(host(), "export_frame", { at: 1 })).toMatch(/desktop app only/);
+    expect(await err(h, "export_frame", {})).toMatch(/at/);
+  });
+
   it("names the argument a model meant, for every tool", async () => {
     expect(await err(host(), "seek", { time: 11 })).toBe("args.at is required; args.time is not a known argument; did you mean at? (known: at)");
     expect(await err(host(), "set_text", { clip_id: "c", style: { fontSize: 80 } })).toContain("args.style.fontSize is not a known argument; did you mean size?");

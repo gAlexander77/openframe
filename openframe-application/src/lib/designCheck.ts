@@ -12,6 +12,7 @@
 // Loudness is left to measure_loudness and export.
 
 import { captionReading } from "./captions";
+import { isRoll } from "./credits";
 import { layerBox, TITLE_SAFE, titleZone, VERTICAL_SAFE } from "./align";
 import { minTextSize } from "./brandKit";
 import { contrastFixes, endsByItself, hex, titleLook, type Backdrop, type PixelBox, type Tail, type TitleLook, type UnevenFade } from "./contrast";
@@ -593,9 +594,11 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
     const where = `its box runs x ${box.left}..${box.right}, y ${box.top}..${box.bottom} (fractions from the center)`;
     const name = c.caption ? "A caption" : `"${c.text.slice(0, 24)}"${outer ? ` (in compound clip ${outer.id})` : ""}`;
     const place = (fix: string) => (outer ? `set_param transform.x/y or transform.scale on the compound clip ${outer.id}, or ${inside(fix)}` : fix);
-    const out = [box.left < -z.safe - 0.001 && `left of ${-z.safe}`, box.right > z.safe + 0.001 && `right of ${z.safe}`, box.top < -z.safe - 0.001 && `above ${-z.safe}`, box.bottom > z.safe + 0.001 && `below ${z.safe}`].filter(Boolean);
+    // A credits roll crosses the top and bottom on purpose: only its sides are judged.
+    const roll = isRoll(c);
+    const out = [box.left < -z.safe - 0.001 && `left of ${-z.safe}`, box.right > z.safe + 0.001 && `right of ${z.safe}`, !roll && box.top < -z.safe - 0.001 && `above ${-z.safe}`, !roll && box.bottom > z.safe + 0.001 && `below ${z.safe}`].filter(Boolean);
     if (out.length) add({ rule: "text_outside_title_safe", level: "warning", ...where0, at: sec(mid), message: `${name} reaches outside the 90% title-safe area (${out.join(", ")}): ${where}`, fix: place("align_clips with margin 0.05, or set_param transform.x/y and a smaller style.size") });
-    const kinds = zonesOf(box);
+    const kinds = zonesOf(box).filter((k) => !roll || k === "left" || k === "right");
     const said: Record<Zone, string> = { bottom: `the bottom 35% (below y ${frac(z.bottom)}): captions, names, the description`, right: `the right 19% (right of x ${frac(z.right)}): like, comment, share`, top: `the top 14% (above y ${frac(z.top)}): the tabs and search`, left: `the left 11% (left of x ${frac(z.left)})` };
     if (kinds.length) {
       // A fix for the zones this one reaches (ADR-124): an x overflow is not
@@ -617,8 +620,9 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
     } else if (c.caption) {
       const { cps, met } = captionReading({ start: 0, end: seconds, text: c.text });
       if (!met) add({ rule: "caption_too_fast", level: "warning", ...where0, at: sec(s.start), message: `A caption shows ${cps.toFixed(0)} characters a second for ${seconds.toFixed(2)} s (keep under 20 a second, at least 0.83 s)`, fix: "fewer words per caption, or a longer caption (trim_clip)" });
-    } else {
-      // A countdown digit or a one-word hit reads at a glance.
+    } else if (!isRoll(c)) {
+      // A countdown digit or a one-word hit reads at a glance; a credits
+      // roll is read as it passes, its pace set by add_credits (ADR-147).
       const need = c.text.trim().length <= 3 ? 0.4 : Math.max(1.5, 0.4 * words(c.text));
       if (seconds + 1e-6 < need) add({ rule: "text_too_short", level: "warning", ...where0, at: sec(s.start), message: `${name} is on screen ${seconds.toFixed(1)} s; it needs about ${need.toFixed(1)} s to be read twice`, fix: inside("trim_clip its end later, or fewer words") });
     }

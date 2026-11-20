@@ -34,6 +34,21 @@ it("maps source words after a middle cut and clips them to timeline bounds", () 
   expect(timelineWords(p, c, words, 2.1, 4.8)).toEqual([{ text: "after", start: 2.1, end: 2.5 }, { text: "last", start: 4.5, end: 4.8 }]);
 });
 
+// The documentary drive: Whisper stamped "year," 20 ms long and "12,000" as two words.
+it("keeps a word shorter than a frame, and reads a number's parts as one word", () => {
+  const p = createProject();
+  const c = { ...(clipForAsset({ id: "a", kind: "audio", name: "speech", src: "speech", duration: 10, hasAudio: true, hasVideo: false }, 0, p.fps) as AudioClip), duration: 300, in: 0 };
+  const on = timelineWords(p, c, [w(" last", 2.4, 2.76), w(" year,", 2.76, 2.78), w(" people", 3.3, 3.56)]);
+  expect(on.map((x) => x.text)).toEqual(["last", "year,", "people"]);
+  // One frame at 30 a second, starting on the frame it is said.
+  expect([Math.round(on[1].start * 30), Math.round(on[1].end * 30)]).toEqual([83, 84]);
+  // A word that is not in the clip at all is still left out.
+  expect(timelineWords(p, { ...c, in: 4 }, [w(" gone", 3.98, 3.99)])).toEqual([]);
+  const h = merge(undefined, 0, 60, [w(" sold", 0.56, 1.14), w(" 12", 1.14, 1.32), w(",000", 1.32, 1.9), w(" bowls", 1.9, 2.4), w(" at", 3, 3.2), w(" 10", 3.2, 3.4), w(":30", 3.4, 3.8), w(" 3", 5, 5.2), w(".", 5.2, 5.25), w(" 5", 6, 6.2)]);
+  expect(h.words.map((x) => x.text.trim())).toEqual(["sold", "12,000", "bowls", "at", "10:30", "3", ".", "5"]);
+  expect([h.words[1].start, h.words[1].end]).toEqual([1.14, 1.9]);
+});
+
 // Film 5: Whisper repeated a word across a 28 s window boundary.
 it("merges the reported planet overlap into one monotonic source word", () => {
   const h = merge(undefined, 0, 60, [w("planet.", 27.5, 28), w("planet", 27.77, 28.55), w("Next", 28.4, 29)]);

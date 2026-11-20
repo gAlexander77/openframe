@@ -67,13 +67,13 @@ describe("the MCP guide", () => {
     // The Claude film test read the same 1.2k-token block in ad, epic_edit,
     // social_short and design.
     const rule = DESIGN.split("\n")[1];
-    for (const topic of ["ad", "epic_edit", "social_short", "voiceover"]) {
+    for (const topic of ["ad", "epic_edit", "documentary", "social_short", "voiceover"]) {
       const text = helpText(topic, tools, guide());
       expect(text, topic).not.toContain(rule);
       if (topic !== "voiceover") expect(text, topic).toContain("help topic design");
     }
     expect(helpText("design", tools, guide())).toContain(rule);
-    for (const p of PROMPTS) expect(promptMessages(p.name, { product: "x", theme: "x", media: "x" }).messages[0].content.text, p.name).toContain(rule);
+    for (const p of PROMPTS) expect(promptMessages(p.name, { product: "x", theme: "x", story: "x", media: "x" }).messages[0].content.text, p.name).toContain(rule);
     expect(agentPlaybook().split(rule)).toHaveLength(2);
   });
 
@@ -90,7 +90,9 @@ describe("the MCP guide", () => {
     expect(m.messages[0].content.text).toContain("- product: A steel water bottle, 20% off");
     expect(m.messages[0].content.text).toContain("End card");
     expect(() => promptMessages("make_ad", {})).toThrow("needs product");
-    expect(PROMPTS.map((p) => p.name)).toEqual(["make_ad", "epic_edit", "social_short"]);
+    expect(PROMPTS.map((p) => p.name)).toEqual(["make_ad", "epic_edit", "documentary", "social_short"]);
+    // The documentary prompt carries its playbook: the cut is made on the transcript, the joins with jl_cut.
+    expect(promptMessages("documentary", { story: "A potter and her studio" }).messages[0].content.text).toMatch(/get_transcript[\s\S]*jl_cut/);
   });
 
   it("speaks prompts and guides over MCP", async () => {
@@ -99,7 +101,7 @@ describe("the MCP guide", () => {
     const init = (await call("initialize")) as { result: { capabilities: object } };
     expect(init.result.capabilities).toHaveProperty("prompts");
     const listed = (await call("prompts/list")) as { result: { prompts: unknown[] } };
-    expect(listed.result.prompts).toHaveLength(3);
+    expect(listed.result.prompts).toHaveLength(4);
     const got = (await call("prompts/get", { name: "epic_edit", arguments: { theme: "a ski season" } })) as { result: { messages: { content: { text: string } }[] } };
     expect(got.result.messages[0].content.text).toContain("analyze_music");
     const guide = (await call("resources/read", { uri: "guide://ad" })) as { result: { contents: { text: string }[] } };

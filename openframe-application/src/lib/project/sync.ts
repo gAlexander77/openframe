@@ -75,6 +75,31 @@ export function syncClip(p: Project, clipId: Id, refId: Id, offset: number, mute
   return q;
 }
 
+/**
+ * Detached sounds an edit knocked out of sync with their picture: a muted
+ * video clip and the audio clip of its group and file that played in sync
+ * before and no longer does. A ripple that moved the picture while the
+ * sound's new place was taken did this without a word (ADR-147).
+ */
+export function lostSync(before: Project, after: Project): { audio: Id; video: Id; seconds: number }[] {
+  const out: { audio: Id; video: Id; seconds: number }[] = [];
+  const half = (0.5 * before.fps.den) / before.fps.num;
+  const plain = (c: Clip | undefined): c is Media => isMedia(c) && !c.speedCurve && !c.reverse && !c.freeze;
+  const was = before.tracks.flatMap((t) => t.clips);
+  const now = new Map(after.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
+  for (const v of was) {
+    if (v.type !== "video" || !v.muted || !v.group || !plain(v)) continue;
+    for (const a of was) {
+      if (a.type !== "audio" || a.group !== v.group || a.assetId !== v.assetId || !plain(a) || a.speed !== v.speed) continue;
+      const nv = now.get(v.id), na = now.get(a.id);
+      if (!plain(nv) || !plain(na) || nv.speed !== na.speed || Math.abs(currentOffset(before, a.id, v.id)) >= half) continue;
+      const seconds = currentOffset(after, a.id, v.id);
+      if (Math.abs(seconds) >= half) out.push({ audio: a.id, video: v.id, seconds });
+    }
+  }
+  return out;
+}
+
 /** The offset the two clips play at now: `clipId`'s source second minus
  * `refId`'s at any one timeline moment (what syncClip places by). */
 export function currentOffset(p: Project, clipId: Id, refId: Id): number {

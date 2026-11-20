@@ -53,6 +53,11 @@ const identity = (r, g, b) => [r, g, b];
 const invert = (r, g, b) => [1 - r, 1 - g, 1 - b];
 
 const tone = (freq, seconds) => `sine=frequency=${freq}:sample_rate=48000:duration=${seconds}`;
+/** A talking head stand-in: flite speaks `text` over a color that names the
+ * speaker, with 0.6 s before the first word and 0.8 s after the last, as a
+ * take has: the handles a J or L cut needs. */
+const interview = (id, voice, color, text) =>
+  ff("-f", "lavfi", "-i", `color=c=${color}:size=1280x720:rate=30,drawtext=${font}text='INTERVIEW ${id.toUpperCase()}':fontsize=64:fontcolor=white:x=(w-tw)/2:y=(h-th)/2`, "-f", "lavfi", "-i", `flite=text='${text}':voice=${voice},adelay=600:all=1,apad=pad_dur=0.8`, "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-ar", "48000", "-b:a", "128k", join(out, `interview-${id}.mp4`));
 
 // The take both sync fixtures hear: 20 s of synthesized speech, made once.
 const syncMaster = () => {
@@ -169,6 +174,12 @@ const jobs = {
     ff("-f", "lavfi", "-i", burn(640, 360, 30), "-i", syncMaster(), "-filter_complex", "[1:a]atrim=start=2:duration=12,asetpts=PTS-STARTPTS,highpass=f=250,aecho=0.8:0.7:35|80:0.35|0.2[a]", "-map", "0:v", "-map", "[a]", "-t", "12", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-b:a", "128k", join(out, "sync-camera.mp4")),
   "sync-lav.wav": () =>
     ff("-i", syncMaster(), "-f", "lavfi", "-i", "anoisesrc=color=pink:amplitude=0.02:sample_rate=48000:seed=7", "-filter_complex", "[0:a]atrim=start=0.63,asetpts=PTS-STARTPTS,lowpass=f=4000,volume=0.35[v];[v][1:a]amix=inputs=2:duration=first:normalize=0", "-ac", "1", "-c:a", "pcm_s16le", join(out, "sync-lav.wav")),
+  // Two interviews for the documentary drive
+  // (scripts/drive/documentary-flow.js): synthesized speech with a known
+  // script, two voices, each over a plain picture naming its speaker, so a
+  // transcript, a cut made on it and a J or L cut can be checked.
+  "interview-a.mp4": () => interview("a", "slt", "0x23395d", "I started the studio in a garage. At first nobody came. Then one review changed everything."),
+  "interview-b.mp4": () => interview("b", "rms", "0x5d2338", "We sold twelve thousand bowls last year. People want things made by hand."),
   // Remove background (scripts/drive/bg-removal.js) needs a real person:
   // the segmentation model is trained on portraits. The photo is CC0
   // ("Siva Vaidhyanathan.jpg", Wikimedia Commons, by Siva Vaidhyanathan,

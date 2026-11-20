@@ -12,6 +12,7 @@ import { findCompound, getAsset, sourceTimeAt, timelineEnd } from "../project/op
 import { correctionAt } from "../analysis/stabilize";
 import { fittedSize, sourceSize } from "./size";
 import { spokenWord } from "../captions";
+import { countedClip } from "../counter";
 import { isKinetic, kineticAt, unitOf, type KineticFrame } from "../kinetic";
 import { frameAt, framesToSeconds } from "../time";
 import { MOTION_SAMPLES, MOVING_TRANSITIONS, samplesFor, shutterOffsets, travel, type Placement } from "../motionBlur";
@@ -296,7 +297,8 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
     const kinetic = kineticAt(clip, r, ANIMATIONS);
     // Keyed size, spacing and color (ADR-071): the title as it is now.
     const style = textStyleAt(clip, r);
-    source = { kind: "text", clip: style === clip.style ? clip : { ...clip, style }, ...(word !== undefined ? { word } : {}), ...(kinetic ? { kinetic } : {}) };
+    // A counter reads as its number now (ADR-147).
+    source = { kind: "text", clip: countedClip(style === clip.style ? clip : { ...clip, style }, r, p.fps), ...(word !== undefined ? { word } : {}), ...(kinetic ? { kinetic } : {}) };
   }
   else if (clip.type === "color") {
     const shape = resolveShape(clip, r);

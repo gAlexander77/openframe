@@ -3,6 +3,7 @@
 
 import { getAsset } from "../project/ops";
 import { shapeExtent } from "../shapes";
+import { widestCount } from "../counter";
 import type { Project, TextClip, VisualClip } from "../project/types";
 
 /** A text clip's raster size. The engine registers its rasterizer at load;
@@ -23,7 +24,8 @@ export function sourceSize(p: Project, c: VisualClip): { w: number; h: number; n
   if (c.type === "color" && c.shape) return { ...shapeExtent(c.shape, p.width, p.height), native: true };
   if (c.type === "color" || c.type === "compound") return { w: p.width, h: p.height, native: true };
   if (c.type === "text") {
-    const r = measureText(c, p.width, p.height);
+    // A counter's box holds its widest reading (ADR-147).
+    const r = measureText(widestCount(c, p.fps), p.width, p.height);
     return { w: r.width, h: r.height, native: true };
   }
   const a = getAsset(p, c.assetId);
