@@ -619,7 +619,7 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
       if (seconds < CHUNK_MIN) add({ rule: "caption_too_fast", level: "warning", ...where0, at: sec(s.start), message: `A caption of a line shown a few words at a time flashes by: "${c.text}" for ${seconds.toFixed(2)} s (each chunk at least ${CHUNK_MIN} s)`, fix: "join it to the chunk before or after (fewer, longer chunks), or trim_clip it longer" });
     } else if (c.caption) {
       const { cps, met } = captionReading({ start: 0, end: seconds, text: c.text });
-      if (!met) add({ rule: "caption_too_fast", level: "warning", ...where0, at: sec(s.start), message: `A caption shows ${cps.toFixed(0)} characters a second for ${seconds.toFixed(2)} s (keep under 20 a second, at least 0.83 s)`, fix: "fewer words per caption, or a longer caption (trim_clip)" });
+      if (!met) add({ rule: "caption_too_fast", level: "warning", ...where0, at: sec(s.start), message: `A caption shows ${cps.toFixed(0)} characters a second for ${seconds.toFixed(2)} s (keep under 20 a second, at least 0.83 s)`, fix: "fewer words per caption, or a longer caption (trim_clip with edge end and to, the second it should end, before the next caption starts)" });
     } else if (!isRoll(c)) {
       // A countdown digit or a one-word hit reads at a glance; a credits
       // roll is read as it passes, its pace set by add_credits (ADR-147).

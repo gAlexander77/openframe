@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { captionClips, captionsInRange, readableCaptions, casedText, currentCaptions, DEFAULT_LINES, parseSubtitles, quietCuts, replaceText, rms10ms, toSrt, toVtt, withoutCaptions, wordsToCaptions, type Word } from "./captions";
+import { captionClips, captionReading, captionsInRange, growToRead, readableCaptions, casedText, currentCaptions, DEFAULT_LINES, parseSubtitles, quietCuts, replaceText, rms10ms, toSrt, toVtt, withoutCaptions, wordsToCaptions, type Word } from "./captions";
 import { checkProject } from "./designCheck";
 import { runCommand } from "./commands";
 import { createProject, createTextClip } from "./project/defaults";
@@ -170,4 +170,22 @@ it("ends a cue with its sentence, and balances two lines where a phrase begins",
   for (const c of caps) for (const line of c.split("\n")) expect(line.length).toBeLessThanOrEqual(32);
   expect(caps.filter((c) => c.includes("\n") && c.split("\n")[1].split(" ").length < 2)).toEqual([]);
   expect(caps.join(" ").replace(/\n/g, " ")).toBe(said);
+});
+
+it("grows a cue too fast to read into the quiet before the next one, never over it", () => {
+  // The last cue of a cut piece, held to its clip's end though the next line began 0.17 s later.
+  const caps = [{ start: 10.067, end: 11.3, text: "So what's global warming?" }, { start: 11.47, end: 14.2, text: "On a global scale, the Earth's\nsurface is heating up" }];
+  const grown = growToRead(caps, 60);
+  expect(grown[0].end).toBeCloseTo(10.067 + 25 / 19, 2);
+  expect(captionReading(grown[0]).met).toBe(true);
+  expect(grown[1]).toBe(caps[1]);
+  // No room: it stops at the next cue, and at the end of the film.
+  expect(growToRead([{ start: 0, end: 0.5, text: "A much longer line than half a second holds" }, { start: 0.6, end: 3, text: "Next." }])[0].end).toBe(0.6);
+  expect(growToRead([{ start: 5, end: 5.2, text: "The end of the film." }], 5.5)[0].end).toBe(5.5);
+});
+
+it("does not leave a subject alone at the end of a line when a comma offers the break", () => {
+  const said = "or hundreds of years, but it includes all types of changes".split(" ");
+  const [cue] = readableCaptions(said.map((text, i) => ({ text, start: i * 0.4, end: i * 0.4 + 0.38 })), { ...DEFAULT_LINES, maxChars: 37, maxDuration: 6 });
+  expect(cue.text).toBe("or hundreds of years,\nbut it includes all types of changes");
 });

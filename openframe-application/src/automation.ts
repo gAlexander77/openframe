@@ -49,7 +49,7 @@ import { saveTimeline, type TimelineFormat } from "./state/interchange";
 import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
-import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
+import { handleMcp, shotLooks, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
 import { framesToSeconds, secondsToFrames } from "./lib/time";
 import { sourceFrames } from "./engine/analyze";
 import { checkProject, type CheckKind } from "./lib/designCheck";
@@ -346,12 +346,13 @@ const mcpHost: McpHost = {
     if (!a) throw new Error(`No asset ${assetId}; describe_project lists them`);
     const all = (await assetShots(assetId)).map((s, i) => ({ n: i + 1, ...s }));
     const inside = all.filter((s) => s.end > (o.from ?? 0) && s.start < (o.to ?? Infinity));
-    // A sheet holds 48 shots: the rest are a second call's, from where this one ends.
-    const shots = inside.slice(0, 48);
-    const mids = shots.map((s) => +((s.start + s.end) / 2).toFixed(3));
-    const pics = await sourceFrames(a, mids, o.tileWidth, projectWork.capture());
-    const image = await tiles(shots.map((s, i) => ({ src: pics[i], label: `${s.n}: ${+s.start.toFixed(1)}-${+s.end.toFixed(1)} s`, w: a.width || 16, h: a.height || 9 })), o.tileWidth, o.columns);
-    return { image, shots, total: all.length, ...(inside.length > shots.length ? { more_from: shots[shots.length - 1].end } : {}) };
+    // A sheet holds 60 tiles: the shots past them are a second call's, from where this one ends.
+    const looks = shotLooks(inside);
+    const shots = [...new Set(looks.map((l) => l.shot))];
+    const pics = await sourceFrames(a, looks.map((l) => l.at), o.tileWidth, projectWork.capture());
+    const image = await tiles(looks.map((l, i) => ({ src: pics[i], label: l.of > 1 ? `${l.shot.n}: ${+l.at.toFixed(1)} s (${l.k + 1}/${l.of})` : `${l.shot.n}: ${+l.shot.start.toFixed(1)}-${+l.shot.end.toFixed(1)} s`, w: a.width || 16, h: a.height || 9 })), o.tileWidth, o.columns);
+    const tilesOf = new Map(looks.map((l) => [l.shot, l.of]));
+    return { image, shots: shots.map((s) => (tilesOf.get(s)! > 1 ? { ...s, tiles: tilesOf.get(s) } : s)), total: all.length, ...(inside.length > shots.length ? { more_from: shots[shots.length - 1].end } : {}) };
   },
   fileSheet: async (src, given, count, tileWidth, columns) => {
     const signal = projectWork.capture();

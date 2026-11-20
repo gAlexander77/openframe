@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeProject, runCommand, type CommandReport } from "./commands";
-import { describeChanges, handleMcp, listTools, type McpHost, TOOLS_META, toolsFingerprint, shotTimes } from "./mcp";
+import { describeChanges, handleMcp, listTools, type McpHost, TOOLS_META, toolsFingerprint, shotLooks, shotTimes } from "./mcp";
 import { createProject } from "./project/defaults";
 import type { Project } from "./project/types";
 
@@ -1009,23 +1009,67 @@ describe("what a blind documentary test found", () => {
     const finish: ((value: unknown) => void)[] = [], asked: unknown[] = [];
     h.ai = async (_tool, target) => { asked.push(target); return new Promise(resolve => { finish.push(resolve); }); };
     const first = await invoke(h, "split_scenes", { clip_id: "c_reel_1", wait: 0 });
-    // Another reel while the first is at work: told so, by job, not answered with the first one's job.
+    // A tool that edits, asked for something else while at work: told it was not started, by job.
     const other = await call(h, "tools/call", { name: "split_scenes", arguments: { clip_id: "c_reel_2", wait: 0 } });
     expect(other!.result).toMatchObject({ isError: true });
     expect(text(other)).toContain(`split_scenes is still at work on an earlier call (job ${first.job_id}`);
+    expect(text(other)).toContain("so it was not started");
     expect(asked).toEqual(["c_reel_1"]);
     // The same call again still follows its job.
     expect((await invoke(h, "split_scenes", { clip_id: "c_reel_1", wait: 0 })).job_id).toBe(first.job_id);
-    // And once the first is done, the other runs: a call that waits its turn gets its own answer.
+    // Given a wait, the other call takes its turn: it starts once the first is done.
     const second = invoke(h, "split_scenes", { clip_id: "c_reel_2", wait: 5 });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(asked).toEqual(["c_reel_1"]);
     finish[0]({ cuts: [1] });
-    await new Promise(resolve => setTimeout(resolve, 0));
-    await new Promise(resolve => setTimeout(resolve, 0));
-    finish[1]?.({ cuts: [2, 3] });
-    expect(await second).toEqual({ cuts: [2, 3] });
+    for (let i = 0; i < 100 && asked.length < 2; i++) await new Promise(resolve => setTimeout(resolve, 10));
     expect(asked).toEqual(["c_reel_1", "c_reel_2"]);
+    finish[1]({ cuts: [2, 3] });
+    expect(await second).toEqual({ cuts: [2, 3] });
   });
 
+  it("lets tools that only look run side by side: a shot list does not shut other looks out", async () => {
+    const done: ((value: { image: string; shots: unknown; total: number }) => void)[] = [];
+    const h = { ...host(), mediaShots: async () => new Promise<{ image: string; shots: unknown; total: number }>(resolve => { done.push(resolve); }) };
+    const list = await invoke(h, "preview_media", { asset_id: "a1", shots: true, wait: 0 });
+    expect(list.state).toBe("running");
+    // Frames of the same file meanwhile: answered, not refused and not the shot list's job.
+    const frames = await call(h, "tools/call", { name: "preview_media", arguments: { asset_id: "a1", times: [1, 2] } });
+    expect((frames!.result as { content: { type: string }[] }).content[0].type).toBe("image");
+    expect(h.sheets.at(-1)).toEqual(["a1", [1, 2], 320, 4]);
+    // The same shot list again follows its job; another file's is a job of its own.
+    expect((await invoke(h, "preview_media", { asset_id: "a1", shots: true, wait: 0 })).job_id).toBe(list.job_id);
+    expect((await invoke(h, "preview_media", { asset_id: "a2", shots: true, wait: 0 })).job_id).not.toBe(list.job_id);
+    done.forEach((d) => d({ image: "/9j/", shots: [], total: 0 }));
+  });
+  it("looks at a long shot more than once, because a dissolve is not a cut the list finds", () => {
+    const looks = shotLooks([{ start: 0, end: 4 }, { start: 4, end: 14 }, { start: 14, end: 50 }]);
+    // One tile at the middle of a short shot, two for 10 s, six at most for 36 s.
+    expect(looks.map((l) => l.of)).toEqual([1, 2, 2, 6, 6, 6, 6, 6, 6]);
+    expect(looks.slice(0, 3).map((l) => l.at)).toEqual([2, 6.5, 11.5]);
+    expect(looks.slice(3).map((l) => l.at)).toEqual([17, 23, 29, 35, 41, 47]);
+    // A sheet holds whole shots: the one that would pass its tiles is the next call's.
+    const many = Array.from({ length: 30 }, (_, i) => ({ start: i * 12, end: i * 12 + 12 }));
+    const sheet = shotLooks(many, 9);
+    expect(sheet).toHaveLength(8);
+    expect(sheet.at(-1)!.shot).toBe(many[3]);
+    expect(shotLooks([{ start: 0, end: 60 }], 4)).toHaveLength(6);
+  });
+
+  it("job_status hands a finished job's picture over as a picture, not as text", async () => {
+    let finish!: (value: { image: string; shots: unknown; total: number }) => void;
+    const h: McpHost = { ...host(), mediaShots: async () => new Promise(resolve => { finish = resolve; }) };
+    const job = await invoke(h, "preview_media", { asset_id: "a1", shots: true, wait: 0 });
+    finish({ image: "/9j/4AAQ", shots: [{ n: 1, start: 0, end: 4 }], total: 1 });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const r = await call(h, "tools/call", { name: "job_status", arguments: { job_id: job.job_id } });
+    const content = (r!.result as { content: { type: string; text?: string; data?: string }[] }).content;
+    expect(content.map((c) => c.type)).toEqual(["text", "image"]);
+    expect(content[1].data).toBe("/9j/4AAQ");
+    // The text is the status and the shot list, with none of the picture in it.
+    expect(content[0].text).not.toContain("/9j/");
+    expect(JSON.parse(content[0].text!)).toMatchObject({ state: "done", result: { shots: [{ n: 1, start: 0, end: 4 }], total: 1 } });
+  });
   it("job_status waits for a job when asked, one call instead of a poll", async () => {
     const h: McpHost = host();
     let finish!: (value: unknown) => void;

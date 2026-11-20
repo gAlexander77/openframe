@@ -117,13 +117,66 @@ The documentary playbook was rewritten where it contradicted itself or the
 tools (a cutaway that hides a join starts before it; `move_clip` reorders
 only with insert; the talk may still be in the footage).
 
-Not fixed, for the next round: `generate_music` places a score whose fit
-it reports as failed, and its ring ending is cut short; a whole talk on
-one clip is one "line" to `duck_under_speech`; `check_project` passes a
-film whose loudness fails the spec (it does not measure it) and says
-nothing of stray markers; nothing tells whether a clip's sound already
-carries music; burned-in text is only read by the desktop shot log;
-`duck_under_speech`'s description is 4,000 characters.
+## A second blind test, on the fixed build (2026-11-20)
+
+Another fresh model made the same film from the same footage. This time
+every caption carried every word, it read the reels as shot lists, cut by
+sentences, reordered with one call, measured its sound, and called the
+58 s result "a presentable cut, not a finished one" where the first had
+said "not deliverable". Its sixteen findings, and what was done:
+
+- **A finished job's picture came back as text.** `job_status` answered a
+  shot list's contact sheet as a megabyte of base64 inside its JSON. A
+  finished job's pictures and sound are now content blocks beside the
+  status, as the tool itself would have answered them.
+- **The first fix for the job mix-up shut every other look out.** Refusing
+  a second call of a tool at work meant no `preview_media` could answer
+  for the minutes a shot list takes. `preview_media` calls now run side by
+  side, each a job of its own; the tools that edit the project or own one
+  engine (the recognizer, the mixer) still refuse, and say the call was not
+  started.
+- **One tile a shot hid what is inside a shot.** The detector finds hard
+  cuts: an interview with wipes and dissolves came back as four "shots",
+  and a title and a logo sat inside a 9 s one. A shot longer than about
+  8 s now gets a tile every 5 s or so (at most six; `shotLooks`), and the
+  tool, its note and the playbook say what the list cannot see. Finding
+  dissolves and wipes is not done.
+- **`generate_music` ignored a section's `seconds`.** Between two fixed
+  times a length in seconds was only a share beside the other sections'
+  role weights: an intro asked for 6 s got 11 bars. It is kept as asked
+  while a section with no length can take up the span.
+- **A caption was made too fast with room beside it.** Each piece of a cut
+  talk is captioned alone, so its last cue stopped at its clip's end;
+  whole-line cues now grow into the quiet before the next cue
+  (`growToRead`). A line no longer ends on "it", "they", "he" or "she"
+  when a comma offers the break, and `check_project`'s fix for a fast
+  caption gives `trim_clip`'s arguments.
+- **The playbook's sound steps failed its own check.** It asked for
+  `measure_loudness kind film` on the raw mix: a talk over a held-down bed
+  is "very flat for a film", and `normalize_loudness` stops at the peaks,
+  1.6 LU under the spec. The playbook now measures with `loudness -14`
+  (the mix as the export delivers it) and names kind explainer for one
+  voice over a bed.
+- **The interview was cut without being seen.** Its own cutaways, wipes
+  and cards were found only in a contact sheet afterwards. The playbook's
+  second step now looks at the interview too, and says what to do where
+  the source cuts away from the speaker.
+
+Not fixed, for the next round:
+
+- from the first test: `generate_music` places a score whose fit it
+  reports as failed, and its ring ending is cut short; a whole talk on one
+  clip is one "line" to `duck_under_speech`; `check_project` passes a film
+  whose loudness fails the spec (it does not measure it) and says nothing
+  of stray markers; nothing tells whether a clip's sound already carries
+  music; `duck_under_speech`'s description is 4,000 characters;
+- from the second: dissolves and wipes are not found as cuts; burned-in
+  text is not detected, so a caption can cover a reel's own label unseen
+  (only the desktop shot log reads text); nothing reads text from a frame;
+  the browser build has no master limiter, so its mix can only be measured
+  "as exported"; `describe_project` repeats the full style on every
+  caption; `preview_frames` labels a tile with the time asked for, not the
+  frame shown; a quiet `batch` answers ids without their times.
 
 ## Consequences
 

@@ -789,14 +789,14 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "preview_media",
-    description: "Look inside imported media before using it: a video's own frames at source seconds (times), or `count` frames spread over the whole file (default 12), as one contact sheet; a still picture whole, labeled with its size. Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action) and to see what a photo shows before framing it. shots: true answers a shot list of a video instead: every shot between its own cuts as a tile, numbered, with its source seconds, so a cutaway is taken from inside one shot (a clip that runs across a cut shows two) and a reel's own title cards and graphics are seen before they are used; read a b-roll reel this way before placing any of it. file instead of asset_id looks inside a file without importing it: an exported video (the path export_video or export_versions answered) to see what was delivered, frame by frame as the file has it, not the timeline; the answer adds the file's length, size and chapters (titles and seconds from Nero MP4/MOV chapter tables, as OpenFrame writes; other chapter formats are not inspected).",
+    description: "Look inside imported media before using it: a video's own frames at source seconds (times), or `count` frames spread over the whole file (default 12), as one contact sheet; a still picture whole, labeled with its size. Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action) and to see what a photo shows before framing it. shots: true answers a shot list of a video instead: every shot between its own hard cuts, numbered, with its source seconds, a tile each and several for a shot longer than about 8 s, so a cutaway is taken from inside one shot (a clip that runs across a cut shows two); read a b-roll reel this way before placing any of it, and an interview that is already edited. A dissolve or a wipe is not a cut it finds, and a title or a logo can come and go inside a shot: look closer at the stretch you will use (times, a second apart). file instead of asset_id looks inside a file without importing it: an exported video (the path export_video or export_versions answered) to see what was delivered, frame by frame as the file has it, not the timeline; the answer adds the file's length, size and chapters (titles and seconds from Nero MP4/MOV chapter tables, as OpenFrame writes; other chapter formats are not inspected).",
     inputSchema: obj(
       {
         asset_id: { type: "string", description: "A video or picture asset id from describe_project or import_media" },
         file: { type: "string", description: "Instead of asset_id: a video or picture file to look inside without importing it, e.g. an exported file's path (desktop: an absolute path; the browser build: a URL)" },
         times: { type: "array", items: { type: "number", minimum: 0 }, description: "Source seconds, up to 24" },
         count: { type: "integer", minimum: 2, maximum: 24, description: "Frames spread over the file when times is not given; default 12" },
-        shots: { type: "boolean", description: "true: a shot list instead. One tile for every shot of the video (its own cuts, found on this computer), labeled with its number and source seconds, and the shots as text. The first call takes about as long as the video plays; later ones are instant" },
+        shots: { type: "boolean", description: "true: a shot list instead. A tile for every shot of the video (its own hard cuts, found on this computer; a long shot has a tile every 5 s or so, up to 6), labeled with its number and source seconds, and the shots as text. The first call takes about as long as the video plays (other preview_media calls answer meanwhile); later ones are instant" },
         from: { type: "number", minimum: 0, description: "With shots: only the shots after this source second" },
         to: { type: "number", minimum: 0, description: "With shots: only the shots before this source second" },
         columns: columns(4),
@@ -810,7 +810,7 @@ export const APP_TOOLS: AppTool[] = [
         if (a.asset_id === undefined) throw new Error("shots needs asset_id: an imported video");
         if (!h.mediaShots) throw new Error("This app cannot find a file's shots.");
         const r = await h.mediaShots(String(a.asset_id), given({ from: a.from, to: a.to, tileWidth: Number(a.tile_width ?? 240), columns: Number(a.columns ?? 6) }) as { tileWidth: number; columns: number });
-        return { content: [{ type: "image", data: r.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify(appAnswer({ shots: r.shots, total: r.total, ...(r.more_from !== undefined ? { more: `shots past ${r.more_from} s: call again with from ${r.more_from}` } : {}), note: "Each shot's start and end are source seconds: a cutaway is add_media_clip with in inside one shot and a duration that ends before the shot does." })) }] };
+        return { content: [{ type: "image", data: r.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify(appAnswer({ shots: r.shots, total: r.total, ...(r.more_from !== undefined ? { more: `shots past ${r.more_from} s: call again with from ${r.more_from}` } : {}), note: "Each shot's start and end are source seconds: a cutaway is add_media_clip with in inside one shot and a duration that ends before the shot does. Shots are split at hard cuts only: a dissolve, a wipe, or a title that comes and goes stays inside a shot, which is why a long one has several tiles (its tiles); look closer with times before using one." })) }] };
       }
       // An exported file, or any file not imported (ADR-116).
       if (a.file !== undefined) {
@@ -1410,6 +1410,23 @@ APP_TOOLS.push(
 const LONG_TOOLS = new Set([
   "find_highlights", "get_transcript", "auto_captions", "remove_filler_words", "remove_silences", "split_scenes", "mark_beats", "normalize_loudness", "duck_under_speech", "analyze_music", "review_voiceover", "add_voiceover", "text_to_speech", "retake_voiceover", "generate_music", "match_color", "auto_adjust", "create_clips", "remove_background", "text_behind_subject", "reduce_noise", "stabilize_clip", "track_motion", "auto_reframe", "sync_audio", "measure_loudness", "export_projects", "export_video", "export_versions", "add_sound_effect", "add_ambience", "import_media", "create_proxies", "delete_proxies", "preview_audio", "preview_media", "preview_frames", "preview_motion", "preview_frame", "check_project",
 ]);
+/**
+ * Where a shot list looks (preview_media shots): the middle of a short
+ * shot, and every 5 s or so of a long one, at most 6 times. A dissolve or a
+ * wipe is not a cut the detector finds, so a long "shot" may hold several
+ * pictures, a title or a logo, which one tile at its middle hid (ADR-148).
+ * A sheet holds `max` tiles: the shots past them are the next call's.
+ */
+export function shotLooks<S extends { start: number; end: number }>(shots: S[], max = 60): { shot: S; at: number; k: number; of: number }[] {
+  const out: { shot: S; at: number; k: number; of: number }[] = [];
+  for (const shot of shots) {
+    const of = Math.min(6, Math.max(1, Math.round((shot.end - shot.start) / 5)));
+    if (out.length && out.length + of > max) break;
+    for (let k = 0; k < of; k++) out.push({ shot, at: +(shot.start + ((shot.end - shot.start) * (k + 0.5)) / of).toFixed(3), k, of });
+  }
+  return out;
+}
+
 /** What each job was asked, to tell the same call again from another one. */
 const jobArgs = new Map<string, string>();
 const fallbackJobs = new WeakMap<McpHost, JobRegistry>();
@@ -1436,7 +1453,14 @@ APP_TOOLS.push(
     }
     const id = String(a.job_id);
     if (Number(a.wait ?? 0) > 0) await jobs.wait(id, Number(a.wait));
-    const answer = json(jobAnswer(jobs.status(id)));
+    const status = jobs.status(id), done = status.result as ToolResult | undefined;
+    const media = (done?.content ?? []).filter((c) => c.type !== "text");
+    // A finished job's picture or sound is a content block, as the tool
+    // itself would have answered it: inside the status's JSON it was a
+    // megabyte of base64 as text that no client could show (ADR-148).
+    const answer = media.length
+      ? { content: [...json(jobAnswer({ ...status, result: { content: done!.content.filter((c) => c.type === "text") } })).content, ...media] }
+      : json(jobAnswer(status));
     jobs.delivered(id); return answer;
   } },
   { name: "cancel_job", description: "Cancel a running job by ID. Stops its work; completed jobs keep their result. Partial files or completed projects in a batch remain available.", inputSchema: obj({ job_id: { type: "string", description: "Job ID to cancel, from a long tool or job_status" } }, ["job_id"]), call: (h, a) => json(jobAnswer(jobsFor(h).cancel(String(a.job_id)))) },
@@ -1461,7 +1485,7 @@ const GUIDE = `You are editing a video in the user's video editor (OpenFrame); e
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they share once, in added_clips_common or changed_clips_common (or per track, in *_clips_common_by_track), markers that moved with their clip are counted in moved_markers, and quiet: true on batch or any command it takes answers the ids alone; describe_project has the whole timeline, and its fields option only the parts asked for.
 The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, documentary (an interview with cutaways), voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
-Long tools answer their result or a running job_id within 45 s (wait: 0 returns immediately). Poll job_status with job_id until done, then read result; cancel_job stops it. Text results stay up to 30 minutes within a 32 MiB budget; delivered image/audio payloads are released; export_status also follows the latest export.
+Long tools answer their result or a running job_id within 45 s (wait: 0 returns immediately). Follow it with job_status (job_id, and wait to hold the answer until it is done), then read result, a picture or sound beside it; cancel_job stops it. Text results stay up to 30 minutes within a 32 MiB budget; delivered image/audio payloads are released; export_status also follows the latest export.
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path (the browser build: by URL); preview_media shows what is inside each video, to choose the moments worth using, and with shots true every shot of a reel between its own cuts.
@@ -1585,19 +1609,22 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
           const { wait, ...options } = args;
           args = options;
           const key = JSON.stringify(options);
-          const running = () => jobs.all().find(j => j.tool === name && j.project_id === project && j.state === "running");
-          let existing = running();
           // The same call again follows its job. Another call of a tool
-          // still at work used to be handed the first one's job (a second
-          // split_scenes answered the first reel's): it waits its turn, and
-          // is told so if the first outlasts the wait (ADR-148).
-          if (existing && (jobArgs.get(existing.job_id) ?? key) !== key) {
-            await jobs.wait(existing.job_id, Number(wait ?? 45));
-            existing = running();
-            if (existing && (jobArgs.get(existing.job_id) ?? key) !== key) throw new Error(`${name} is still at work on an earlier call (job ${existing.job_id}${existing.stage ? `: ${existing.stage}` : ""}), and this call asks for something else. Wait for it (job_status with its job_id and wait) or cancel_job it, then call again.`);
-          }
+          // still at work used to be handed the first one's job, silently (a
+          // second split_scenes answered the first reel's). Looking inside
+          // a file runs side by side, each call a job of its own: a shot
+          // list takes minutes, and no other file could be looked at
+          // meanwhile. The rest edit the project or own one engine (the
+          // recognizer, the mixer), so another call waits its turn, and is
+          // told it was not started if the first outlasts the wait (ADR-148).
+          const apart = name === "preview_media";
+          const running = () => jobs.all().find(j => j.tool === name && j.project_id === project && j.state === "running" && (!apart || jobArgs.get(j.job_id) === key));
+          const other = (j: ReturnType<typeof running>) => !!j && (jobArgs.get(j.job_id) ?? key) !== key;
+          let existing = running();
+          if (other(existing)) { await jobs.wait(existing!.job_id, Number(wait ?? 45)); existing = running(); }
+          if (other(existing)) throw new Error(`${name} is still at work on an earlier call (job ${existing!.job_id}${existing!.stage ? `: ${existing!.stage}` : ""}), and this call asks for something else, so it was not started. Wait for that job (job_status with its job_id and wait) or cancel_job it, then call again.`);
           if (existing) return ok(req.id, json(jobAnswer(existing)));
-          const id = jobs.start(name, project, scope?.signal, context => host.runJob ? host.runJob(context, invoke) : invoke());
+          const id = jobs.start(name, project, scope?.signal, context => host.runJob ? host.runJob(context, invoke) : invoke(), apart ? `${name}:${key}` : name);
           jobArgs.set(id, key);
           if (jobArgs.size > 256) for (const old of jobArgs.keys()) { if (jobArgs.size <= 128) break; jobArgs.delete(old); }
           const status = await jobs.wait(id, Number(wait ?? 45));

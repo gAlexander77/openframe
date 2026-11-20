@@ -114,6 +114,19 @@ async (page) => {
     shots: list.shots, total: list.total,
   };
 
+  // A 10 s shot has two tiles; while its list is made another look answers (it was
+  // refused, and before that handed the list's job); the finished job's sheet is a
+  // picture beside the status, not base64 inside its text.
+  const job = JSON.parse(text(await rpc("preview_media", { asset_id: camB.id, shots: true, wait: 0 })));
+  const meanwhile = await rpc("preview_media", { asset_id: reel.id, times: [1, 3] });
+  const done = await rpc("job_status", { job_id: job.job_id, wait: 45 });
+  const status = JSON.parse(text(done));
+  details.sideBySide = {
+    ok: job.state === "running" && meanwhile.result.isError !== true && meanwhile.result.content[0].type === "image" && status.state === "done"
+      && done.result.content.some((c) => c.type === "image") && !text(done).includes("/9j/") && status.result.shots.length === 1 && status.result.shots[0].tiles === 2,
+    job: job.state, meanwhile: meanwhile.result.isError ? text(meanwhile) : meanwhile.result.content[0].type, status: status.state, blocks: done.result.content.map((c) => c.type), shots: status.result?.shots,
+  };
+
   // ---- a shot moved to the front, the others making room -------------------------------
   const order = async () => (await call("describe_project", { assets: false })).tracks.find((t) => t.main).clips.map((c) => c.id);
   const was = await order();

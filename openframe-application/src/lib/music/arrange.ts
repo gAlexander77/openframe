@@ -358,11 +358,19 @@ export function resolveSections(req: { bpm: number; sections: SectionRequest[]; 
     for (let i = 0; i + 1 < keys.length; i++) {
       const [a, b] = [keys[i], keys[i + 1]];
       const span = anchors.get(b)!.t - anchors.get(a)!.t;
-      const free: number[] = [];
+      let free: number[] = [];
       let fixed = 0;
       for (let k = a; k < b; k++) {
         if (req.sections[k].bars !== undefined) fixed += req.sections[k].bars!;
         else free.push(k);
+      }
+      // A length in seconds is kept as asked while a section with no length
+      // can take up the span: as a share beside a role's weight, an intro
+      // asked for 6 s was given 11 bars (29 s).
+      const open = free.filter((k) => req.sections[k].seconds === undefined);
+      if (open.length && open.length < free.length) {
+        for (const k of free) if (!open.includes(k)) fixed += bars[k];
+        free = open;
       }
       if (free.length) {
         const total = Math.max(fixed + free.length, Math.round(span / bar));

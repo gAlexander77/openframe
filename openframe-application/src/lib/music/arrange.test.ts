@@ -32,6 +32,15 @@ describe("sections and tempo", () => {
     expect(r.fit.note).toMatch(/BPM/);
   });
 
+  it("keeps a length in seconds as asked while another section can take up the span", () => {
+    // An intro asked for 6 s before a verse with no length and an outro at 52.7 s was given 11 bars.
+    const r = resolveSections({ bpm: 95, nudge: 0.06, sections: [{ name: "intro", seconds: 6 }, { name: "verse", energy: 0.4 }, { name: "outro", at: 52.7, end_at: 58 }] });
+    const bar = 240 / r.bpm;
+    expect(r.bars[0]).toBe(Math.round(6 / bar));
+    expect(r.bars[0] * bar).toBeLessThan(8);
+    expect((r.bars[0] + r.bars[1]) * bar).toBeCloseTo(52.7, 0);
+  });
+
   it("says when times cannot be met within the nudge", () => {
     const r = resolveSections({ bpm: 120, nudge: 0.03, sections: [{ name: "intro", bars: 4 }, { name: "build", bars: 2 }, { name: "drop", at: 9 }] });
     expect(r.fit.ok).toBe(false);

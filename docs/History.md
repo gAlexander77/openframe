@@ -2159,3 +2159,37 @@ unchanged.
   own.
 - **Session 0 has no desktop.** A GUI app cannot be launched from a
   non-interactive Windows session: check before planning a desktop run.
+
+## 2026-11-20 — A second blind test, on the fixed build (Claude Code)
+
+A second fresh model made the same NASA documentary short on the fixed
+build (web, 80 calls). Every caption carried every word; it read the reels
+as shot lists, cut by sentences, reordered with one call and measured its
+sound. Its verdict: "a presentable cut, not a finished one". Sixteen
+findings; [[ADR-148 Punch-ins keep what they applied, angles switch by held opacity, a slideshow is ordinary clips]]
+lists them and what was done. A sweep of all 238 web drives ran beside it
+(the result is in [[Next agent handoff]]).
+
+Fixed: a finished job's picture is a content block, not base64 in the
+status's text; `preview_media` calls run side by side; a long shot gets
+several tiles; `generate_music` keeps a section's `seconds`; a caption too
+fast to read grows into the quiet after it; the documentary playbook looks
+at the interview before cutting it and measures loudness as exported.
+
+**Lessons**
+
+- **A fix for one tester is a finding for the next.** Refusing a second
+  call of a busy tool stopped the job mix-up and then blocked every look
+  for seven minutes. Test the fix on the whole flow, not on the finding.
+- **A scene detector finds cuts, not shots.** Dissolves, wipes and a title
+  that comes and goes are inside its "shots". Say so where the list is
+  read, and show a long shot more than once.
+- **Say what a result is made of.** A picture inside JSON is a megabyte of
+  text to a model; a picture as an image block is a picture.
+- **A playbook step is a claim: run it.** "measure_loudness kind film with
+  spec online" failed on the playbook's own film. The export normalizes;
+  the raw mix does not meet a spec, and the step must measure what ships.
+- **An interview file is often already an edit.** It has its own
+  cutaways, wipes and cards: look before cutting by transcript.
+- **A model cut off by a usage limit can resume.** The servers were left
+  running and the tester picked up its project where it stopped.

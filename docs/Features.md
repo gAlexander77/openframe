@@ -205,9 +205,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **For agents, after a blind test** (ADR-148): `move_clip` with
   `mode: "insert"` reorders (the gap closes, room is made where the clip
   lands); `preview_media` with `shots: true` reads a video file as a shot
-  list, one tile per shot with its source seconds; `get_transcript`
+  list, a tile per shot with its source seconds and several for a long
+  one (hard cuts only: a dissolve stays inside a shot); `get_transcript`
   answers sentences with the pause after each; `job_status` waits when
-  asked; `delete_markers` clears by label or all.
+  asked and hands a finished job's picture over as a picture;
+  `preview_media` calls run side by side; `delete_markers` clears by label
+  or all.
 - **Selected edit points:** click a clip edge with Select to draw a bracket;
   add other edges with Shift, or choose both touching sides with Alt or a
   double-click for a roll. Extend Edit moves them to the playhead, and the

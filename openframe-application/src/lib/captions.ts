@@ -79,7 +79,7 @@ export const DEFAULT_LINES: LineOptions = { maxChars: 32, maxDuration: 3.5, paus
 const SENTENCE_END = /[.!?…]["')\]]?$/;
 
 /** Words a caption line should not end on. */
-export const WEAK = new Set(["a", "an", "the", "of", "to", "and", "or", "but", "by", "in", "on", "at", "for", "with", "from", "as", "is", "my", "your", "our", "their", "this", "that", "i", "we", "you"]);
+export const WEAK = new Set(["a", "an", "the", "of", "to", "and", "or", "but", "by", "in", "on", "at", "for", "with", "from", "as", "is", "my", "your", "our", "their", "this", "that", "i", "we", "you", "it", "they", "he", "she"]);
 
 /** Words a phrase begins with: a line or a caption breaks well before one. */
 export const STARTERS = new Set(["and", "but", "or", "so", "because", "that", "which", "who", "when", "while", "where", "if", "than", "then", "in", "on", "at", "over", "under", "from", "with", "without", "for", "by", "into", "across", "through", "about", "after", "before", "between", "to", "as"]);
@@ -138,6 +138,19 @@ export function captionReading(c: Caption): { cps: number; met: boolean } {
   const duration = c.end - c.start;
   const cps = c.text.replace(/\s+/g, " ").trim().length / Math.max(duration, 1e-3);
   return { cps, met: duration >= 5 / 6 && cps <= 20 };
+}
+
+/** Cues too fast to read grow into the quiet before the next cue, never
+ * over it and never past `limit`. Each piece of a cut talk is captioned
+ * alone, so its last cue was held to its clip's end though the next line
+ * began later ("So what's global warming?" at 20 characters a second with
+ * 0.17 s free after it). */
+export function growToRead<C extends Caption>(caps: C[], limit = Infinity): C[] {
+  return caps.map((c, i) => {
+    if (captionReading(c).met) return c;
+    const need = Math.max(5 / 6, c.text.replace(/\s+/g, " ").trim().length / 19);
+    return { ...c, end: Math.max(c.end, Math.min(c.start + need, caps[i + 1]?.start ?? Infinity, limit)) };
+  });
 }
 
 /** Whole readable cues: choose phrase boundaries together, rather than

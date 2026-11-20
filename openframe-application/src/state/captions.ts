@@ -4,7 +4,7 @@
 // produce the same clips.
 
 import { transcribeTimeline, type TranscribeProgress } from "../engine/transcribe";
-import { captionReading, currentCaptions, type Caption, DEFAULT_LINES, parseSubtitles, toSrt, toVtt, readableCaptions, wordsToCaptions } from "../lib/captions";
+import { captionReading, currentCaptions, type Caption, DEFAULT_LINES, growToRead, parseSubtitles, toSrt, toVtt, readableCaptions, wordsToCaptions } from "../lib/captions";
 import { checkProject } from "../lib/designCheck";
 import { runCommand } from "../lib/commands";
 import { trackRole, assetsOf } from "../lib/audioRoles";
@@ -149,7 +149,9 @@ export async function autoCaptions(_target: string, opts: { replace?: boolean; w
     if (store.get().project !== p) throw new Error("The project changed while listening; run auto_captions again");
     if (!caps.length) throw new Error("No speech found on the selected timeline tracks");
     caps.sort((a, b) => a.start - b.start);
-    const old = new Set(p.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+    // Whole-line cues take the reading time the next piece's first breath leaves them.
+    if (!opts.words_per_caption) caps.splice(0, caps.length, ...growToRead(caps, end));
+    const old =new Set(p.tracks.flatMap((t) => t.clips.map((c) => c.id)));
     store.edit("Auto captions", (q) => {
       let next = runCommand(q, "add_captions", { captions: caps, replace: opts.replace !== false });
       const fresh = { ...next, tracks: next.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => !old.has(c.id)) })) };

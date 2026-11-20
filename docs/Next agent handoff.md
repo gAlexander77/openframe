@@ -3,7 +3,7 @@
 **Updated:** 2026-11-19. This is the current owner direction for the next
 Claude Code or Codex pickup. Read it before resuming previous tasks.
 
-## Current state - 2026-11-19 (read first)
+## Current state - 2026-11-20 (read first)
 
 - **One branch holds everything: `main`.** The owner asked (2026-11-19) for
   every branch to be brought into one, then for whatever was still missing
@@ -36,29 +36,43 @@ Claude Code or Codex pickup. Read it before resuming previous tasks.
 - **Agents and sync**: `trim_clip` on a picture takes its detached sound
   along, and any agent edit that leaves a detached sound out of sync says
   so and names `sync_to_clip`. The timeline's own drag trim is unchanged.
-- **A blind test ran on real footage** (a fresh model, only the MCP tools,
-  a NASA interview and two b-roll reels; [[History]], 2026-11-19, later).
-  Fifteen findings; most are fixed: captions that lost or split words and
-  broke lines badly, a shot list for a reel (`preview_media` with
-  `shots: true`), a ripple move (`move_clip` with `mode: "insert"`),
-  sentences in `get_transcript`, a `job_status` that waits, a second call
-  of a long tool no longer handed the first one's job.
-- **Not fixed from it:**
+- **Two blind tests ran on real footage** (a fresh model, only the MCP
+  tools, a NASA interview and two b-roll reels; [[History]], 2026-11-19
+  and 2026-11-20). The first called its film "not deliverable"; the
+  second, on the fixed build, "a presentable cut, not a finished one".
+  ADR-148 lists both sets of findings and what was done. Fixed between
+  them: captions that lost or split words and broke lines badly, a shot
+  list for a reel (`preview_media` with `shots: true`), a ripple move
+  (`move_clip` with `mode: "insert"`), sentences in `get_transcript`, a
+  `job_status` that waits. Fixed after the second: a finished job's
+  picture is a picture (not base64 in text), `preview_media` calls run
+  side by side, long shots get several tiles, `generate_music` keeps a
+  section's `seconds`, a fast caption grows into the quiet after it, and
+  the documentary playbook looks at the interview and measures loudness
+  as exported.
+- **Not fixed from them:**
+  - the shot list finds hard cuts only: a dissolve or a wipe stays inside
+    a "shot", and so does a title or a logo that comes and goes;
+  - burned-in text is not detected (only the desktop shot log reads it),
+    so a caption can cover a reel's own label and nothing says so;
   - `generate_music` places a score whose fit it reports as failed, and
     its ring ending is cut short;
   - a whole talk on one clip is one "line" to `duck_under_speech`, so a
     final hit near its end counts as inside it;
   - `check_project` passes a film whose loudness fails the spec (it does
     not measure loudness) and says nothing of stray markers;
+  - the browser build has no master limiter: its mix meets a spec only
+    "as exported" (`measure_loudness` with `loudness`);
   - nothing says whether a clip's sound already carries music;
-  - burned-in text and graphics are read only by the desktop shot log;
-  - `duck_under_speech`'s description is about 4,000 characters, too long
-    to use; several other descriptions are as long.
+  - `duck_under_speech`, `generate_music` and `add_ad_element` have
+    descriptions of several hundred words, too long to use.
 - **To run a blind test again**: build, copy `dist` somewhere of its own,
   serve it with the fixtures (a 40-line static server does it), point
   `scripts/mcp-web.mjs --base` at it, and give the tester a small client
   that calls the bridge and saves images to files. The tester must be told
-  to listen (`preview_audio`): this one never did.
+  to listen (`preview_audio`): the first never did, the second read its
+  numbers. A tester cut off by a usage limit resumes where it stopped if
+  the servers are left running.
 - **The sweep of every web drive (238), 2026-11-20:** 206 passed at once
   and 12 more alone (they had run beside a blind tester's jobs). Of the
   other 20, none is this work's doing:
@@ -85,7 +99,8 @@ Claude Code or Codex pickup. Read it before resuming previous tasks.
   - a counting title that is split or head-trimmed restarts its count
     (ADR-147 says what a fix needs).
 - **Still missing against the big editors**: optical-flow slow motion, a
-  luma key, curved text, an audio spectrum graphic.- **Test media**: `node scripts/make-fixtures.mjs` and
+  luma key, curved text, an audio spectrum graphic.
+- **Test media**: `node scripts/make-fixtures.mjs` and
   `npm i --prefix scratch playwright-core` are needed once per checkout
   (both git-ignored); `person-pan.mp4` is downloaded and can fail with a
   429, which only the drives that use it notice.
