@@ -13,9 +13,14 @@ Claude Code or Codex pickup. Read it before resuming previous tasks.
   features were finished on `main` on 2026-10-16; they hold nothing to
   merge. Deleting them on the remote is the owner's call.
 - **Nothing is open on GitHub**: no pull request, no issue.
-- **Not pushed, though the owner asked for it.** These sessions had no git
-  or `gh` credentials (the stored `gh` token is invalid). The local `main`
-  is ahead of `origin/main`: `gh auth login`, then `git push origin main`.
+- **Pushed on 2026-11-20**, as the owner asked: `origin/main` holds
+  everything. The stored `gh` token had expired and the session had no
+  desktop, so the owner approved a device login:
+  `gh auth login -h github.com -p https -w` prints a code to enter at
+  github.com/login/device. Git's own credential helper needs a desktop, so
+  push with `gh`'s:
+  `git -c credential.helper= -c "credential.helper=!gh auth git-credential" push origin main`.
+  A push that changes `docs/` runs the website deploy on its own.
 - **The owner's direction (2026-11-19):** the project is for an AI to make
   every editing decision itself and produce the best video it can. Judge
   work by what an agent with only the MCP tools ends up making.
