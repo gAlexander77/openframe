@@ -31,12 +31,16 @@ None.
   translated captions (waits on a non-English speech fixture). Borders
   and shadows on pictures shipped (ADR-070, ADR-099).
 - **Proxies on the web** via mediabunny `Conversion` (short-GOP 720p).
-- **Buttons for the story tools** (2026-11-19, ADR-147): counting titles,
-  the credits roll, caption keywords, the progress bar, J/L cut and a
-  frame saved as JPEG are agent and assistant tools only. Then a desktop
-  run of `export_frame` and a blind test of the `documentary` playbook.
-- **Next from the 2026-11-19 survey of the MCP tools**: a slideshow maker,
-  a luma key, curved text, an audio spectrum graphic.
+- **Buttons for the agent tools of 2026-11-19** (ADR-147, ADR-148): counting
+  titles, the credits roll, caption keywords, the progress bar, J/L cut,
+  punch-ins, the angle switch, the slideshow and a frame saved as JPEG are
+  agent and assistant tools only.
+- **A desktop run of `export_frame`**, which the web build can only refuse.
+- **Drives for the `ad` and `epic_edit` playbooks**, as the documentary and
+  the short have: a playbook run in order finds what its tools alone hide.
+- **Next from the 2026-11-19 survey of the MCP tools**: a dissolve between
+  angles and a switch by who is speaking, a luma key, curved text, an
+  audio spectrum graphic.
 
 ## Later
 

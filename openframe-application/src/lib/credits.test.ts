@@ -118,3 +118,12 @@ describe("add_progress_bar", () => {
     expect([made.start, made.duration, made.transform.y < 0]).toEqual([30, 60, true]);
   });
 });
+
+// The blind documentary test: a 5.7 s roll ended a frame past the shot under it.
+it("a roll given a length ends on it, never a frame past", () => {
+  const p = runCommand(createProject({ fps }), "add_credits", { text: "Featuring\nDr. Yolanda Shea\nNASA Atmospheric Scientist\n\nFootage\nNASA", start: 47.5, duration: 5.7, style: { shadow: { color: "#000000" } } });
+  expect(Math.max(...titles(p).map((c) => clipEnd(c)))).toBe(Math.round((47.5 + 5.7) * 30));
+  const report: CommandReport = {};
+  runCommand(createProject({ fps }), "add_credits", { text: "One\nTwo", start: 0, duration: 5.7 }, report);
+  expect(report.notes![0]).toMatch(/^2 lines roll for 5\.7 s/);
+});

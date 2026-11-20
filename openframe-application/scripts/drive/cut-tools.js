@@ -105,6 +105,22 @@ async (page) => {
     ok: show.added_clips.length === 3 && /^3 pictures from /.test(show.notes[0]) && [s1, s2, mix, next].every((f) => f.lit > 0.98) && s1.sum !== s2.sum && mix.sum !== s2.sum && mix.sum !== next.sum,
     notes: show.notes, lit: [s1.lit, s2.lit, mix.lit, next.lit],
   };
+  // ---- a reel read as a shot list, before any of it is placed ---------------------------
+  const [reel] = await call("import_media", { files: [media("three-shots.mp4")] });
+  const sheet = await rpc("preview_media", { asset_id: reel.id, shots: true });
+  const list = JSON.parse(sheet.result.content.find((c) => c.type === "text").text);
+  details.shotList = {
+    ok: sheet.result.content[0].type === "image" && list.total === 3 && list.shots.length === 3 && [0, 2, 4].every((t, i) => Math.abs(list.shots[i].start - t) < 0.08) && Math.abs(list.shots[2].end - 6) < 0.08,
+    shots: list.shots, total: list.total,
+  };
+
+  // ---- a shot moved to the front, the others making room -------------------------------
+  const order = async () => (await call("describe_project", { assets: false })).tracks.find((t) => t.main).clips.map((c) => c.id);
+  const was = await order();
+  await call("move_clip", { clip_id: was[was.length - 1], start: 0, mode: "insert" });
+  const now = await order();
+  details.reorder = { ok: now[0] === was[was.length - 1] && now.slice(1).join() === was.slice(0, -1).join(), was: was.length, first: now[0] };
+
   const check = await call("check_project", {});
   details.check = { ok: !check.findings.some((f) => f.level === "error"), verdict: check.verdict, rules: check.findings.map((f) => f.rule) };
 

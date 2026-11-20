@@ -202,6 +202,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Slideshow** (`add_slideshow`): pictures or clips end to end, each
   filling the frame with a slow steady move and a transition at every
   cut, as ordinary clips. Agents and the assistant only (ADR-148).
+- **For agents, after a blind test** (ADR-148): `move_clip` with
+  `mode: "insert"` reorders (the gap closes, room is made where the clip
+  lands); `preview_media` with `shots: true` reads a video file as a shot
+  list, one tile per shot with its source seconds; `get_transcript`
+  answers sentences with the pause after each; `job_status` waits when
+  asked; `delete_markers` clears by label or all.
 - **Selected edit points:** click a clip edge with Select to draw a bracket;
   add other edges with Shift, or choose both touching sides with Alt or a
   double-click for a roll. Extend Edit moves them to the playhead, and the

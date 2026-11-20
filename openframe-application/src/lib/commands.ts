@@ -784,7 +784,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_text",
-    description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). It lands above everything at that time (titles, shapes, a grade or beat hits), sharing a free titles track when one is there; on track_id it goes where asked, and the answer notes an adjustment layer above it (its grade or zoom applies to the title too). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; \n breaks a line where you choose.",
+    description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). It lands above everything at that time (titles, shapes, a grade or beat hits), sharing a free titles track when one is there; on track_id it goes where asked, and the answer notes an adjustment layer above it (its grade or zoom applies to the title too). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; \\n in text breaks a line where you choose.",
     input: S.obj(
       {
         text: S.str("The words to show; \\n for line breaks"),
@@ -957,10 +957,19 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "move_clip",
-    description: "Move a clip to a time and (optionally) another track of the same kind. Overwrites whatever is under its new position.",
-    input: S.obj({ clip_id: S.str("Clip id"), start: S.num("Seconds", { minimum: 0 }), track_id: S.str("Destination track id") }, ["clip_id", "start"]),
+    description: "Move a clip to a time and (optionally) another track of the same kind. By default it overwrites whatever is under its new position and leaves a gap where it was. mode insert reorders instead (a ripple move): the gap it leaves closes and it is inserted at start, the clips from there on moving later, so a line or a shot changes place in the cut and nothing is lost. With insert, start is a time on the timeline as it is before the move: the start of the clip it should come before, or the end of the track to go last. What sits on the moved shot (its titles, its captions, its detached sound) goes with it.",
+    input: S.obj({ clip_id: S.str("Clip id"), start: S.num("Seconds", { minimum: 0 }), track_id: S.str("Destination track id"), mode: S.str("overwrite (default) covers what is at start and leaves a gap behind; insert closes the gap and pushes the clips from start on later", { enum: ["overwrite", "insert"] }) }, ["clip_id", "start"]),
     run: (p, a, report) => {
       const loc = clipOrThrow(p, a.clip_id);
+      if (a.mode === "insert") {
+        const c = loc.clip, track = a.track_id !== undefined ? trackOrThrow(p, a.track_id) : loc.track;
+        if (loc.track.locked || track.locked) throw new CommandError(`track ${(loc.track.locked ? loc.track : track).id} is locked`);
+        if ((track.kind === "audio") !== (c.type === "audio")) throw new CommandError(`${c.id} is ${c.type === "audio" ? "an audio" : "a picture"} clip: it goes on ${c.type === "audio" ? "an audio" : "a video"} track`);
+        const at = f(p, a.start);
+        // Once it is lifted, everything after it is earlier by its length.
+        const dest = track.id !== loc.track.id || at <= c.start ? at : Math.max(c.start, at - c.duration);
+        return ops.addClip(ops.deleteClips(p, [c.id], true), track.id, { ...c, start: dest } as Clip, "insert");
+      }
       const q = ops.moveClip(p, loc.clip.id, String(a.track_id ?? loc.track.id), f(p, a.start));
       // A title or graphic moved under a grade or a beat hit (ADR-116).
       const c = loc.clip;
@@ -2629,9 +2638,17 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "delete_markers",
-    description: "Delete the specified timeline markers together. Unknown ids reject the whole edit.",
-    input: S.obj({ marker_ids: S.ids("Marker ids") }, ["marker_ids"]),
-    run: (p, a) => deleteMarkers(p, a.marker_ids as Id[]),
+    description: "Delete timeline markers together: the ones named (unknown ids reject the whole edit), every marker with a label (label 'Scene' clears what split_scenes left, 'Beat' a song's beats; any case), or all of them (all: true).",
+    input: S.obj({ marker_ids: S.ids("Marker ids"), label: S.str("Every marker with this label, any case"), all: S.bool("Every marker on the timeline") }),
+    run: (p, a) => {
+      const given = [a.marker_ids !== undefined, a.label !== undefined, a.all === true].filter(Boolean).length;
+      if (given !== 1) throw new CommandError("give one of marker_ids, label or all: true");
+      if (a.marker_ids !== undefined) return deleteMarkers(p, a.marker_ids as Id[]);
+      const label = String(a.label ?? "").trim().toLowerCase();
+      const ids = p.markers.filter((m) => a.all === true || m.label.trim().toLowerCase() === label).map((m) => m.id);
+      if (!ids.length) throw new CommandError(a.all === true ? "there are no markers" : `no marker is labeled ${JSON.stringify(a.label)}: the labels here are ${[...new Set(p.markers.map((m) => JSON.stringify(m.label)))].slice(0, 12).join(", ") || "none"}`);
+      return deleteMarkers(p, ids);
+    },
   },
   {
     name: "replace_caption_text",

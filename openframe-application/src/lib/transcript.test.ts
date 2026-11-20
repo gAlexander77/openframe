@@ -68,3 +68,15 @@ it("hears a trimmed middle clip plus sentence margins, bounded by the asset", ()
   expect(speechWindow(p, { ...clip, in: 340, duration: 600 })).toEqual([337, 360]);
   expect(speechWindow(p, { ...clip, speed: 2 }, 10, 20)).toEqual([197, 223]);
 });
+
+// The blind documentary test: Whisper stamped words in ways that lost them (ADR-148).
+it("keeps a word before a pause, a word stamped with no length, and a hyphenated word whole", () => {
+  // "another." runs on through two seconds of quiet; the clip ends where the word does.
+  const tail = [w(" to", 73.41, 73.55), w(" one", 73.55, 73.77), w(" another.", 73.77, 75.13)];
+  expect(wordsIn(tail, 70.37, 74.43).map((x) => x.text.trim())).toEqual(["to", "one", "another."]);
+  // A word cut in half still goes to the side with more of it.
+  expect(wordsIn([w(" garage", 1.78, 2.42)], 0, 2.0).length).toBe(0);
+  expect(wordsIn([w(" garage", 1.78, 2.42)], 0, 2.2).length).toBe(1);
+  const h = merge(undefined, 0, 60, [w(" refers", 32, 32.4), w(" to", 32.4, 32.6), w(" long", 32.9, 32.9), w("-term", 32.9, 33.3), w(" heat", 40, 40.3), w("-trapping", 40.3, 40.9), w(" that", 41, 41.2), w("'s", 41.2, 41.3), w(" a", 41.4, 41.5), w(" 'quoted", 41.6, 42)]);
+  expect(h.words.map((x) => x.text.trim())).toEqual(["refers", "to", "long-term", "heat-trapping", "that's", "a", "'quoted"]);
+});

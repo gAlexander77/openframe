@@ -180,6 +180,10 @@ const jobs = {
   // a moment at camera second t is at this file's second t - 1.5.
   "sync-camera-b.mp4": () =>
     ff("-f", "lavfi", "-i", `color=c=0x2a9d8f:size=640x360:rate=30,drawtext=${font}text='CAMERA B':fontsize=40:fontcolor=white:x=(w-tw)/2:y=h-th-30`, "-i", syncMaster(), "-filter_complex", "[1:a]atrim=start=3.5:duration=10,asetpts=PTS-STARTPTS,lowpass=f=5000,volume=0.6[a]", "-map", "0:v", "-map", "[a]", "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-b:a", "128k", join(out, "sync-camera-b.mp4")),
+  // A reel of three shots, cut at 2 and 4 s (scripts/drive/cut-tools.js):
+  // preview_media shots must find exactly those.
+  "three-shots.mp4": () =>
+    ff("-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30:duration=2", "-f", "lavfi", "-i", "smptebars=size=640x360:rate=30:duration=2", "-f", "lavfi", "-i", "color=c=0x2a9d8f:size=640x360:rate=30:duration=2", "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]", "-map", "[v]", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", join(out, "three-shots.mp4")),
   // Two interviews for the documentary drive
   // (scripts/drive/documentary-flow.js): synthesized speech with a known
   // script, two voices, each over a plain picture naming its speaker, so a

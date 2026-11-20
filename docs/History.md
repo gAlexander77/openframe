@@ -2074,3 +2074,88 @@ it needs the desktop app, which was not started in this round.
   API (`api.github.com/repos/<owner>/<repo>/pulls`) and `git ls-remote
   origin 'refs/pull/*'` answer what is open without them; pushing waits for
   the owner.
+
+## 2026-11-19, later — What was still missing: punch-ins, multicam, a slideshow (Claude Code)
+
+The owner looked at the story tools and asked for everything still
+missing to be added, merged and pushed: the project is for an AI to make
+its own decisions in. Branch `improvements-11`
+([[ADR-148 Punch-ins keep what they applied, angles switch by held opacity, a slideshow is ordinary clips]]).
+
+- **`punch_in_cuts`**: the jump cuts `remove_silences` leaves, hidden by
+  drawing every other piece a little larger about the speaker, keyed
+  framing included, and taken back exactly on a second call.
+- **`switch_angles`** and a second camera in `sync_audio`: multicam with
+  nothing split, the switch an opacity key that holds.
+- **`add_slideshow`**: pictures end to end, each with a steady move and a
+  transition.
+- **`preview_frames` without times**: the middle of every shot, one call.
+- The social_short playbook frames the take before cutting it up and
+  punches in after; `scripts/drive/social-short-flow.js` runs it, as
+  `documentary-flow.js` runs the documentary one.
+
+**The desktop app could not be opened.** This session ran in Windows
+session 0 with the screen locked: `npm run tauri dev` built and died with
+"WebView2: Invalid window handle". So `export_frame` has still written no
+real file, and the blind test below ran against the web build.
+
+**A blind test on real footage.** A fresh model was given only the MCP
+tools (the web build, served frozen so edits here could not reload it), a
+77 s public-domain NASA interview and two Earth-from-orbit reels, and a
+brief: a 45 to 60 s documentary short. It made a 53 s film in 80 calls and
+27 minutes. No call errored and `check_project` passed, yet the film was
+not deliverable, and its report listed fifteen problems. Fixed here
+(ADR-148, "What a blind test found"):
+
+- captions that dropped the last word before a pause, a word stamped with
+  no length, and split "long-term" and "heat-trapping";
+- whole-line captions that broke mid-phrase and ran sentences together;
+- cutaways placed blind, half of them across a cut or on a reel's title
+  card: `preview_media` with `shots: true` is a shot list of a file;
+- a second `split_scenes` handed the first call's job; `job_status` that
+  could not wait;
+- lines reordered with five overwrites: `move_clip` with `mode: "insert"`;
+- a transcript of 230 loose words: sentences, with the pause after each;
+- captions over a lower third, music ducked from its first frame, a
+  loudness report that could not see a talk on the main track, 81 scene
+  markers with no way to clear them, and a few smaller ones.
+
+The same cuts on the same file were rerun before and after: the captions
+that read "but they are related to one" and "It also refers to -term
+changes" now read "but they are related / to one another." and "It also
+refers to long-term / changes over many decades".
+
+**Checked.** tsc; the production build; 2,052 unit tests; four playbook and
+tool drives over MCP in the web build (`cut-tools.js`,
+`social-short-flow.js`, `documentary-flow.js`, `story-tools.js`); and a
+sweep of every web drive, whose result is in the handoff. Rust is
+unchanged.
+
+### Lessons paid for in this round
+
+- **A blind test finds what drives cannot, and a scripted playbook finds
+  what a blind test cannot.** The drives proved each tool; the playbook
+  drives proved the order of steps; the blind tester found that the
+  captions lose words on real speech and that cutaways cannot be chosen
+  from frames six seconds apart. Run all three.
+- **Reproduce a tester's finding on its own footage before fixing it.**
+  Two of its caption complaints were three different causes, and one (a
+  caption "starting late") was not a bug: the audio showed the speech
+  starting where the caption did. The tester never listened.
+- **No error is not a pass.** Every call succeeded, and the check passed a
+  film whose mix failed its spec. The tester's own verdict was "not
+  deliverable".
+- **A model does not listen unless the playbook makes it.** The tester
+  used no `preview_audio`. The playbook's last step now names it.
+- **A recognizer's word ends are not word ends.** Whisper stamps a word's
+  end where the next begins. Trust starts; cap a word's length by its
+  letters.
+- **A long tool keyed by its name answers the wrong question.** The job
+  registry found "the running job of this tool" and returned it for other
+  arguments.
+- **Freeze what a tester runs on.** The tester's app was a built copy
+  served from `dist`, so source edits could not reload its page; then a
+  `npm run build` rewrote `dist` under it. Copy the build somewhere of its
+  own.
+- **Session 0 has no desktop.** A GUI app cannot be launched from a
+  non-interactive Windows session: check before planning a desktop run.

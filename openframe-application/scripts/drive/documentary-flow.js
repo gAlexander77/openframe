@@ -42,9 +42,12 @@ async (page) => {
   const [ia, ib, photo, song] = await call("import_media", { files: ["interview-a.mp4", "interview-b.mp4", "photo.jpg", "music-30s.mp3"].map((f) => ({ src: `${origin}/fixtures/media/${f}` })) });
   const a = (await call("add_media_clip", { asset_id: ia.id, start: 0 })).added_clips[0].id;
   const b = (await call("add_media_clip", { asset_id: ib.id, start: ia.duration })).added_clips[0].id;
-  const wa = (await call("get_transcript", { clip_id: a })).words, wb = (await call("get_transcript", { clip_id: b })).words;
+  const ta = await call("get_transcript", { clip_id: a }), tb = await call("get_transcript", { clip_id: b });
+  const wa = ta.words, wb = tb.words;
   const said = (ws) => ws.map((w) => w.text).join(" ");
-  details.heard = { ok: /studio/i.test(said(wa)) && /everything/i.test(said(wa)) && /bowls/i.test(said(wb)) && /hand/i.test(said(wb)), a: said(wa), b: said(wb) };
+  // Sentences say the same words as the word list, each ending where its last word was said, inside the file.
+  const whole = (t) => squash(t.sentences.map((s) => s.text).join(" ")) === squash(said(t.words)) && t.sentences.every((s) => s.end > s.start && s.end <= t.words.at(-1).end + 0.01);
+  details.heard = { ok: /studio/i.test(said(wa)) && /everything/i.test(said(wa)) && /bowls/i.test(said(wb)) && /hand/i.test(said(wb)) && whole(ta) && whole(tb), a: said(wa), b: said(wb), sentences: [ta.sentences, tb.sentences] };
   // A number is one word, as it is written.
   details.numbers = { ok: ![...wa, ...wb].some((w) => /^[.,:]\d/.test(w.text.trim())), words: wb.map((w) => w.text) };
 

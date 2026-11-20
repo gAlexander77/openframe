@@ -79,5 +79,47 @@ export function merge(h: Heard | undefined, from: number, to: number, words: Wor
   return { words: monotonicWords([...kept, ...words]), spans };
 }
 
+/** A word's middle, for deciding which side of a cut says it. Whisper
+ * stamps a word's end where the next one starts, so the last word before a
+ * pause runs on through the silence: its length is capped at what its
+ * letters take to say slowly. "another." before 2 s of quiet had its middle
+ * past the cut that ended the clip, and fell out of the transcript. */
+const middle = (w: Word) => w.start + Math.min(w.end - w.start, 0.3 + 0.07 * w.text.trim().length) / 2;
+
+export interface Sentence {
+  text: string;
+  /** Source seconds its first word starts and its last word was said. */
+  start: number;
+  end: number;
+  /** Seconds of breath before the next sentence; absent after the last. */
+  pause_after?: number;
+}
+
+/**
+ * Words as sentences, for choosing lines to keep (get_transcript): a
+ * sentence ends at its punctuation, or at a pause of 0.7 s where the
+ * recognizer wrote none. The end is where the last word was said (its
+ * length capped as `middle` caps it), so a cut placed there keeps the word
+ * and not the silence after it.
+ */
+export function sentencesOf(words: Word[]): Sentence[] {
+  const out: Sentence[] = [];
+  let cur: Word[] = [];
+  const said = (w: Word) => w.start + Math.min(w.end - w.start, 0.3 + 0.07 * w.text.trim().length);
+  const flush = () => {
+    if (cur.length) out.push({ text: cur.map((w) => w.text.trim()).join(" ").replace(/\s+([,.!?;:])/g, "$1"), start: +cur[0].start.toFixed(2), end: +said(cur[cur.length - 1]).toFixed(2) });
+    cur = [];
+  };
+  words.forEach((w, i) => {
+    if (!w.text.trim()) return;
+    cur.push(w);
+    const next = words[i + 1];
+    if (/[.!?…]["')\]]?$/.test(w.text.trim()) || (next && next.start - said(w) >= 0.7)) flush();
+  });
+  flush();
+  out.forEach((s, i) => { if (out[i + 1]) s.pause_after = +Math.max(0, out[i + 1].start - s.end).toFixed(2); });
+  return out;
+}
+
 /** The words a clip window [from, to) plays, by their middle. */
-export const wordsIn = (words: Word[], from: number, to: number) => words.filter((w) => (w.start + w.end) / 2 >= from && (w.start + w.end) / 2 < to);
+export const wordsIn = (words: Word[], from: number, to: number) => words.filter((w) => middle(w) >= from && middle(w) < to);

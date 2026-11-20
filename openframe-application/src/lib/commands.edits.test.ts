@@ -124,3 +124,43 @@ describe("a sound's length", () => {
     expect(clipForAsset({ ...p.assets[0], duration: 0.25 }, 0, fps).duration).toBe(7);
   });
 });
+
+// The blind documentary test moved its hook to the front with five overwrites and a parking spot (ADR-148).
+describe("move_clip mode insert", () => {
+  it("reorders: the gap it leaves closes and the clips where it lands move later", () => {
+    const p = shots([0, 2], [4, 3], [8, 1]);
+    const [a, b, c] = ids(p);
+    // The last shot to the front.
+    const front = runAgentCommand(p, "move_clip", { clip_id: c, start: 0, mode: "insert" });
+    expect(ids(front)).toEqual([c, a, b]);
+    expect([seconds(front, c), seconds(front, a), seconds(front, b)]).toEqual([[0, 1, 8], [1, 3, 0], [3, 6, 4]]);
+    // The first shot to the end: start names a time before the move.
+    const last = runAgentCommand(p, "move_clip", { clip_id: a, start: 6, mode: "insert" });
+    expect(ids(last)).toEqual([b, c, a]);
+    expect(seconds(last, a)).toEqual([4, 6, 0]);
+    // Before the third shot: between the second and the third.
+    const mid = runAgentCommand(p, "move_clip", { clip_id: a, start: 5, mode: "insert" });
+    expect(ids(mid)).toEqual([b, a, c]);
+  });
+  it("takes what sits on the moved shot with it", () => {
+    let p = shots([0, 2], [4, 3]);
+    const [a, b] = ids(p);
+    p = runAgentCommand(p, "add_text", { text: "On the second shot", start: 2.5, duration: 2 });
+    const q = runAgentCommand(p, "move_clip", { clip_id: b, start: 0, mode: "insert" });
+    expect(ids(q)).toEqual([b, a]);
+    const title = describeProject(q).tracks.flatMap((t) => t.clips).find((x) => x.type === "text")!;
+    expect([title.start, title.end]).toEqual([0.5, 2.5]);
+  });
+});
+
+describe("delete_markers", () => {
+  it("deletes by label or all at once, and names the labels when none match", () => {
+    let p = shots([0, 6]);
+    for (const [at, label] of [[1, "Scene"], [2, "scene"], [3, "Chapter"]] as const) p = runCommand(p, "add_marker", { at, label });
+    expect(runCommand(p, "delete_markers", { label: "Scene" }).markers.map((m) => m.label)).toEqual(["Chapter"]);
+    expect(runCommand(p, "delete_markers", { all: true }).markers).toEqual([]);
+    expect(runCommand(p, "delete_markers", { marker_ids: [p.markers[0].id] }).markers).toHaveLength(2);
+    expect(() => runCommand(p, "delete_markers", { label: "Beat" })).toThrow('no marker is labeled "Beat": the labels here are "Scene", "scene", "Chapter"');
+    expect(() => runCommand(p, "delete_markers", {})).toThrow("give one of marker_ids, label or all");
+  });
+});

@@ -5,6 +5,7 @@
 
 import { transcribeTimeline, type TranscribeProgress } from "../engine/transcribe";
 import { captionReading, currentCaptions, type Caption, DEFAULT_LINES, parseSubtitles, toSrt, toVtt, readableCaptions, wordsToCaptions } from "../lib/captions";
+import { checkProject } from "../lib/designCheck";
 import { runCommand } from "../lib/commands";
 import { trackRole, assetsOf } from "../lib/audioRoles";
 import { timelineWords } from "../lib/transcript";
@@ -164,6 +165,15 @@ export async function autoCaptions(_target: string, opts: { replace?: boolean; w
     const brief = ({ text, start, end }: typeof made[number]) => ({ text, start: +start.toFixed(3), end: +end.toFixed(3) });
     const unreadable = made.filter(c => !captionReading(c).met).map(c => ({ ...brief(c), characters_per_second: +captionReading(c).cps.toFixed(1) }));
     const readability = opts.words_per_caption ? undefined : { met: !unreadable.length, ...(unreadable.length ? { findings: unreadable, note: "Some cues still miss the reading-time rule; review these cues and shorten the text or extend the available time." } : {}) };
-    return { audio_seconds, elapsed_seconds, model: heardModel, readability, count: made.length, track_id: made[0].track_id, first: brief(made[0]), last: brief(made.at(-1)!), seconds: +made.reduce((n, c) => n + c.end - c.start, 0).toFixed(3), words: heard, ...(opts.detail === "full" ? { captions: made.map(brief) } : {}) };
+    // A title already where the captions go (a lower third added before
+    // them) is said now, with the move that clears it: the blind
+    // documentary test only saw it in a contact sheet (ADR-148).
+    let overlaps: { clip_id?: string; at?: number; message: string; fix?: string }[] = [];
+    try {
+      overlaps = checkProject(store.get().project, "any").findings.filter((f) => f.rule === "text_overlaps_text").map((f) => ({ clip_id: f.clip_id, at: f.at, message: f.message, fix: f.fix }));
+    } catch {
+      // The captions are made; a check that cannot run (a timeline with no main track) says nothing.
+    }
+    return { audio_seconds, elapsed_seconds, model: heardModel, readability, count: made.length, track_id: made[0].track_id, first: brief(made[0]), last: brief(made.at(-1)!), seconds: +made.reduce((n, c) => n + c.end - c.start, 0).toFixed(3), words: heard, ...(overlaps.length ? { overlaps } : {}), ...(opts.detail === "full" ? { captions: made.map(brief) } : {}) };
   } finally { dismiss(notice); }
 }

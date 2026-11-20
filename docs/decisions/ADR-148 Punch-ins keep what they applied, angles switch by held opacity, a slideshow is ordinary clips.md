@@ -66,6 +66,65 @@ export took a `describe_project` and arithmetic to choose the times.
 - **`preview_frames` without times** shows the middle of every shot on the
   main track, up to 24 spread evenly, and answers the times it chose.
 
+## What a blind test found, the same day
+
+A fresh model with nothing but the MCP tools (the web build, served frozen;
+a 77 s NASA interview and two Earth-from-orbit reels) made a 53 s
+documentary short in 80 calls and reported fifteen problems. No call had
+errored. What was fixed:
+
+- **Captions lost and broke words.** Whisper stamps the last word before a
+  pause through the silence, so its middle fell past the cut that ended the
+  clip and "another." left the transcript: a word's middle is now taken
+  over the time its letters take to say. A word stamped with no length
+  ("long" in "long-term") is kept; "-term", "-trapping" and "'s" join the
+  word before them.
+- **Whole-line captions broke mid-phrase and ran sentences together**
+  ("…in the / surface", "…a half. And that / temperature…"). Two lines are
+  now balanced and broken where a phrase begins, and a sentence that ends
+  inside a cue costs more than ending the cue there.
+- **Cutaways were placed blind**: six of twelve cut to another shot midway
+  or showed a reel's own title card, because frames a few seconds apart do
+  not show cuts. `preview_media` with `shots: true` answers a shot list of
+  the file, one tile per shot with its source seconds (the scene detector
+  run on the file, not on a clip, kept for the session).
+- **A second `split_scenes` call was handed the first call's job.** A long
+  tool still at work on other arguments now makes the second call wait its
+  turn, and tells it so if the first outlasts the wait. `job_status` takes
+  `wait`, so following a job is one call.
+- **Reordering lines took five overwrites and a parking spot.**
+  `move_clip` with `mode: "insert"` closes the gap a clip leaves and makes
+  room where it lands; what sits on the shot goes with it.
+- **A transcript was 230 loose words.** `get_transcript` answers sentences,
+  each with its source seconds and the pause after it.
+- **Captions landed on a lower third added before them.** `auto_captions`
+  answers `overlaps` (the check's own finding, with its fix), and the
+  documentary playbook captions before it names.
+- **The music opened ducked.** Between two lines a short swell pumps; at
+  the song's own edges nothing does, so a stretch of at least half the gap
+  comes up (a second of title before the first line used to play 15 dB
+  down).
+- **`measure_loudness by_track` did not see the talk** when it was the
+  footage's own sound on the main track: video tracks that sound are
+  listed (role picture) and, with no dialog track, taken as the voice.
+- Smaller: `delete_markers` by label or all (81 scene markers were left
+  behind), a roll given a length no longer ends a frame past it,
+  `normalize_loudness` answers `now_lufs` beside the `lufs` it measured
+  before, `add_text`'s help shows `\n` as written, and the advice for a
+  final hit under a line offers moving the music, not only the talk.
+
+The documentary playbook was rewritten where it contradicted itself or the
+tools (a cutaway that hides a join starts before it; `move_clip` reorders
+only with insert; the talk may still be in the footage).
+
+Not fixed, for the next round: `generate_music` places a score whose fit
+it reports as failed, and its ring ending is cut short; a whole talk on
+one clip is one "line" to `duck_under_speech`; `check_project` passes a
+film whose loudness fails the spec (it does not measure it) and says
+nothing of stray markers; nothing tells whether a clip's sound already
+carries music; burned-in text is only read by the desktop shot log;
+`duck_under_speech`'s description is 4,000 characters.
+
 ## Consequences
 
 - One optional project field, `VideoClip.punch`. A reader that predates it

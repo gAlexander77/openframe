@@ -25,6 +25,7 @@ import { PROGRAM_KINDS, SPEC_IDS } from "./analysis/delivery";
 import { LINE_CEILING_LU } from "./analysis/balance";
 import { DUCK_MIN_GAP, DUCK_RELEASE } from "./analysis/duck";
 import { findClips, type FindClipsOptions } from "./timelineIndex";
+import { sentencesOf } from "./transcript";
 import type { Project } from "./project/types";
 import { didYouMean } from "./didYouMean";
 import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_PUSHES, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionOverride, type VersionPushes, type VersionRatio, type VersionSpec } from "./versions";
@@ -106,6 +107,9 @@ export interface McpHost {
   sheet(times: number[], tileWidth: number, columns: number, before?: boolean, beforeClipIds?: string[]): Promise<string>;
   /** The same, of an imported video's own frames at source seconds. */
   mediaSheet(assetId: string, times: number[], tileWidth: number, columns: number): Promise<string>;
+  /** preview_media shots: one tile for each shot of an imported video (its
+   * cuts found on this computer), and the shots in source seconds. */
+  mediaShots?(assetId: string, options: { from?: number; to?: number; tileWidth: number; columns: number }): Promise<{ image: string; shots: unknown; total: number; more_from?: number }>;
   /** The same, of a file that is not imported (an exported video): its
    * frames at `times`, or `count` spread over it, and what it is. */
   fileSheet?(src: string, times: number[] | undefined, count: number, tileWidth: number, columns: number): Promise<{ image: string; file: unknown }>;
@@ -785,19 +789,29 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "preview_media",
-    description: "Look inside imported media before using it: a video's own frames at source seconds (times), or `count` frames spread over the whole file (default 12), as one contact sheet; a still picture whole, labeled with its size. Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action) and to see what a photo shows before framing it. file instead of asset_id looks inside a file without importing it: an exported video (the path export_video or export_versions answered) to see what was delivered, frame by frame as the file has it, not the timeline; the answer adds the file's length, size and chapters (titles and seconds from Nero MP4/MOV chapter tables, as OpenFrame writes; other chapter formats are not inspected).",
+    description: "Look inside imported media before using it: a video's own frames at source seconds (times), or `count` frames spread over the whole file (default 12), as one contact sheet; a still picture whole, labeled with its size. Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action) and to see what a photo shows before framing it. shots: true answers a shot list of a video instead: every shot between its own cuts as a tile, numbered, with its source seconds, so a cutaway is taken from inside one shot (a clip that runs across a cut shows two) and a reel's own title cards and graphics are seen before they are used; read a b-roll reel this way before placing any of it. file instead of asset_id looks inside a file without importing it: an exported video (the path export_video or export_versions answered) to see what was delivered, frame by frame as the file has it, not the timeline; the answer adds the file's length, size and chapters (titles and seconds from Nero MP4/MOV chapter tables, as OpenFrame writes; other chapter formats are not inspected).",
     inputSchema: obj(
       {
         asset_id: { type: "string", description: "A video or picture asset id from describe_project or import_media" },
         file: { type: "string", description: "Instead of asset_id: a video or picture file to look inside without importing it, e.g. an exported file's path (desktop: an absolute path; the browser build: a URL)" },
         times: { type: "array", items: { type: "number", minimum: 0 }, description: "Source seconds, up to 24" },
         count: { type: "integer", minimum: 2, maximum: 24, description: "Frames spread over the file when times is not given; default 12" },
+        shots: { type: "boolean", description: "true: a shot list instead. One tile for every shot of the video (its own cuts, found on this computer), labeled with its number and source seconds, and the shots as text. The first call takes about as long as the video plays; later ones are instant" },
+        from: { type: "number", minimum: 0, description: "With shots: only the shots after this source second" },
+        to: { type: "number", minimum: 0, description: "With shots: only the shots before this source second" },
         columns: columns(4),
-        tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Default 320" },
+        tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Default 320 (240 with shots)" },
       },
       [],
     ),
     call: async (h, a) => {
+      // A reel's shots (ADR-148): what a cutaway can be cut from, seen before any of it is placed.
+      if (a.shots === true) {
+        if (a.asset_id === undefined) throw new Error("shots needs asset_id: an imported video");
+        if (!h.mediaShots) throw new Error("This app cannot find a file's shots.");
+        const r = await h.mediaShots(String(a.asset_id), given({ from: a.from, to: a.to, tileWidth: Number(a.tile_width ?? 240), columns: Number(a.columns ?? 6) }) as { tileWidth: number; columns: number });
+        return { content: [{ type: "image", data: r.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify(appAnswer({ shots: r.shots, total: r.total, ...(r.more_from !== undefined ? { more: `shots past ${r.more_from} s: call again with from ${r.more_from}` } : {}), note: "Each shot's start and end are source seconds: a cutaway is add_media_clip with in inside one shot and a duration that ends before the shot does." })) }] };
+      }
       // An exported file, or any file not imported (ADR-116).
       if (a.file !== undefined) {
         if (a.asset_id !== undefined) throw new Error("give asset_id or file, not both");
@@ -939,9 +953,13 @@ APP_TOOLS.push(
   },
   {
     name: "get_transcript",
-    description: "Hear a video or audio clip's speech on this machine (Whisper) and return its words with source-second times. Hears only the clip's source window plus 3 s context per edge, merging cached windows. Reports audio_seconds actually heard (0 when cached), hearing elapsed_seconds and model (default base.en). Delete words by passing their spans to cut_ranges (Premiere's text-based editing).",
-    inputSchema: obj({ clip_id: clipId }, ["clip_id"]),
-    call: async (h, a) => appJson(await h.ai("clipTranscript", String(a.clip_id), {})),
+    description: "Hear a video or audio clip's speech on this machine (Whisper) and return what is said with source-second times: sentences (each with its text, where it starts and ends in the file, and pause_after, the breath before the next one: the place to cut), and every word. Choose the lines to keep by sentence, then cut with cut_ranges from one sentence's end to the next kept one's start (Premiere's text-based editing); words false answers the sentences alone, a few hundred bytes a minute instead of several thousand. Hears only the clip's source window plus 3 s context per edge, merging cached windows. Reports audio_seconds actually heard (0 when cached), hearing elapsed_seconds and model (default base.en). A last word's end can run on into the silence after it: trust starts, and a sentence's end is where its last word was said, not where the next begins.",
+    inputSchema: obj({ clip_id: clipId, words: { type: "boolean", description: "false: the sentences alone (default true: every word too)" } }, ["clip_id"]),
+    call: async (h, a) => {
+      const r = (await h.ai("clipTranscript", String(a.clip_id), {})) as { words?: { text: string; start: number; end: number }[] };
+      const { words = [], ...rest } = r;
+      return appJson({ ...rest, sentences: sentencesOf(words), ...(a.words === false ? {} : { words }) });
+    },
   },
   {
     name: "remove_filler_words",
@@ -964,7 +982,7 @@ APP_TOOLS.push(
   {
     name: "normalize_loudness",
     description:
-      "Measure clips' loudness (EBU R128) and set their volume to reach a target without their true peak passing the ceiling (-1 dBTP; -2 for ATSC). -14 LUFS suits social video, -16 podcasts, -23 European broadcast, -24 US TV. spec names a delivery spec instead (its target and ceiling). A ducked clip keeps its duck: its volume keys scale so the loudest is the new level. Each clip is measured alone through its pitch, filters, saturation, ring modulation, compressor, fades and effect tails, using the export mixer at unit clip gain (track/master faders excluded). measure_loudness checks the mix.",
+      "Measure clips' loudness (EBU R128) and set their volume to reach a target without their true peak passing the ceiling (-1 dBTP; -2 for ATSC). Each clip answers lufs (what it measured before), gain_db (what was applied) and now_lufs (where that leaves it); limited_by says when the peak ceiling held it short of the target. -14 LUFS suits social video, -16 podcasts, -23 European broadcast, -24 US TV. spec names a delivery spec instead (its target and ceiling). A ducked clip keeps its duck: its volume keys scale so the loudest is the new level. Each clip is measured alone through its pitch, filters, saturation, ring modulation, compressor, fades and effect tails, using the export mixer at unit clip gain (track/master faders excluded). measure_loudness checks the mix.",
     inputSchema: obj(
       {
         clip_ids: { type: "array", items: { type: "string" }, description: "Video or audio clip ids" },
@@ -973,7 +991,12 @@ APP_TOOLS.push(
       },
       ["clip_ids"],
     ),
-    call: async (h, a) => appJson(await h.ai("normalizeLoudness", (a.clip_ids as unknown[]).map(String), given({ target: a.target, spec: a.spec }))),
+    call: async (h, a) => {
+      const r = await h.ai("normalizeLoudness", (a.clip_ids as unknown[]).map(String), given({ target: a.target, spec: a.spec }));
+      // lufs is what the clip measured before the gain: read alone it looked
+      // like a missed target. now_lufs is where the gain leaves it.
+      return appJson(Array.isArray(r) ? r.map((x: { lufs?: number; gain?: number }) => (typeof x.lufs === "number" && typeof x.gain === "number" && x.gain > 0 ? { ...x, now_lufs: +(x.lufs + 20 * Math.log10(x.gain)).toFixed(2) } : x)) : r);
+    },
   },
   // ---- delivery (ADR-061) --------------------------------------------------------
   {
@@ -1387,6 +1410,8 @@ APP_TOOLS.push(
 const LONG_TOOLS = new Set([
   "find_highlights", "get_transcript", "auto_captions", "remove_filler_words", "remove_silences", "split_scenes", "mark_beats", "normalize_loudness", "duck_under_speech", "analyze_music", "review_voiceover", "add_voiceover", "text_to_speech", "retake_voiceover", "generate_music", "match_color", "auto_adjust", "create_clips", "remove_background", "text_behind_subject", "reduce_noise", "stabilize_clip", "track_motion", "auto_reframe", "sync_audio", "measure_loudness", "export_projects", "export_video", "export_versions", "add_sound_effect", "add_ambience", "import_media", "create_proxies", "delete_proxies", "preview_audio", "preview_media", "preview_frames", "preview_motion", "preview_frame", "check_project",
 ]);
+/** What each job was asked, to tell the same call again from another one. */
+const jobArgs = new Map<string, string>();
 const fallbackJobs = new WeakMap<McpHost, JobRegistry>();
 const jobsFor = (h: McpHost) => {
   if (h.jobs) return h.jobs;
@@ -1403,13 +1428,15 @@ const jobAnswer = (status: ReturnType<JobRegistry["status"]>) => {
   return { ...status, ...(result ? { result: answer } : {}), ...(status.state === "running" ? { note: "call job_status with job_id; cancel_job stops it" } : {}) };
 };
 APP_TOOLS.push(
-  { name: "job_status", description: "Progress, stage, elapsed seconds, quiet_seconds since the last progress callback and complete finished answer of a long tool. Without an ID lists every running and recent job. Text results stay up to 30 minutes within a 32 MiB budget (128 recent jobs); delivered image/audio payloads are released. Switching projects cancels running work and releases answers. Export jobs also remain visible through export_status.", inputSchema: obj({ job_id: { type: "string", description: "Job ID returned by a long tool; omit to list running and recent jobs" } }), call: (h, a) => {
+  { name: "job_status", description: "Progress, stage, elapsed seconds, quiet_seconds since the last progress callback and complete finished answer of a long tool. wait holds the answer until the job finishes, up to that many seconds: one call instead of polling. Without an ID lists every running and recent job. Text results stay up to 30 minutes within a 32 MiB budget (128 recent jobs); delivered image/audio payloads are released. Switching projects cancels running work and releases answers. Export jobs also remain visible through export_status.", inputSchema: obj({ job_id: { type: "string", description: "Job ID returned by a long tool; omit to list running and recent jobs" }, wait: { type: "number", minimum: 0, maximum: 45, description: "With job_id: seconds to wait for the job to finish before answering (default 0: answer at once)" } }), call: async (h, a) => {
     const jobs = jobsFor(h);
     if (!a.job_id) {
       const all = jobs.all(), answer = json(all.map(jobAnswer));
       all.forEach(job => jobs.delivered(job.job_id)); return answer;
     }
-    const id = String(a.job_id), answer = json(jobAnswer(jobs.status(id)));
+    const id = String(a.job_id);
+    if (Number(a.wait ?? 0) > 0) await jobs.wait(id, Number(a.wait));
+    const answer = json(jobAnswer(jobs.status(id)));
     jobs.delivered(id); return answer;
   } },
   { name: "cancel_job", description: "Cancel a running job by ID. Stops its work; completed jobs keep their result. Partial files or completed projects in a batch remain available.", inputSchema: obj({ job_id: { type: "string", description: "Job ID to cancel, from a long tool or job_status" } }, ["job_id"]), call: (h, a) => json(jobAnswer(jobsFor(h).cancel(String(a.job_id)))) },
@@ -1437,13 +1464,13 @@ Before you start: help (the tools by step), help with topic ad, epic_edit, docum
 Long tools answer their result or a running job_id within 45 s (wait: 0 returns immediately). Poll job_status with job_id until done, then read result; cancel_job stops it. Text results stay up to 30 minutes within a 32 MiB budget; delivered image/audio payloads are released; export_status also follows the latest export.
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
-2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
+2. import_media the footage, music, logo and pictures by absolute path (the browser build: by URL); preview_media shows what is inside each video, to choose the moments worth using, and with shots true every shot of a reel between its own cuts.
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
 4. Lay shots under each line with add_media_clip; where recorded talk meets the next shot, jl_cut lets its sound run on under the picture or lead it (J and L cuts); frame_region zooms a shot onto the part that matters and moves between regions (moves); on a screen recording add_callout rings the part the voice names and stays on it through the zooms; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards; add_counter for a number that counts up or a countdown, add_credits for a credits roll.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
-8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (MP3 with M4A or WAV fallback, its format and measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
+8. Check: preview_frames (a contact sheet of many moments; with no times, the middle of every shot), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (MP3 with M4A or WAV fallback, its format and measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
 9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video. export_frame writes one frame as a picture: the cover or thumbnail.
 Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
@@ -1555,11 +1582,24 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
           if (!LONG_TOOLS.has(name)) return ok(req.id, await invoke());
           const jobs = jobsFor(host), scope = host.jobScope?.();
           const project = scope?.project ?? String((look() as { id?: string })?.id ?? "");
-          const existing = jobs.all().find(j => j.tool === name && j.project_id === project && j.state === "running");
-          if (existing) return ok(req.id, json(jobAnswer(existing)));
           const { wait, ...options } = args;
           args = options;
+          const key = JSON.stringify(options);
+          const running = () => jobs.all().find(j => j.tool === name && j.project_id === project && j.state === "running");
+          let existing = running();
+          // The same call again follows its job. Another call of a tool
+          // still at work used to be handed the first one's job (a second
+          // split_scenes answered the first reel's): it waits its turn, and
+          // is told so if the first outlasts the wait (ADR-148).
+          if (existing && (jobArgs.get(existing.job_id) ?? key) !== key) {
+            await jobs.wait(existing.job_id, Number(wait ?? 45));
+            existing = running();
+            if (existing && (jobArgs.get(existing.job_id) ?? key) !== key) throw new Error(`${name} is still at work on an earlier call (job ${existing.job_id}${existing.stage ? `: ${existing.stage}` : ""}), and this call asks for something else. Wait for it (job_status with its job_id and wait) or cancel_job it, then call again.`);
+          }
+          if (existing) return ok(req.id, json(jobAnswer(existing)));
           const id = jobs.start(name, project, scope?.signal, context => host.runJob ? host.runJob(context, invoke) : invoke());
+          jobArgs.set(id, key);
+          if (jobArgs.size > 256) for (const old of jobArgs.keys()) { if (jobArgs.size <= 128) break; jobArgs.delete(old); }
           const status = await jobs.wait(id, Number(wait ?? 45));
           if (status.state === "done") {
             if (status.result_released) throw new Error("The answer exceeded the retained-result budget. Request a smaller range or less detail.");
