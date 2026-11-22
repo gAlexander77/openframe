@@ -3,6 +3,7 @@ import { describeProject, runCommand, type CommandReport } from "./commands";
 import { describeChanges, handleMcp, listTools, type McpHost, TOOLS_META, toolsFingerprint, shotLooks, shotTimes } from "./mcp";
 import { createProject } from "./project/defaults";
 import type { Project } from "./project/types";
+import { CORE_TOOLS } from "./mcpGuide";
 
 function host() {
   const start: Project = { ...createProject(), assets: [{ id: "a1", kind: "video", name: "a.mp4", src: "a.mp4", duration: 10, hasVideo: true, hasAudio: true }] };
@@ -159,6 +160,37 @@ describe("MCP", () => {
     expect(names).toContain("remove_background");
     expect(new Set(names).size).toBe(names.length);
     expect(listTools().every((t) => t.inputSchema.type === "object")).toBe(true);
+  });
+
+  it("offers a short list on request, under a quarter of the size, and call_tool for every tool it leaves out", async () => {
+    const list = async (tools?: string) => ((await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/list" }, host(), tools))!.result as { tools: { name: string; description: string; inputSchema: { properties?: Record<string, { properties?: object }> } }[] }).tools;
+    const all = await list(), core = await list("core");
+    expect(all.map((t) => t.name)).toEqual(listTools().map((t) => t.name));
+    expect(core.map((t) => t.name)).toEqual([CORE_TOOLS[0], "call_tool", ...CORE_TOOLS.slice(1)]);
+    const said = async (tools?: string) => ((await handleMcp({ jsonrpc: "2.0", id: 1, method: "initialize" }, host(), tools))!.result as { instructions: string }).instructions;
+    expect(await said("core")).toContain("call_tool");
+    expect(await said()).not.toContain("call_tool");
+    const bytes = (l: unknown) => JSON.stringify(l).length;
+    expect(bytes(core)).toBeLessThan(bytes(listTools()) / 4);
+    // The budget: a description is its opening sentences, the rest help's.
+    for (const [l, cap] of [[all, 900], [core, 300]] as const) for (const t of l) expect(t.description.length, t.name).toBeLessThanOrEqual(cap * 2 + 60);
+    const long = core.find((t) => t.name === "duck_under_speech")!;
+    expect(long.description).toMatch(/\. More: help topic duck_under_speech\.$/);
+    expect(text(await call(host(), "tools/call", { name: "help", arguments: { topic: "duck_under_speech" } }))).toContain(listTools().find((t) => t.name === "duck_under_speech")!.description);
+    // A title's style is spelled out once, by add_text.
+    expect(all.find((t) => t.name === "add_text")!.inputSchema.properties!.style.properties).toBeDefined();
+    expect(all.find((t) => t.name === "set_text")!.inputSchema.properties!.style.properties).toBeUndefined();
+    expect(text(await call(host(), "tools/call", { name: "help" }))).toContain("call_tool");
+  });
+
+  it("call_tool runs the tool it names, however a small model shapes the arguments", async () => {
+    for (const args of [{ name: "add_media_clip", arguments: { asset_id: "a1", start: 0, duration: 4 } }, { name: "add_media_clip", arguments: '{"asset_id":"a1","start":0,"duration":4}' }, { name: "add_media_clip", asset_id: "a1", start: 0, duration: 4 }]) {
+      const r = await call(host(), "tools/call", { name: "call_tool", arguments: args });
+      expect(JSON.parse(text(r)).duration, JSON.stringify(args)).toBe(4);
+    }
+    const bad = await call(host(), "tools/call", { name: "call_tool", arguments: { name: "add_media_clip", arguments: { asset: "a1" } } });
+    expect(JSON.stringify(bad!.result)).toContain("args.asset is not a known argument; did you mean asset_id?");
+    expect((await call(host(), "tools/call", { name: "call_tool", arguments: { name: "set_blnd" } }))!.error!.message).toContain("did you mean set_blend?");
   });
 
   it("runs a command and reports tool errors as results the model can read", async () => {
@@ -952,7 +984,9 @@ it("returns a running job, reuses retries, and collects the complete finished an
   h.ai = async () => { calls++; return new Promise(resolve => { finish = resolve; }); };
   const invoke = async (name: string, args: object) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
   const first = await invoke("auto_captions", { wait: 0 });
-  expect(first).toMatchObject({ state: "running", tool: "auto_captions", progress: 0, note: "call job_status with job_id; cancel_job stops it" });
+  expect(first).toMatchObject({ state: "running", tool: "auto_captions", progress: 0 });
+  // The next call is spelled out: a small model sent job_status the first tool's arguments.
+  expect(first.note).toContain(`job_status with {"job_id":"${first.job_id}","wait":45}`);
   const retry = await invoke("auto_captions", {});
   expect(retry.job_id).toBe(first.job_id);
   expect(calls).toBe(1);

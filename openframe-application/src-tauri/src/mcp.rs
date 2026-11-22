@@ -67,6 +67,21 @@ pub struct McpInfo {
 struct McpRequest {
     id: u64,
     body: String,
+    /// "core" when the client asked for the short tool list.
+    tools: Option<String>,
+}
+
+/// Which tool list a request path asks for: `/mcp` every tool,
+/// `/mcp?tools=core` the short one (src/lib/mcp.ts offeredTools). `None`
+/// for any other path.
+pub fn tools_for(path: &str) -> Option<Option<String>> {
+    let (route, query) = path.split_once('?').unwrap_or((path, ""));
+    (route == "/mcp").then(|| {
+        query
+            .split('&')
+            .find_map(|p| p.strip_prefix("tools="))
+            .map(str::to_string)
+    })
 }
 
 /// A random hex token from the OS-seeded hasher std already has.
@@ -187,9 +202,9 @@ fn handle(
         Ok(r) => r,
         Err(e) => return respond(s, "400 Bad Request", "text/plain", &e, ""),
     };
-    if req.path != "/mcp" {
+    let Some(tools) = tools_for(&req.path) else {
         return respond(s, "404 Not Found", "text/plain", "not found", "");
-    }
+    };
     if req.method != "POST" {
         // No server-initiated stream: every reply rides its POST.
         return respond(
@@ -239,6 +254,7 @@ fn handle(
             McpRequest {
                 id,
                 body: body.clone(),
+                tools,
             },
         )
         .is_err()
@@ -356,10 +372,10 @@ fn config_dir_for_bridge() -> Option<PathBuf> {
     base.map(|b| b.join(id))
 }
 
-fn post(token: &str, body: &str) -> Result<(u16, String), String> {
+fn post(path: &str, token: &str, body: &str) -> Result<(u16, String), String> {
     let mut s = TcpStream::connect(("127.0.0.1", PORT)).map_err(|_| "not running".to_string())?;
     let req = format!(
-        "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{PORT}\r\nContent-Type: application/json\r\nAccept: application/json\r\nAuthorization: Bearer {token}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{PORT}\r\nContent-Type: application/json\r\nAccept: application/json\r\nAuthorization: Bearer {token}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
     s.write_all(req.as_bytes()).map_err(|e| e.to_string())?;
@@ -402,7 +418,13 @@ pub fn tools_changed(last: &mut Option<String>, reply: &str) -> bool {
 }
 
 /// `openframe --mcp-stdio`: one JSON-RPC message per line in, one out.
+/// With `--core-tools` the client is offered the short tool list.
 pub fn run_stdio_bridge() {
+    let path = if std::env::args().any(|a| a == "--core-tools") {
+        "/mcp?tools=core"
+    } else {
+        "/mcp"
+    };
     let token = config_dir_for_bridge()
         .and_then(|d| std::fs::read_to_string(token_path(&d)).ok())
         .unwrap_or_default();
@@ -417,7 +439,7 @@ pub fn run_stdio_bridge() {
         let id = serde_json::from_str::<serde_json::Value>(&line)
             .ok()
             .and_then(|v| v.get("id").cloned());
-        let reply = match post(token.trim(), &line) {
+        let reply = match post(path, token.trim(), &line) {
             Ok((200, body)) => Some(body),
             Ok((202, _)) => None,
             Ok((code, body)) => id.clone().map(|id| error(id, &format!("the editor refused the request ({code}): {}", body.trim()))),
@@ -496,6 +518,15 @@ mod tests {
         assert_eq!(p.path, "/mcp");
         assert_eq!(p.headers.get("authorization").unwrap(), "Bearer abc");
         assert_eq!(p.body, b"{\"a\":1}");
+    }
+
+    #[test]
+    fn reads_the_tool_list_a_path_asks_for() {
+        assert_eq!(tools_for("/mcp"), Some(None));
+        assert_eq!(tools_for("/mcp?tools=core"), Some(Some("core".into())));
+        assert_eq!(tools_for("/mcp?x=1&tools=core"), Some(Some("core".into())));
+        assert_eq!(tools_for("/mcpx"), None);
+        assert_eq!(tools_for("/other?tools=core"), None);
     }
 
     #[test]

@@ -3,7 +3,52 @@
 **Updated:** 2026-11-19. This is the current owner direction for the next
 Claude Code or Codex pickup. Read it before resuming previous tasks.
 
-## Current state - 2026-11-20 (read first)
+## Current state - 2026-11-21 (read first)
+
+- **2026-11-21: a short tool list** ([[ADR-149 A short tool list for small models, and descriptions with a budget]]).
+  The full list cost about 91,000 tokens to load. A client that connects
+  with `/mcp?tools=core` (HTTP) or `--mcp-stdio --core-tools` is offered
+  56 tools and `call_tool` for the rest, about 20,000 tokens; the full
+  list is 76,000 now (descriptions by their opening sentences, the rest in
+  `help`). `CORE_TOOLS` in `src/lib/mcpGuide.ts` is the list: keep it near
+  fifty. A tool's first sentence is what most models read, so write it to
+  stand alone.
+- **A third blind test, with a small model** (Haiku, the short list, the
+  same NASA footage): a finished 66.7 s documentary in 55 tool calls and
+  20 minutes, two tool errors. What its film showed and what was fixed is
+  in the ADR: names and end cards go to `add_ad_element` (it fits its
+  words; `end_card` takes `subline` and `cta: ""`), `add_media_clip` takes
+  `volume` and says when a cutaway's sound plays, a lone "you" or "Thanks"
+  over music is not a caption, a fast caption with no room is a tip, and
+  `check_project`'s fix for a part of a template is `transform_group`.
+  A second run on the fixed build made 62 s in 56 calls and 13 minutes
+  with no tool error and none of those defects; the four tools the checks
+  name in their fixes joined the short list after it.
+- **Not fixed from it:** an agent cannot read a speaker's name off the
+  screen in the browser build (the second run wrote "The scientist");
+  `add_text_template` still lays out for its own
+  sample words (agents are steered to `add_ad_element` instead); the same
+  shot used twice and a lower third left up after the picture leaves the
+  speaker are not checked; a reel's own title card inside a cutaway is not
+  seen.
+- **Not run on 2026-11-21:** `cargo clippy` (this machine's Application
+  Control policy blocked a dependency's build script; `cargo fmt --check`
+  and `cargo test` passed), and the desktop app's side of the short list
+  (the query the Rust server reads and the event the webview gets): only
+  its Rust unit test and the web bridge ran. The **Connect agents** panel
+  does not offer the short list yet.
+- **The sweep of the web drives on 2026-11-21 (238):** 207 passed at once
+  and 11 more alone. Three of those were voiceover drives that failed
+  whenever a speech model's download outlasted a long tool's 45 s wait (a
+  drive that does not follow jobs reads a running job as its answer): run
+  them again before reading a failure. The other 20 are the ones listed
+  under 2026-11-20 below (13 need `person-pan.mp4`; `clip-template`,
+  `speed`, `web-capabilities`, `shotlog.js`, `film5-layout.test.js`), and
+  `playback` and `frame-blend`, whose real-time checks fail on `b1403e3`
+  too in a session with no GPU or audio device.
+- **Look at a tester's film yourself** (`preview_frames` on its project):
+  the third tester's two worst defects were in neither its report nor the
+  project check.
 
 - **One branch holds everything: `main`.** The owner asked (2026-11-19) for
   every branch to be brought into one, then for whatever was still missing
@@ -69,13 +114,16 @@ Claude Code or Codex pickup. Read it before resuming previous tasks.
     not measure loudness) and says nothing of stray markers;
   - the browser build has no master limiter: its mix meets a spec only
     "as exported" (`measure_loudness` with `loudness`);
-  - nothing says whether a clip's sound already carries music;
-  - `duck_under_speech`, `generate_music` and `add_ad_element` have
-    descriptions of several hundred words, too long to use.
+  - nothing says whether a clip's sound already carries music.
+  (The descriptions of several hundred words are now cut to their opening
+  sentences in the tool list, 2026-11-21.)
 - **To run a blind test again**: build, copy `dist` somewhere of its own,
   serve it with the fixtures (a 40-line static server does it), point
   `scripts/mcp-web.mjs --base` at it, and give the tester a small client
-  that calls the bridge and saves images to files. The tester must be told
+  that calls the bridge and saves images to files. For a small model, post
+  to `/mcp?tools=core`, have the client print the tool list first and
+  refuse a tool that is not on it (as a real client would), and log every
+  call: the log is the evidence, the tester's report is its opinion. The tester must be told
   to listen (`preview_audio`): the first never did, the second read its
   numbers. A tester cut off by a usage limit resumes where it stopped if
   the servers are left running.

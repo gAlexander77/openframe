@@ -186,3 +186,24 @@ export function combinedLoudness(parts: { lufs: number; seconds: number }[]): nu
 export function lineMarginsMet(margins: (number | null)[], min?: number, max?: number): boolean {
   return margins.length > 0 && margins.every(m => m !== null && Number.isFinite(m) && (min === undefined || m >= min - 0.05) && (max === undefined || m <= max + 0.05));
 }
+
+/**
+ * Why a duck's balance answered met false, in words with what to do: two
+ * blind tests read `met: false` beside a number on its target (13.0 asked,
+ * 13.0 measured, one line over its ceiling) and could not tell what had
+ * missed (ADR-149). Undefined when it was met.
+ */
+export function unmetNote(b: { met?: boolean; voice_above_music_lu: number | null; target_lu?: number; per_line: { met?: boolean; min_target_lu?: number; max_target_lu?: number; each?: { voice_above_music_lu: number | null }[] } }): string | undefined {
+  if (b.met !== false) return undefined;
+  const parts: string[] = [];
+  if (b.target_lu !== undefined && b.voice_above_music_lu !== null && Math.abs(b.target_lu - b.voice_above_music_lu) > 0.5)
+    parts.push(`over the whole talk the voice sits ${b.voice_above_music_lu} LU over the music and ${b.target_lu} was asked (met is within 0.5)`);
+  if (b.per_line.met === false) {
+    const lo = b.per_line.min_target_lu, hi = b.per_line.max_target_lu, each = b.per_line.each ?? [];
+    const silent = each.filter((l) => l.voice_above_music_lu === null).length;
+    const out = each.filter((l) => l.voice_above_music_lu !== null && ((lo !== undefined && l.voice_above_music_lu < lo - 0.05) || (hi !== undefined && l.voice_above_music_lu > hi + 0.05))).length;
+    if (out) parts.push(`${out} of ${each.length} lines ${out === 1 ? "sits" : "sit"} outside ${lo ?? 0} to ${hi ?? "the ceiling"} LU over the music on ${out === 1 ? "its" : "their"} own (per_line.each has every line)`);
+    if (silent || !out) parts.push(silent ? `${silent} of ${each.length} lines ${silent === 1 ? "has" : "have"} no music under ${silent === 1 ? "it" : "them"} to measure` : "the lines could not be measured one by one");
+  }
+  return parts.length ? `met is false because ${parts.join(", and ")}. A miss under 1 LU is not heard: leave it. A line far over the ceiling has music too quiet under it (raise the bed's volume, or allow more with max_line_lu); a line under the minimum wants a deeper dip (min_line_lu).` : undefined;
+}

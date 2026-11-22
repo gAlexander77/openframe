@@ -705,6 +705,7 @@ export const COMMANDS: Command[] = [
         in: S.num("Seconds into the source where the clip begins", { minimum: 0 }),
         track_id: S.str("Track id"),
         mode: S.str("overwrite replaces what is under the clip; insert pushes later clips right", { enum: ["overwrite", "insert"] }),
+        volume: S.num("Its sound's level: 1 as recorded (default), 0 silent (a cutaway over someone talking)", { minimum: 0 }),
       },
       ["asset_id", "start"],
     ),
@@ -713,6 +714,8 @@ export const COMMANDS: Command[] = [
       if (!asset) throw new CommandError(`no asset with id ${a.asset_id}`);
       if (a.fit !== undefined && asset.kind === "audio") throw new CommandError("fit applies to video and images, not audio");
       let clip = clipForAsset(asset, f(p, a.start), p.fps);
+      // A picture has no sound: volume on one is nothing to refuse.
+      if (a.volume !== undefined && "volume" in clip) clip = { ...clip, volume: Number(a.volume) } as Clip;
       if (a.in !== undefined && clip.type === "image" && asset.animated) clip = { ...clip, imageIn: Number(a.in) };
       if (a.in !== undefined && "in" in clip) clip = { ...clip, in: Number(a.in) } as Clip;
       const room = ops.roomRight(p, { ...clip, duration: 0 } as Clip);
@@ -725,6 +728,10 @@ export const COMMANDS: Command[] = [
         else if (cover > 1.005 && report) (report.notes ??= []).push("Default fit shows the whole source; its transparent bands can expose lower tracks. Use add_media_clip fit fill for a covering cutaway, fit blur for a covering background, or frame_region mode fill on this clip.");
       }
       const [q, trackId] = landingTrack(p, clip, a.track_id);
+      // A cutaway brings its reel's sound with it: a blind test's film played
+      // two reels' music under the interview until a loudness check showed it.
+      if (report && clip.type === "video" && asset.hasAudio && a.volume === undefined && trackId !== ops.mainTrack(q)?.id)
+        (report.notes ??= []).push("This clip's own sound plays too (volume 1). Over someone talking, a cutaway is silent or low: set_param volume 0 on it (0.1 to 0.2 to keep a little), or pass volume with add_media_clip.");
       return closeFrameGap(ops.addClip(q, trackId, clip, a.mode === "insert" ? "insert" : "overwrite"), trackId, clip.id, a, report);
     },
   },
@@ -883,15 +890,15 @@ export const COMMANDS: Command[] = [
   {
     name: "add_ad_element",
     description:
-      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions) and clear of the captions showing then, animated in, its clips grouped on rows of their own above everything at that time and under the captions (no other clip shares them, so moving another track never reorders its parts). Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo (or the brand name as a wordmark without a logo, unless logo none is asked), headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
+      "Add a finished title element that fits its words: a speaker's name and role (lower_third), a closing card (end_card), and an ad's badge, button and logo reveal. Built in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions) and clear of the captions showing then, animated in, its clips grouped on rows of their own above everything at that time and under the captions (no other clip shares them, so moving another track never reorders its parts). Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo (or the brand name as a wordmark without a logo, unless logo none is asked), headline, subline (a line under it), a call-to-action button and the url; always centered; put it last; cta \"\" leaves the button out, for a film's end card: {element: 'end_card', headline: 'Earth, right now', subline: 'NASA Earth Science', cta: \"\", logo: 'none'}), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
     input: S.obj(
       {
         element: S.str("Which element", { enum: AD_ELEMENTS }),
         start: S.num("Timeline seconds", { minimum: 0 }),
         duration: S.num("Seconds; default end_card 3, lower_third 4, offer_badge 3, cta_button 3, logo_reveal 2.5", { minimum: 0.2 }),
         headline: S.str("end_card headline; lower_third name; offer_badge offer; logo_reveal wordmark (default the brand name when there is no logo)"),
-        subline: S.str("lower_third title or role; offer_badge tag; cta_button line under it; logo_reveal line under the wordmark (default the tagline)"),
-        cta: S.str("Button words for end_card and cta_button; default 'Shop now'"),
+        subline: S.str("lower_third title or role; end_card line under the headline; offer_badge tag; cta_button line under it; logo_reveal line under the wordmark (default the tagline)"),
+        cta: S.str("Button words for end_card and cta_button; default 'Shop now'; \"\" on an end_card leaves the button out"),
         url: S.str("end_card and cta_button: website line; default the brand's url"),
         logo: S.str("Which logo variant: auto (light on dark, dark on light), main, light, dark, icon, or none. end_card and logo_reveal draw one by default (auto); lower_third only when given, left of the name and title and as tall as both; offer_badge and cta_button draw none and refuse it", { enum: ["auto", ...LOGO_VARIANTS, "none"] }),
         position: S.str("Where in the safe area: lower_third default bottom-left, offer_badge top-right, cta_button bottom, logo_reveal center (end_card is always centered)", { enum: SPOTS }),
@@ -3347,7 +3354,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_text_template",
-    description: `Add a text template: a title design of text and box layers with in/out/loop animations, stacked above everything at that time. Templates: ${Object.entries(TEXT_TEMPLATES)
+    description: `Add a ready-made title design (a chapter card, a quote, an opener, a subscribe button): text and box layers with in/out/loop animations, stacked above everything at that time. Its layout is tuned for words about as long as its own: for a speaker's name and role or a closing card use add_ad_element (lower_third, end_card), which fits its words and stays readable. Templates: ${Object.entries(TEXT_TEMPLATES)
       .filter(([, t]) => t.category === "Templates")
       .map(([k]) => k)
       .join(", ")}. Word art (one styled text): ${Object.entries(TEXT_TEMPLATES)
@@ -3541,7 +3548,7 @@ export const COMMANDS: Command[] = [
   {
     name: "batch",
     description:
-      "Run several commands in order as one edit (one undo step), all or nothing: set_animation on many clips, a run of add_keyframe, a whole title sequence. Each step sees what the steps before it did; a failing step names its number and nothing changes. A step can name what an earlier step added: \"$2\" is the first clip step 2 added, \"$2.2\" its second, \"$2.track\" the track it added (steps count from 1), anywhere in args, e.g. [{command: 'add_text', args: {text: 'SALE', start: 1, duration: 2}}, {command: 'set_animation', args: {clip_id: '$1', slot: 'in', type: 'pop'}}]. Only editing commands batch; tools that run on this computer or look (add_sound_effect, add_voiceover, the AI tools, import_media, previews, checks, export) are called on their own.",
+      "Run several editing commands in order as one edit (one undo step), all or nothing: set_animation on many clips, a run of add_keyframe, a whole title sequence. Not the tools that listen, render, look or take a while (duck_under_speech, generate_music, auto_captions, add_voiceover, add_sound_effect, import_media, previews, checks, export): call those on their own. Each step sees what the steps before it did; a failing step names its number and nothing changes. A step can name what an earlier step added: \"$2\" is the first clip step 2 added, \"$2.2\" its second, \"$2.track\" the track it added (steps count from 1), anywhere in args, e.g. [{command: 'add_text', args: {text: 'SALE', start: 1, duration: 2}}, {command: 'set_animation', args: {clip_id: '$1', slot: 'in', type: 'pop'}}].",
     input: S.obj(
       {
         commands: {

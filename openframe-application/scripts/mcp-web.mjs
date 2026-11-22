@@ -8,6 +8,8 @@
 // Usage:  node scripts/mcp-web.mjs [--base http://localhost:1420] [--port 47281] [--images scratch/mcp-images]
 // --images also writes every image a tool returns to that folder and adds
 // its path to the answer as text, for clients that cannot show images.
+// A client that posts to /mcp?tools=core is offered the short tool list
+// (about 50 tools and call_tool for the rest): for a small model.
 // Media: import_media takes the dev server's URLs, e.g.
 // http://localhost:1420/fixtures/media/music-30s.mp3.
 
@@ -37,7 +39,9 @@ http
     for await (const chunk of req) body += chunk;
     let out;
     try {
-      out = await page.evaluate((m) => window.videoEditor.mcp(m), JSON.parse(body));
+      // /mcp?tools=core asks for the short tool list, as on the desktop server.
+      const tools = new URL(req.url, "http://localhost").searchParams.get("tools") ?? undefined;
+      out = await page.evaluate(([m, t]) => window.videoEditor.mcp(m, t), [JSON.parse(body), tools]);
     } catch (e) {
       out = { jsonrpc: "2.0", id: null, error: { code: -32603, message: String(e.message ?? e) } };
     }

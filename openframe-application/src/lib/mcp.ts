@@ -1,4 +1,4 @@
-import { createJobRegistry, type JobContext, type JobRegistry } from "./jobs";
+import { createJobRegistry, followJob, type JobContext, type JobRegistry } from "./jobs";
 import type { CreateClipsRequest, ExportProjectsRequest } from "./clipProjects";
 import { STREAM_REGION_SCHEMA } from "./commands";
 // The Model Context Protocol, transport-agnostic: JSON-RPC 2.0 messages in,
@@ -17,7 +17,7 @@ import { STYLE_IDS, STYLES } from "./music/styles";
 import { MODE_IDS } from "./music/theory";
 import { cueAnswer, MUSIC_MARKER_KINDS, planMusicAnswer } from "./music/cues";
 import { coerceNumbers, COMMANDS, PROJECT_FILE_COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
-import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
+import { annotations, CORE_TOOLS, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 import { filterDescription, type DescribeFilter } from "./describeFilter";
 import { musicSummary } from "./musicSummary";
 import type { MappedMusic } from "./analysis/musicMap";
@@ -850,13 +850,14 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "check_project",
-    description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); a title that fades unevenly (measured at the middle of each fade: part of it gone while the rest is still seen, as a see-through box over a bright subject does), with the box or outline that fades as one there; captions over 20 characters a second, more than two fonts, a title its subject hides (text_behind_subject on a shape the subject now fills; rendered), flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), a sound cut off before the end with no fade while it still sounds (a song or a bed trimmed mid-phrase, a line cut mid-word), a click, a hole or a sound cut off where one audio clip meets the next (each join measured on its own track as preview_audio's edges measure it, the first 24; click_at_join, sound_cut_at_join, the fix a crossfade), and by kind: an ad's end card, an epic edit's cuts on the beat (the Beat, Bar, Phrase and Drop markers, or the grid set_music_grid gave a song, where its clips play it; cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Every text rule sees the titles inside compound clips too (an end card built as one), where and as large as the compound clip draws them; such a finding names compound_clip_id. Each finding names the clip, the time and the tool that fixes it; the same finding on three clips or more (the same rule and fix) is given once, with count, every clip_id and every time (at), unless detail is full. Captions shown a few words at a time (runs of captions of up to three words, each within 0.3 s of the one before) are read as the line they make: its characters a second over the run, and each chunk up at least 0.25 s. Run it, fix, run it again.",
+    description: "Check the edit against professional rules before exporting: titles, captions, flashes, gaps and sound, each finding naming the clip, the time and the tool that fixes it. Run it, fix, run it again. The rules: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); a title that fades unevenly (measured at the middle of each fade: part of it gone while the rest is still seen, as a see-through box over a bright subject does), with the box or outline that fades as one there; captions over 20 characters a second, more than two fonts, a title its subject hides (text_behind_subject on a shape the subject now fills; rendered), flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), a sound cut off before the end with no fade while it still sounds (a song or a bed trimmed mid-phrase, a line cut mid-word), a click, a hole or a sound cut off where one audio clip meets the next (each join measured on its own track as preview_audio's edges measure it, the first 24; click_at_join, sound_cut_at_join, the fix a crossfade), and by kind: an ad's end card, an epic edit's cuts on the beat (the Beat, Bar, Phrase and Drop markers, or the grid set_music_grid gave a song, where its clips play it; cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Every text rule sees the titles inside compound clips too (an end card built as one), where and as large as the compound clip draws them; such a finding names compound_clip_id. Each finding names the clip, the time and the tool that fixes it; the same finding on three clips or more (the same rule and fix) is given once, with count, every clip_id and every time (at), unless detail is full. Captions shown a few words at a time (runs of captions of up to three words, each within 0.3 s of the one before) are read as the line they make: its characters a second over the run, and each chunk up at least 0.25 s.",
     inputSchema: obj({
-      kind: { type: "string", enum: ["ad", "epic_edit", "social_short", "any"], description: "What is being made; default any" },
+      kind: { type: "string", enum: ["ad", "epic_edit", "social_short", "documentary", "any"], description: "What is being made; default any (a documentary is judged as any)" },
       detail: { type: "string", enum: ["summary", "full"], description: "summary (default): alike findings given once with every clip; full: every finding on its own" },
     }),
     call: async (h, a) => {
-      const r = await h.checkProject(String(a.kind ?? "any"));
+      // A model following the documentary playbook names its kind: no rule is its own.
+      const r = await h.checkProject(a.kind === "documentary" ? "any" : String(a.kind ?? "any"));
       return json(a.detail === "full" ? r : groupFindings(r as { findings?: [] }));
     },
   },
@@ -1171,7 +1172,7 @@ APP_TOOLS.push(
   {
     name: "analyze_music",
     description:
-      "Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; grid, the beats as an even grid (first_beat, beat_seconds, bar_seconds, and off_grid: the beats more than 25 ms off it); downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); drops (every qualifying rise after a dip) and drop (the biggest the clip plays, or null); counts of beats, bars, phrases and hits. detail full also lists every beat (beats), each beat's energy 0..1 (beat_energy) and hits (strong onsets on or off the beat: drum hits, stabs), about 2-3 KB a minute of music. Sections may be as short as two bars and their bounds follow bars or phrases. The whole music file is read (once; the reading is kept for every clip of it) and placed through the clip's in-point, speed and position, so a trimmed clip keeps the file's bar phase and drops; source says what was read. All times are TIMELINE seconds, inside the clip. confidence (0..1) says how sure the tempo, the bar lines and the sections are, with a note naming the hint to give when one is low. When the music's structure is known (a cue sheet, the composer's notes), give it in the file's own seconds: bpm, first_downbeat (a bar's first beat) and cues (each part's start and label) replace what would be detected. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every drop), one undo step; they follow the clip through moves, trims, splits and speed changes (a second the clip no longer plays loses its marker), and a second reading replaces the clip's own markers of those kinds instead of adding to them; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. bpm is the tempo as the clip plays it (file_bpm, the file's own, when it is sped up). When the reading is wrong for good (bars between the kicks, a drop missed), set_music_grid keeps the right grid with the file, and every later reading uses it. Example: {\"clip_id\": \"c_3\", \"markers\": [\"bars\", \"drop\"]}.",
+      "Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to. It answers bpm; grid, the beats as an even grid (first_beat, beat_seconds, bar_seconds, and off_grid: the beats more than 25 ms off it); downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); drops (every qualifying rise after a dip) and drop (the biggest the clip plays, or null); counts of beats, bars, phrases and hits. detail full also lists every beat (beats), each beat's energy 0..1 (beat_energy) and hits (strong onsets on or off the beat: drum hits, stabs), about 2-3 KB a minute of music. Sections may be as short as two bars and their bounds follow bars or phrases. The whole music file is read (once; the reading is kept for every clip of it) and placed through the clip's in-point, speed and position, so a trimmed clip keeps the file's bar phase and drops; source says what was read. All times are TIMELINE seconds, inside the clip. confidence (0..1) says how sure the tempo, the bar lines and the sections are, with a note naming the hint to give when one is low. When the music's structure is known (a cue sheet, the composer's notes), give it in the file's own seconds: bpm, first_downbeat (a bar's first beat) and cues (each part's start and label) replace what would be detected. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every drop), one undo step; they follow the clip through moves, trims, splits and speed changes (a second the clip no longer plays loses its marker), and a second reading replaces the clip's own markers of those kinds instead of adding to them; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. bpm is the tempo as the clip plays it (file_bpm, the file's own, when it is sped up). When the reading is wrong for good (bars between the kicks, a drop missed), set_music_grid keeps the right grid with the file, and every later reading uses it. Example: {\"clip_id\": \"c_3\", \"markers\": [\"bars\", \"drop\"]}.",
     inputSchema: obj(
       {
         clip_id: { type: "string", description: "The music clip (audio, or a video with sound)" },
@@ -1442,7 +1443,7 @@ const jobAnswer = (status: ReturnType<JobRegistry["status"]>) => {
   if (result?.content.length === 1 && result.content[0].type === "text") {
     try { answer = JSON.parse(result.content[0].text); } catch { answer = result.content[0].text; }
   }
-  return { ...status, ...(result ? { result: answer } : {}), ...(status.state === "running" ? { note: "call job_status with job_id; cancel_job stops it" } : {}) };
+  return { ...status, ...(result ? { result: answer } : {}), ...(status.state === "running" ? { note: followJob(status.job_id) } : {}) };
 };
 APP_TOOLS.push(
   { name: "job_status", description: "Progress, stage, elapsed seconds, quiet_seconds since the last progress callback and complete finished answer of a long tool. wait holds the answer until the job finishes, up to that many seconds: one call instead of polling. Without an ID lists every running and recent job. Text results stay up to 30 minutes within a 32 MiB budget (128 recent jobs); delivered image/audio payloads are released. Switching projects cancels running work and releases answers. Export jobs also remain visible through export_status.", inputSchema: obj({ job_id: { type: "string", description: "Job ID returned by a long tool; omit to list running and recent jobs" }, wait: { type: "number", minimum: 0, maximum: 45, description: "With job_id: seconds to wait for the job to finish before answering (default 0: answer at once)" } }), call: async (h, a) => {
@@ -1491,7 +1492,7 @@ To make a video:
 2. import_media the footage, music, logo and pictures by absolute path (the browser build: by URL); preview_media shows what is inside each video, to choose the moments worth using, and with shots true every shot of a reel between its own cuts.
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
 4. Lay shots under each line with add_media_clip; where recorded talk meets the next shot, jl_cut lets its sound run on under the picture or lead it (J and L cuts); frame_region zooms a shot onto the part that matters and moves between regions (moves); on a screen recording add_callout rings the part the voice names and stays on it through the zooms; for music-driven edits, Music-synced below.
-5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards; add_counter for a number that counts up or a countdown, add_credits for a credits roll.
+5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_ad_element lower_third for a speaker's name and role and end_card for the closing card (both fit their words; cta \"\" leaves the button out); add_text_template for a ready-made design (a chapter card, a quote, an opener); add_counter for a number that counts up or a countdown, add_credits for a credits roll.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
 8. Check: preview_frames (a contact sheet of many moments; with no times, the middle of every shot), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (MP3 with M4A or WAV fallback, its format and measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
@@ -1501,6 +1502,8 @@ Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers
 Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_reverb, set_echo, set_tape_stop; measure_loudness checks the mix against online, ebu_r128 or atsc_a85 before export.
 
 For an ad: set_brand first (colors, two fonts, logo), then add_text with a role, set_animation per word or letter (wordPop, typewriter, unit), add_ad_element for lower thirds, offers, calls to action and the end card, text_behind_subject for a title behind a person, set_fades on the music, and export_versions for every shape and cut-down (check: true shows them first).`;
+
+const SHORT_LIST = "Your tool list is the short one. Any tool help names that is not in it runs through call_tool: its name, and its arguments as help with that name lists them.";
 
 const NO_EXPORT = "In this build (the browser) export_video and export_versions cannot write files: finish with check_project, measure_loudness and preview_frames, then tell the user to export with the app's Export button or from the desktop app.";
 
@@ -1517,6 +1520,65 @@ export function listTools() {
     const { title, ...hints } = annotations(t.name);
     return { ...t, title, annotations: hints };
   });
+}
+
+/** A description as tools/list offers it: its opening sentences within
+ * `cap` characters (the first one whole, whatever its length), the rest
+ * left to help with the tool's name. A tail too short to be worth a call
+ * stays. */
+export function brief(name: string, description: string, cap: number): string {
+  if (description.length <= cap + 150) return description;
+  // A sentence often opens on a parameter's name, in lower case; "e.g." is
+  // the one abbreviation the descriptions use.
+  const ends = [...description.matchAll(/(?<!\be\.g)[.!?](?=\s)/g)].map((m) => m.index! + 1);
+  const at = ends.filter((e) => e <= cap).pop() ?? ends[0];
+  return at ? `${description.slice(0, at)} More: help topic ${name}.` : description;
+}
+
+/** A schema as tools/list offers it: a title's style (24 fields, 3.8 KB)
+ * is spelled out by add_text alone and named by the seven other tools that
+ * take one. Calls are still checked against each tool's own schema. */
+function lean(s: JsonSchema): JsonSchema {
+  if (s.properties === TEXT_STYLE_SCHEMA.properties) return { type: "object", description: `${s.description ?? "The text's look"} (the fields of add_text's style)` };
+  if (!s.properties && !s.items) return s;
+  return { ...s, ...(s.properties ? { properties: Object.fromEntries(Object.entries(s.properties).map(([k, p]) => [k, lean(p)])) } : {}), ...(s.items ? { items: lean(s.items) } : {}) };
+}
+
+/** The short list's way to every tool it leaves out (handleMcp turns a
+ * call of it into a call of the tool it names). */
+const CALL_TOOL = {
+  name: "call_tool",
+  title: "Call tool",
+  description: "Run any tool that is not in your tool list. Your list is the short one: help names every tool by step (color, masks, speed ramps, counters, credits, stickers, a second camera, sound design and more). Read help with the tool's name for its parameters first, then call this with that name and those arguments.",
+  inputSchema: { type: "object", properties: { name: { type: "string", description: "The tool's name, as help gives it" }, arguments: { type: "object", description: "The tool's own arguments, as help with its name lists them" } }, required: ["name"] } as JsonSchema,
+  annotations: {},
+};
+
+/**
+ * What tools/list offers. Every tool by default; "core" is the short list
+ * (CORE_TOOLS and call_tool) for a small model or a client that caps the
+ * number of tools: all 207 cost about 90,000 tokens before a model's first
+ * word. Either way a description is cut to its opening sentences, since
+ * the longest ran to a thousand words nobody read (ADR-149); help has all
+ * of it.
+ */
+export function offeredTools(set: "all" | "core" = "all") {
+  const all = listTools(), cap = set === "core" ? 300 : 900;
+  const core = CORE_TOOLS.map((n) => all.find((t) => t.name === n)!);
+  // call_tool right after help: the two a model on this list must not miss.
+  const list = set === "core" ? [core[0], CALL_TOOL, ...core.slice(1)] : all;
+  return list.map((t) => ({ ...t, description: brief(t.name, t.description, cap), inputSchema: t.name === "add_text" ? t.inputSchema : lean(t.inputSchema) }));
+}
+
+/** A call of call_tool as a call of the tool it names. A small model may
+ * send the arguments as a JSON string, or beside the name instead of
+ * inside arguments: both are read as meant. */
+export function direct(req: JsonRpcRequest): JsonRpcRequest {
+  if (req.method !== "tools/call" || req.params?.name !== "call_tool") return req;
+  const { name, arguments: inner, ...beside } = (req.params.arguments ?? {}) as Record<string, unknown>;
+  let args = inner ?? beside;
+  if (typeof args === "string") try { args = JSON.parse(args); } catch { /* the tool's own check names what is missing */ }
+  return { ...req, params: { ...req.params, name: String(name ?? ""), arguments: args && typeof args === "object" ? args : {} } };
 }
 
 /** Guides served as resources, for clients that read them into context. */
@@ -1564,7 +1626,8 @@ const fail = (id: JsonRpcRequest["id"], code: number, message: string): JsonRpcR
  * come back as results with isError, per the spec, so the model can read
  * the problem and retry; only protocol mistakes are JSON-RPC errors.
  */
-export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<JsonRpcResponse | null> {
+export async function handleMcp(request: JsonRpcRequest, host: McpHost, tools?: string): Promise<JsonRpcResponse | null> {
+  const req = direct(request);
   if (req.id === undefined) return null;
   const p = req.params ?? {};
   switch (req.method) {
@@ -1574,12 +1637,13 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
         // The stdio bridge says when the tools change; over HTTP a client reconnects.
         capabilities: { tools: { listChanged: true }, resources: {}, prompts: { listChanged: false } },
         serverInfo: { name: host.name, version: host.version },
-        instructions: instructionsFor(host),
+        instructions: tools === "core" ? `${instructionsFor(host)}\n${SHORT_LIST}` : instructionsFor(host),
       });
     case "ping":
       return ok(req.id, {});
     case "tools/list":
-      return ok(req.id, { tools: listTools() });
+      // `tools` is the transport's word: ?tools=core, --core-tools (ADR-149).
+      return ok(req.id, { tools: offeredTools(tools === "core" ? "core" : "all") });
     case "tools/call": {
       const name = String(p.name ?? "");
       let args = (p.arguments ?? {}) as Record<string, unknown>;

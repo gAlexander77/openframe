@@ -538,3 +538,20 @@ it("film 5: fitted launch cutaway reports transparency; fill explicitly covers t
   const c = covered.tracks.flatMap(t => t.clips)[0];
   expect("transform" in c && c.transform.scale).toBeCloseTo(1080 / 1012, 6);
 });
+
+it("a cutaway over the talk is told its own sound plays, and takes volume in the same call (ADR-149)", () => {
+  let p = createProject({ width: 1920, height: 1080, fps: { num: 30, den: 1 } });
+  p.assets.push({ id: "talk", name: "Talk", src: "talk.mp4", kind: "video", duration: 60, width: 1920, height: 1080, hasAudio: true, hasVideo: true }, { id: "reel", name: "Reel", src: "reel.mp4", kind: "video", duration: 60, width: 1920, height: 1080, hasAudio: true, hasVideo: true });
+  const main: CommandReport = {};
+  p = runCommand(p, "add_media_clip", { asset_id: "talk", start: 0, duration: 20 }, main);
+  expect(main.notes ?? []).toEqual([]);
+  p = runCommand(p, "add_track", { kind: "video", name: "B-roll" });
+  const over = p.tracks.find((t) => t.name === "B-roll")!.id;
+  const loud: CommandReport = {};
+  runCommand(p, "add_media_clip", { asset_id: "reel", start: 2, duration: 3, track_id: over }, loud);
+  expect(loud.notes?.join(" ")).toMatch(/own sound plays.*volume 0/);
+  const quiet: CommandReport = {};
+  const q = runCommand(p, "add_media_clip", { asset_id: "reel", start: 2, duration: 3, track_id: over, volume: 0 }, quiet);
+  expect(quiet.notes ?? []).toEqual([]);
+  expect(q.tracks.find((t) => t.id === over)!.clips[0]).toMatchObject({ volume: 0 });
+});

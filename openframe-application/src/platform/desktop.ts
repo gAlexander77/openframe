@@ -83,12 +83,12 @@ let mcpListening = false;
 async function listenForAgents() {
   if (mcpListening) return;
   mcpListening = true;
-  await listen<{ id: number; body: string }>("mcp-request", async (e) => {
+  await listen<{ id: number; body: string; tools: string | null }>("mcp-request", async (e) => {
     let response: string | null;
     try {
       const msg = JSON.parse(e.payload.body);
       if (Array.isArray(msg)) throw new Error("JSON-RPC batches are not supported (MCP 2025-06-18 removed them)");
-      const r = await window.videoEditor.mcp(msg);
+      const r = await window.videoEditor.mcp(msg, e.payload.tools ?? undefined);
       response = r ? JSON.stringify(r) : null;
     } catch (err) {
       response = JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: err instanceof Error ? err.message : String(err) } });

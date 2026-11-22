@@ -49,7 +49,7 @@ import { saveTimeline, type TimelineFormat } from "./state/interchange";
 import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
-import { handleMcp, shotLooks, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
+import { direct, handleMcp, shotLooks, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
 import { framesToSeconds, secondsToFrames } from "./lib/time";
 import { sourceFrames } from "./engine/analyze";
 import { checkProject, type CheckKind } from "./lib/designCheck";
@@ -164,7 +164,8 @@ const automation = {
   /** The current frame (or `frame`) as a PNG Blob URL. */
   still: stillToUrl,
   /** One MCP message in, one response out (null for notifications). */
-  mcp: (req: JsonRpcRequest): Promise<JsonRpcResponse | null> => (req.method === "tools/call" ? agentCall(req) : handleMcp(req, mcpHost)),
+  /** `tools` is the transport's choice of tool list: "core" for the short one (ADR-149). */
+  mcp: (req: JsonRpcRequest, tools?: string): Promise<JsonRpcResponse | null> => (req.method === "tools/call" ? agentCall(direct(req)) : handleMcp(req, mcpHost, tools)),
   /** Local analysis without editing; times are source seconds (ADR-017).
    * Omit clipId to use the selected clip. */
   analyze: { silences: analyzeSilences, scenes: analyzeScenes, beats: analyzeBeats },

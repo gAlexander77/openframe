@@ -563,6 +563,13 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
   // Captions shown a few words at a time are read as the line they make.
   const runs = captionRuns(texts.filter((s) => s.c.caption).map((s) => ({ id: s.c.id, track: s.track.id, start: framesToSeconds(s.start, p.fps), end: framesToSeconds(s.start + s.duration, p.fps), text: s.c.text })));
   const inRun = new Set(runs.flatMap((r) => r.map((c) => c.id)));
+  // Where the caption after each one starts, on its track.
+  const nextCaption = new Map<string, number>();
+  const captions = texts.filter((s) => s.c.caption).sort((a, b) => a.start - b.start);
+  for (const [i, s] of captions.entries()) {
+    const after = captions.slice(i + 1).find((x) => x.track === s.track);
+    if (after) nextCaption.set(s.key, after.start);
+  }
   const fracBox = (b: PixelBox): Box => ({ left: frac(b.left / p.width - 0.5), right: frac(b.right / p.width - 0.5), top: frac(b.top / p.height - 0.5), bottom: frac(b.bottom / p.height - 0.5) });
   // The apps' zones a box reaches into, and one fix for every caption that
   // reaches into the same ones (ADR-124): the captions move and size together.
@@ -597,7 +604,11 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
     // A credits roll crosses the top and bottom on purpose: only its sides are judged.
     const roll = isRoll(c);
     const out = [box.left < -z.safe - 0.001 && `left of ${-z.safe}`, box.right > z.safe + 0.001 && `right of ${z.safe}`, !roll && box.top < -z.safe - 0.001 && `above ${-z.safe}`, !roll && box.bottom > z.safe + 0.001 && `below ${z.safe}`].filter(Boolean);
-    if (out.length) add({ rule: "text_outside_title_safe", level: "warning", ...where0, at: sec(mid), message: `${name} reaches outside the 90% title-safe area (${out.join(", ")}): ${where}`, fix: place("align_clips with margin 0.05, or set_param transform.x/y and a smaller style.size") });
+    // One part of a design (a template, an ad element) moved or enlarged
+    // alone leaves its box: a blind test's lower third came apart that way,
+    // following the fix this check gave (ADR-149). The group goes as one.
+    const whole = c.group && !outer ? `transform_group group_id "${c.group}"` : "";
+    if (out.length) add({ rule: "text_outside_title_safe", level: "warning", ...where0, at: sec(mid), message: `${name} reaches outside the 90% title-safe area (${out.join(", ")}): ${where}`, fix: whole ? `${whole} with x or y (fractions of the canvas) moves its whole design back inside, or scale under 1 makes it smaller; moving this part alone would take it out of its box` : place("align_clips with margin 0.05, or set_param transform.x/y and a smaller style.size") });
     const kinds = zonesOf(box).filter((k) => !roll || k === "left" || k === "right");
     const said: Record<Zone, string> = { bottom: `the bottom 35% (below y ${frac(z.bottom)}): captions, names, the description`, right: `the right 19% (right of x ${frac(z.right)}): like, comment, share`, top: `the top 14% (above y ${frac(z.top)}): the tabs and search`, left: `the left 11% (left of x ${frac(z.left)})` };
     if (kinds.length) {
@@ -612,14 +623,22 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
       const need = Math.ceil((minSize * c.style.size) / size);
       const why = `on a ${p.width}x${p.height}${social ? " social" : ""} frame, letters under ${pct(minSize)}% of its height (size ${Math.ceil(minSize)}: ${social ? 5 : 4.5}% of the short side, which a phone shows about 6.5 cm wide) are hard to read on a phone`;
       if (c.caption) smallCaptions.push({ id: c.id, at: sec(s.start), size, need, why });
-      else add({ rule: "text_too_small", level: "warning", ...where0, at: sec(s.start), message: `${name} is ${pct(size)}% of the frame's height (size ${Math.round(size)}${outer ? " as its compound clip draws it" : ""}); ${why}`, fix: outer ? `transform.scale on the compound clip ${outer.id} up by ${+(minSize / size).toFixed(2)} times, or ${inside(`set_text style.size ${need} or more`)}` : `set_text style.size ${need} or more (wrap it with style.maxWidth if it grows too wide)` });
+      else add({ rule: "text_too_small", level: "warning", ...where0, at: sec(s.start), message: `${name} is ${pct(size)}% of the frame's height (size ${Math.round(size)}${outer ? " as its compound clip draws it" : ""}); ${why}`, fix: outer ? `transform.scale on the compound clip ${outer.id} up by ${+(minSize / size).toFixed(2)} times, or ${inside(`set_text style.size ${need} or more`)}` : whole ? `${whole} scale ${(Math.ceil((minSize / size) * 100) / 100).toFixed(2)} grows its whole design to a readable size; set_text on this part alone would outgrow its box. For a name and role, add_ad_element lower_third is built readable` : `set_text style.size ${need} or more (wrap it with style.maxWidth if it grows too wide)` });
     }
     const seconds = framesToSeconds(s.duration, p.fps);
     if (c.caption && inRun.has(c.id)) {
       if (seconds < CHUNK_MIN) add({ rule: "caption_too_fast", level: "warning", ...where0, at: sec(s.start), message: `A caption of a line shown a few words at a time flashes by: "${c.text}" for ${seconds.toFixed(2)} s (each chunk at least ${CHUNK_MIN} s)`, fix: "join it to the chunk before or after (fewer, longer chunks), or trim_clip it longer" });
     } else if (c.caption) {
       const { cps, met } = captionReading({ start: 0, end: seconds, text: c.text });
-      if (!met) add({ rule: "caption_too_fast", level: "warning", ...where0, at: sec(s.start), message: `A caption shows ${cps.toFixed(0)} characters a second for ${seconds.toFixed(2)} s (keep under 20 a second, at least 0.83 s)`, fix: "fewer words per caption, or a longer caption (trim_clip with edge end and to, the second it should end, before the next caption starts)" });
+      if (!met) {
+        // Said this fast with the next caption right behind it, a line cannot
+        // stay longer: a little over the rate it is a tip, not three warnings
+        // no edit but rewording the speaker could clear (ADR-149).
+        const next = nextCaption.get(s.key);
+        const room = next === undefined ? Infinity : framesToSeconds(next - (s.start + s.duration), p.fps);
+        const tight = room + 1e-6 < Math.max(5 / 6, c.text.replace(/\s+/g, " ").trim().length / 19) - seconds;
+        add({ rule: "caption_too_fast", level: tight && cps < 23 ? "tip" : "warning", ...where0, at: sec(s.start), message: `A caption shows ${cps.toFixed(0)} characters a second for ${seconds.toFixed(2)} s (keep under 20 a second, at least 0.83 s)`, fix: tight ? "the next caption follows at once, so it cannot stay longer: leave it when it is what was said, or say it in fewer words (set_text with its clip_id and text)" : "fewer words per caption, or a longer caption (trim_clip with edge end and to, the second it should end, before the next caption starts)" });
+      }
     } else if (!isRoll(c)) {
       // A countdown digit or a one-word hit reads at a glance; a credits
       // roll is read as it passes, its pace set by add_credits (ADR-147).
@@ -889,7 +908,7 @@ function textOverlaps(p: Project, texts: SeenText[]): Finding[] {
     const dy = up ? lift : drop;
     const t = "transform" in s.c ? s.c.transform : undefined;
     const keyed = !!s.c.keyframes?.["transform.y"] || s.via.length > 0;
-    const move = fits(dy) ? `move it ${up ? "up" : "down"} ${frac(Math.abs(dy) / p.height)} of the frame's height${t && !keyed ? ` (set_param transform.y ${frac(t.y + dy / p.height)}${s.c.group ? ", and its group's other parts by the same amount" : ""})` : ""}` : "";
+    const move = fits(dy) ? `move it ${up ? "up" : "down"} ${frac(Math.abs(dy) / p.height)} of the frame's height${t && !keyed ? (s.c.group ? ` (transform_group group_id "${s.c.group}" y ${frac(dy / p.height)}: its whole design moves as one)` : ` (set_param transform.y ${frac(t.y + dy / p.height)})`) : ""}` : "";
     // Or the captions move the other way, by set_caption_look y, while
     // they stay inside the zone themselves.
     const capY = hits[0].s.c.transform.y;

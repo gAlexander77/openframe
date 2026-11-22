@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { createProject, createTrack } from "../project/defaults";
-import { activeSpan, aimDepths, lineMarginsMet, combinedLoudness, duckDepth, duckTargetsError, isolateTracks, isDialog, isMusic, lineBalances, lineCeiling, lineDepths, LINE_CEILING_LU, loudnessDifference, marginSummary, speechWindows, windowLoudness } from "./balance";
+import { activeSpan, aimDepths, lineMarginsMet, unmetNote, combinedLoudness, duckDepth, duckTargetsError, isolateTracks, isDialog, isMusic, lineBalances, lineCeiling, lineDepths, LINE_CEILING_LU, loudnessDifference, marginSummary, speechWindows, windowLoudness } from "./balance";
 
 /** 100 ms steps (mean squares) at a steady LUFS. */
 const steps = (lufs: number, n: number) => Array(n).fill(10 ** ((lufs + 0.691) / 10));
@@ -107,4 +107,16 @@ it("film 5: a measured 20.1 LU line fails the requested 15 LU ceiling, even at z
   expect(lineMarginsMet([9.8, 12], 10, 15)).toBe(false);
   expect(lineMarginsMet([null], 10, 15)).toBe(false);
   expect(lineMarginsMet([], 10, 15)).toBe(false);
+});
+
+it("says why a balance was not met, in words (ADR-149)", () => {
+  const line = (lu: number | null) => ({ voice_above_music_lu: lu });
+  // The blind test: 13 asked, 13.0 measured, and still met false: one line was over its ceiling.
+  const one = unmetNote({ met: false, voice_above_music_lu: 13, target_lu: 13, per_line: { met: false, max_target_lu: 16, each: [line(12.1), line(17.4), line(13)] } })!;
+  expect(one).toContain("1 of 3 lines sits outside 0 to 16 LU");
+  expect(one).not.toContain("was asked");
+  // 12 asked, 12.7 measured: the whole talk missed, the lines did not.
+  expect(unmetNote({ met: false, voice_above_music_lu: 12.7, target_lu: 12, per_line: { met: true, each: [line(12.7)] } })).toContain("sits 12.7 LU over the music and 12 was asked");
+  expect(unmetNote({ met: false, voice_above_music_lu: 12, target_lu: 12, per_line: { met: false, each: [line(null), line(12)] } })).toContain("1 of 2 lines has no music under it");
+  expect(unmetNote({ met: true, voice_above_music_lu: 12, target_lu: 12, per_line: { met: true } })).toBeUndefined();
 });

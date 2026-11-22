@@ -12,6 +12,34 @@ export interface Word {
   end: number;
 }
 
+/** What Whisper writes where nobody speaks (music, wind, room tone): the
+ * sign-offs of the subtitles it learned from. */
+const PHANTOMS = new Set(["you", "thanks", "thank you", "thanks for watching", "thank you for watching", "bye", "music"]);
+
+/**
+ * Words without the phantoms: a lone "you", "Thanks." or "Thank you." with
+ * nothing said for `gap` seconds on either side, and any music mark ("♪",
+ * "[Music]"). A blind test's b-roll reels, music only, came back as
+ * captions reading "you" and "Thanks" over the interview (ADR-149).
+ * shortcut: a real sign-off said more than `gap` seconds after the last
+ * sentence goes too; upgrade to the recognizer's no-speech score if the
+ * worker ever returns one.
+ */
+export function dropPhantoms<W extends Word>(words: W[], gap = 3): W[] {
+  const mark = (t: string) => /[♪♫[(*]/.test(t) && /^(music|applause|blank_audio|silence)?$/i.test(t.replace(/[♪♫[\]()*\s.]/g, ""));
+  const said = words.filter((w) => !mark(w.text));
+  const out: W[] = [];
+  for (let i = 0; i < said.length; ) {
+    let j = i + 1;
+    while (j < said.length && said[j].start - said[j - 1].end < gap) j++;
+    const run = said.slice(i, j);
+    const text = run.map((w) => w.text).join(" ").toLowerCase().replace(/[^a-z ]+/g, "").replace(/\s+/g, " ").trim();
+    if (!PHANTOMS.has(text)) out.push(...run);
+    i = j;
+  }
+  return out;
+}
+
 /** Normalize ASR output before it reaches transcripts or captions. An overlapping
  * repeat at a window boundary is one word; other overlaps keep word order.
  * Sequential repetitions ("very very") are retained. */
@@ -137,7 +165,10 @@ export function wordsToCaptions(words: Word[], o: LineOptions = DEFAULT_LINES): 
 export function captionReading(c: Caption): { cps: number; met: boolean } {
   const duration = c.end - c.start;
   const cps = c.text.replace(/\s+/g, " ").trim().length / Math.max(duration, 1e-3);
-  return { cps, met: duration >= 5 / 6 && cps <= 20 };
+  // A hair of slack: 60 characters over 12.4333 - 9.4333 s came to
+  // 20.000000000000004, a miss auto_captions reported and the check, which
+  // measures in frames, did not (ADR-149).
+  return { cps, met: duration >= 5 / 6 - 1e-6 && cps <= 20 + 1e-6 };
 }
 
 /** Cues too fast to read grow into the quiet before the next cue, never

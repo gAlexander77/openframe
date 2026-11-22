@@ -327,14 +327,26 @@ function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1
     }
     const headline = text(o.headline ?? b.tagline ?? b.name ?? "Your headline here", { ...roleStyle(b, "headline", k), color: ink, ...(bg.fill ? { shadow: undefined } : OVER_FOOTAGE) });
     laid.push(part({ ...headline, animIn: anim(p, "wordRise", 0.7) }, 0.25));
-    gaps.push(44 * H);
-    // A button the color of the card would vanish: it takes the accent then.
-    const fillBtn = bg.fill && bg.fill.toLowerCase() === c.primary.toLowerCase() ? c.accent : c.primary;
-    const cta = text(o.cta ?? "Shop now", { ...roleStyle(b, "cta", k), color: readableOn(fillBtn), background: { color: fillBtn, padding: 30, radius: 999 } }, true);
-    laid.push(part({ ...cta, animIn: anim(p, "pop", 0.45), animLoop: anim(p, "pulse", 1.2) }, 0.55));
-    gaps.push(30 * H);
+    const line = (words: string, delay: number) => part({ ...text(words, { font: b.fonts.body, size: Math.round(40 * k), bold: false, color: ink, ...(bg.fill ? {} : OVER_FOOTAGE) }), opacity: 0.9, animIn: anim(p, "fade", 0.4) }, delay);
+    // A film's end card: a line under the headline, and no button when cta
+    // is "" (a blind test's documentary closed on an empty pill, ADR-149).
+    if (o.subline) {
+      gaps.push(20 * H);
+      laid.push(line(o.subline, 0.45));
+    }
+    const words = o.cta ?? "Shop now";
+    if (words.trim()) {
+      gaps.push(44 * H);
+      // A button the color of the card would vanish: it takes the accent then.
+      const fillBtn = bg.fill && bg.fill.toLowerCase() === c.primary.toLowerCase() ? c.accent : c.primary;
+      const cta = text(words, { ...roleStyle(b, "cta", k), color: readableOn(fillBtn), background: { color: fillBtn, padding: 30, radius: 999 } }, true);
+      laid.push(part({ ...cta, animIn: anim(p, "pop", 0.45), animLoop: anim(p, "pulse", 1.2) }, 0.55));
+    }
     const url = o.url ?? b.url;
-    if (url) laid.push(part({ ...text(url, { font: b.fonts.body, size: Math.round(40 * k), bold: false, color: ink, ...(bg.fill ? {} : OVER_FOOTAGE) }), opacity: 0.9, animIn: anim(p, "fade", 0.4) }, 0.8));
+    if (url) {
+      gaps.push(30 * H);
+      laid.push(line(url, 0.8));
+    }
     // The headline's own style has no shadow on a solid card.
     for (const x of laid) if (x.clip.type === "text" && !x.clip.style.shadow) delete (x.clip.style as Partial<TextStyle>).shadow;
     stack(p, laid, gaps);

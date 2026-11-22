@@ -117,6 +117,23 @@ schema), and the server says `tools.listChanged: true`:
   notification on, so reconnect: in Claude Code, `/mcp`, choose `openframe`
   and **Reconnect** (or restart Claude Code); in Codex, start a new session.
 
+**A short tool list, for a small model.** The full list is every tool,
+207 of them and about 76,000 tokens before the model's first word. That
+suits a client that loads tools on demand (Claude Code and Codex with a
+large model). A small model loses its way among that many, and some
+clients accept no more than 128 tools, or 40. Ask for the short list
+instead: 56 tools that take a video from footage to an export, and
+`call_tool`, which runs any of the others by name, about 20,000 tokens.
+
+- **HTTP**: `http://127.0.0.1:47280/mcp?tools=core`.
+- **stdio**: `openframe --mcp-stdio --core-tools`.
+- The web bridge (`scripts/mcp-web.mjs`): post to `/mcp?tools=core`.
+
+Nothing else changes: `help` names every tool by step, `help` with a
+tool's name gives its parameters, and every tool can be called on either
+list. Both lists give a description by its opening sentences and leave the
+rest to `help` ([[ADR-149 A short tool list for small models, and descriptions with a budget]]).
+
 ### Connect Codex CLI
 
 1. Under **Connect agents → Codex**, click **Add to Codex**. The app runs

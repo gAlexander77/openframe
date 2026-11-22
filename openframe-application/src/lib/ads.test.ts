@@ -42,6 +42,19 @@ const SHAPES: [number, number][] = [
 ];
 
 describe("ad elements", () => {
+  it("closes a film on a headline and a line under it, with no button when cta is empty (ADR-149)", () => {
+    const { project: p, clipIds } = addAdElement(branded(1920, 1080), "end_card", { start: 0, headline: "Climate change and global warming", subline: "NASA Earth Science", cta: "", logo: "none" });
+    const texts = clipsOf(p, clipIds).filter((c): c is TextClip => c.type === "text");
+    expect(texts.map((c) => c.text)).toEqual(expect.arrayContaining(["Climate change and global warming", "NASA Earth Science"]));
+    // The blind test's card closed on an empty pill.
+    expect(texts.every((c) => c.text.trim())).toBe(true);
+    const [head, sub] = ["Climate change and global warming", "NASA Earth Science"].map((t) => box(p, texts.find((c) => c.text === t)!));
+    expect(sub.top).toBeGreaterThanOrEqual(head.bottom);
+    // An ad's card keeps its button.
+    const ad = addAdElement(branded(1920, 1080), "end_card", { start: 0, headline: "Fresh every morning" });
+    expect(clipsOf(ad.project, ad.clipIds).some((c) => c.type === "text" && c.text === "Shop now")).toBe(true);
+  });
+
   it("uses the safe column's width for a tall end card's type", () => {
     const { project: p, clipIds } = addAdElement(branded(1080, 1920), "end_card", { start: 0, headline: "Fresh every morning", cta: "Order now" });
     const headline = clipsOf(p, clipIds).find((c): c is TextClip => c.type === "text" && c.text === "Fresh every morning")!;

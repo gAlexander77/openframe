@@ -5,7 +5,7 @@ import { cutsFrom, describePending, editPoints, findMoments, joinAdvice, measure
 import { findClip, sourceRange } from "../lib/project/ops";
 import { platform } from "../platform";
 import type { DescriberStatus } from "../platform/types";
-import type { JobContext, JobStatus } from "../lib/jobs";
+import { followJob, type JobContext, type JobStatus } from "../lib/jobs";
 import { jobs } from "./jobs";
 import { projectWork } from "./projectWork";
 import { store } from "./store";
@@ -124,7 +124,7 @@ export async function shotLogJobAnswer(status: JobStatus, wait = 45) {
     if (!answer) throw new Error("Shot log answer was released; read get_shot_log");
     return JSON.parse(answer.content[0].text);
   }
-  return { ...result, note: "call job_status with job_id; cancel_job stops it" };
+  return { ...result, note: followJob(result.job_id) };
 }
 async function prepare(context: JobContext, progress: (stage: string, fraction: number) => void): Promise<number> {
   const d = platform.describer!;

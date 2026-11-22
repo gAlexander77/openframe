@@ -74,6 +74,14 @@ async (page) => {
   await call("add_track", { kind: "video", name: "B-roll" });
   const broll = (await call("describe_project", { clips: false })).tracks.find((x) => x.name === "B-roll").id;
   await call("add_media_clip", { asset_id: photo.id, start: main[0].end - 0.5, duration: 2, fit: "fill", track_id: broll });
+  // A cutaway from footage brings that footage's sound: the tool says so,
+  // and volume 0 in the same call places it silent (ADR-149: a blind test's
+  // reels played their music under the interview, and were captioned).
+  const at = main[2].start + 4.5;
+  const loudCut = await call("add_media_clip", { asset_id: ia.id, start: at, in: 0.2, duration: 1, fit: "fill", track_id: broll });
+  await call("undo");
+  const quietCut = await call("add_media_clip", { asset_id: ia.id, start: at, in: 0.2, duration: 1, fit: "fill", track_id: broll, volume: 0 });
+  details.cutawaySound = { ok: (loudCut.notes ?? []).some((n) => /own sound plays/.test(n)) && !(quietCut.notes ?? []).some((n) => /own sound/.test(n)) && quietCut.added_clips[0].volume === 0, loud: loudCut.notes, quiet: quietCut.notes };
   await call("add_ad_element", { element: "lower_third", start: 0.4, headline: "Jordan Lee", subline: "Potter" });
   await call("add_counter", { text: "{n} bowls", from: 0, to: 12000, start: main[2].start + 1, duration: 3, count_seconds: 1.5, y: -0.25, style: { stroke: { color: "#000000", width: 6 } } });
 
@@ -96,10 +104,15 @@ async (page) => {
   const roll = await call("add_credits", { text: "Directed by\nJordan Lee\n\nWith\nSam Rivera", start: end, line_seconds: 4 });
   await call("add_progress_bar", {});
   await call("set_fades", { clip_ids: [music.id], fade_out: 1.5 });
-  const check = await call("check_project", {});
+  // A film's end card: a headline, a line under it, and no button (cta "").
+  const rollEnd = Math.max(...roll.added_clips.map((c) => c.end));
+  const card = await call("add_ad_element", { element: "end_card", start: rollEnd, duration: 4, headline: "Made by hand, one bowl at a time", subline: "A short film", cta: "", logo: "none" });
+  const cardTexts = card.added_clips.filter((c) => c.type === "text").map((c) => c.text);
+  details.endCard = { ok: cardTexts.includes("A short film") && cardTexts.every((x) => x.trim()) && cardTexts.length === 2, texts: cardTexts };
+  const check = await call("check_project", { kind: "documentary" });
   const joins = check.findings.filter((f) => /join/.test(f.rule));
   const onRoll = check.findings.filter((f) => roll.added_clips.some((c) => c.id === f.clip_id || (f.clip_ids ?? []).includes(c.id)));
-  details.check = { ok: check.ok === true && joins.length === 0 && onRoll.length === 0, verdict: check.verdict, rules: check.findings.map((f) => f.rule) };
+  details.check = { ok: check.ok === true && joins.length === 0 && onRoll.length === 0 && check.summary.warnings === 0, verdict: check.verdict, rules: check.findings.map((f) => f.rule) };
   const loud = await call("measure_loudness", { spec: "online", loudness: -14 });
   details.loudness = { ok: loud.pass === true, lufs: loud.integrated_lufs, problems: loud.problems };
 

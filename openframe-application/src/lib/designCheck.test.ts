@@ -38,6 +38,32 @@ it("flags captions read faster than 20 characters a second", () => {
   expect(rules(p)).toContain("caption_too_fast");
 });
 
+it("a fast line with the next caption right behind it is a tip with a fix that can be done (ADR-149)", () => {
+  // 21 characters a second, as the speaker said it; nothing but rewording could slow it.
+  const said = "So what's global warming?";
+  let p = base();
+  p = runCommand(p, "add_captions", { captions: [{ start: 1, end: 2.17, text: said }, { start: 2.17, end: 5, text: "We have seen an increase." }] });
+  const tight = checkProject(p).findings.filter((f) => f.rule === "caption_too_fast");
+  expect(tight).toMatchObject([{ level: "tip" }]);
+  expect(tight[0].fix).toContain("leave it");
+  // With quiet after it, it can stay longer: a warning, and trim_clip is the fix.
+  let roomy = base();
+  roomy = runCommand(roomy, "add_captions", { captions: [{ start: 1, end: 2.17, text: said }, { start: 4, end: 7, text: "We have seen an increase." }] });
+  const loose = checkProject(roomy).findings.filter((f) => f.rule === "caption_too_fast");
+  expect(loose).toMatchObject([{ level: "warning" }]);
+  expect(loose[0].fix).toContain("trim_clip");
+});
+
+it("moves or grows a design as one when a part of it is off-safe or small (ADR-149)", () => {
+  // The blind test's lower third: its role line enlarged alone, as the check then advised, left its box.
+  const p = runCommand(base(), "add_text_template", { name: "lowerThird", start: 0, texts: ["Dr. Yolanda Shea", "NASA Atmospheric Scientist"] });
+  const small = checkProject(p).findings.find((f) => f.rule === "text_too_small")!;
+  const group = p.tracks.flatMap((t) => t.clips).find((c) => c.id === small.clip_id)!.group;
+  expect(small.fix).toContain(`transform_group group_id "${group}" scale 1.4`);
+  const moved = runCommand(p, "transform_group", { group_id: group, x: -0.2 });
+  expect(checkProject(moved).findings.find((f) => f.rule === "text_outside_title_safe")!.fix).toContain(`transform_group group_id "${group}" with x or y`);
+});
+
 it("judges captions shown a few words at a time over the spoken line they make (ADR-115)", () => {
   // The film test's word-by-word captions: each chunk is up well under
   // 0.83 s, but the line they make reads at 9-11 characters a second.

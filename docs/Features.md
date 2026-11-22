@@ -1618,6 +1618,22 @@ Three doors, one engine ([[Automation]]):
   Every answer names the tool set it came from, so the stdio bridge tells
   a connected client (`notifications/tools/list_changed`) when a newer
   build brings other tools; over HTTP the client reconnects ([[Automation]]).
+  A small model, or a client that caps the number of tools, asks for the
+  **short list** (`/mcp?tools=core`, `--mcp-stdio --core-tools`): 56 tools
+  that take a video from footage to an export and `call_tool` for every
+  other, about 20,000 tokens where the full list costs 76,000. Either
+  list gives a description by its opening sentences; `help` with a tool's
+  name has all of it
+  ([[ADR-149 A short tool list for small models, and descriptions with a budget]]).
+  From a blind test with a small model (the same ADR): `add_media_clip`
+  takes `volume` (0 for a silent cutaway) and says when a cutaway's own
+  sound plays; `add_ad_element end_card` takes a `subline` and leaves its
+  button out with `cta: ""`, for a film's closing card; a lone "you",
+  "Thanks" or "Music" the recognizer writes over music is not transcribed
+  or captioned; a caption said too fast to slow is a tip with a fix that
+  can be done; `check_project` moves or grows a template as one
+  (`transform_group`) and accepts kind `documentary`; a running job's
+  answer spells out the `job_status` call that follows it.
 - `window.videoEditor` in the page: commands, actions, import, render,
   pixels, animated values (`paramAt`) and the AI tools — what the drives
   use.

@@ -9,7 +9,7 @@ import { retainedBytes } from "../lib/memory";
 import { useSyncExternalStore } from "react";
 import { decodeMono } from "../engine/analyze";
 import { transcribePcm } from "../engine/transcribe";
-import type { Word } from "../lib/captions";
+import { dropPhantoms, type Word } from "../lib/captions";
 import { runCommand } from "../lib/commands";
 import { frameOfSource } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
@@ -111,7 +111,10 @@ export async function hearAsset(p: Project, assetId: Id, opts: { model?: string;
       words.push(...result.filter(w => w.start >= at && w.start < Math.min(to, at + 60)));
     }
     signal.throwIfAborted();
-    heard.set(assetId, merge(compatible ? heard.get(assetId) : undefined, from, to, assetWords(p, assetId, from, to, words)));
+    // Footage is heard without what the recognizer writes over its music; a
+    // voiced line with a script is speech by construction ("Thanks for
+    // watching!" is a line someone may have written).
+    heard.set(assetId, merge(compatible ? heard.get(assetId) : undefined, from, to, assetWords(p, assetId, from, to, asset.speech ? words : dropPhantoms(words))));
     models.set(assetId, model); languages.set(assetId, language); changed();
     return { audio_seconds: audioSeconds, elapsed_seconds: (performance.now() - started) / 1000, model, cached: false };
   });

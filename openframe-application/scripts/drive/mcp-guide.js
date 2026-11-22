@@ -50,6 +50,12 @@ async (page) => {
   const color = (await call("describe_project")).tracks.flatMap((t) => t.clips).find((c) => c.type === "color");
   await call("set_blend", { clip_ids: [color.id], mode: "screen" });
   const dup = await call("duplicate_clips", { clip_ids: [color.id] });
+  // The short list (ADR-149): a client that asks for it is offered the tools
+  // that make a video, and call_tool runs one it was not offered.
+  const core = (await page.evaluate(() => window.videoEditor.mcp({ jsonrpc: "2.0", id: 1, method: "tools/list" }, "core"))).result.tools;
+  const size = (list) => JSON.stringify(list).length;
+  const through = await call("call_tool", { name: "set_blend", arguments: { clip_ids: [dup.added_clips[0].id], mode: "multiply" } });
+  details.short = { ok: core.length < 60 && core.some((t) => t.name === "call_tool") && !core.some((t) => t.name === "set_blend") && size(core) < size(tools) / 3 && through.changed_clips[0].blend === "multiply", tools: core.length, bytes: size(core), all: tools.length, all_bytes: size(tools) };
   details.commands = { ok: faded.changed_clips[0].fade_in === 0.5 && faded.changed_clips[0].fade_out === 1.5 && dup.added_clips[0].start === 4 && dup.added_clips[0].blend === "screen", name: proj.name };
   // A variant to work by hand: the copy opens, the original stays saved.
   const copy = await call("save_project_copy", { name: `${proj.name} 16x9` });

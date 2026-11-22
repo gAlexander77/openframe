@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { captionClips, captionReading, captionsInRange, growToRead, readableCaptions, casedText, currentCaptions, DEFAULT_LINES, parseSubtitles, quietCuts, replaceText, rms10ms, toSrt, toVtt, withoutCaptions, wordsToCaptions, type Word } from "./captions";
+import { captionClips, captionReading, captionsInRange, dropPhantoms, growToRead, readableCaptions, casedText, currentCaptions, DEFAULT_LINES, parseSubtitles, quietCuts, replaceText, rms10ms, toSrt, toVtt, withoutCaptions, wordsToCaptions, type Word } from "./captions";
 import { checkProject } from "./designCheck";
 import { runCommand } from "./commands";
 import { createProject, createTextClip } from "./project/defaults";
@@ -182,6 +182,28 @@ it("grows a cue too fast to read into the quiet before the next one, never over 
   // No room: it stops at the next cue, and at the end of the film.
   expect(growToRead([{ start: 0, end: 0.5, text: "A much longer line than half a second holds" }, { start: 0.6, end: 3, text: "Next." }])[0].end).toBe(0.6);
   expect(growToRead([{ start: 5, end: 5.2, text: "The end of the film." }], 5.5)[0].end).toBe(5.5);
+});
+
+it("reads a cue exactly at the limit the same way whichever way its length is measured (ADR-149)", () => {
+  const text = "x".repeat(42);
+  // 63 frames at 30 a second, as two timeline seconds subtracted and as a length: both 20 characters a second.
+  const start = 373 / 30, end = 436 / 30;
+  expect(end - start).not.toBe(2.1);
+  expect(captionReading({ start, end, text }).met).toBe(true);
+  expect(captionReading({ start: 0, end: 2.1, text }).met).toBe(true);
+  expect(captionReading({ start: 0, end: 2.05, text }).met).toBe(false);
+});
+
+it("drops what the recognizer writes over music, and keeps the same words where they are said (ADR-149)", () => {
+  const w = (text: string, start: number, end = start + 0.3): Word => ({ text, start, end });
+  // A b-roll reel, music only: the blind test's captions read "you" and "Thanks" over the interview.
+  expect(dropPhantoms([w("you", 12.6), w("Thanks.", 41), w("♪", 60), w("[Music]", 75), w("Thank", 110), w("you.", 110.4), w("Music", 142.58, 145.96)])).toEqual([]);
+  // The same words inside speech, or closing it, stay.
+  const talk = [w("So", 1), w("thank", 1.4), w("you", 1.8), w("all.", 2.2), w("Thank", 4), w("you.", 4.4)];
+  expect(dropPhantoms(talk)).toEqual(talk);
+  // A lone word that is not a phantom stays, and so does music that is a word in a sentence.
+  const said = [w("Wait.", 3), w("The", 20), w("music", 20.4), w("stopped.", 20.8)];
+  expect(dropPhantoms(said)).toEqual(said);
 });
 
 it("does not leave a subject alone at the end of a line when a comma offers the break", () => {

@@ -2193,3 +2193,54 @@ at the interview before cutting it and measures loudness as exported.
   cutaways, wipes and cards: look before cutting by transcript.
 - **A model cut off by a usage limit can resume.** The servers were left
   running and the tester picked up its project where it stopped.
+
+## 2026-11-21 — A short tool list, and a blind test with a small model (Claude Code)
+
+The owner asked what still stood between an agent, "both smart and dumb",
+and a full video made through the MCP tools. Nobody had measured what a
+client pays to connect: 207 tools, 363 KB, about 91,000 tokens before the
+model's first word. [[ADR-149 A short tool list for small models, and descriptions with a budget]]:
+a client that asks (`/mcp?tools=core`, `--mcp-stdio --core-tools`) is
+offered 56 tools and `call_tool` for the rest, about 20,000 tokens; both
+lists give a description by its opening sentences and a title's style
+once, which takes the full list to 76,000 with nothing removed.
+
+A Haiku-class model on the short list then made the NASA documentary
+short: 66.7 s, 55 tool calls, 20 minutes, two tool errors, a project check
+with no errors. A contact sheet of its film showed a lower third outside
+its box and an end card whose lines ran together, both passed by the
+check; its captions had read "you" and "Thanks" over music. The ADR lists
+what was found and done. A second run on the fixed build: 62 s, 56 calls,
+13 minutes, no tool error, a check with nothing found, and none of those
+defects in its film.
+
+**Lessons**
+
+- **Measure the door before the rooms.** Two blind tests judged the tools
+  through a script that called them by name, so neither saw the list a
+  real client loads. Count the tokens of `tools/list` when tools are added.
+- **A check's fix is an instruction, and a small model follows it
+  exactly.** "set_text style.size 49 or more" on one line of a template
+  took the template apart in two steps. A fix must leave the thing whole:
+  name the group, not the part.
+- **A design tuned for its sample words is not a tool for an agent.**
+  Templates lay out for "Alex Rivera, Creative director". An agent's
+  words are never the sample. Give agents the element that measures its
+  words (`add_ad_element`), and say in the other's first sentence what it
+  is for.
+- **A recognizer writes on music.** Whisper answers "you", "Thanks." and
+  "Music" over a score. Skipping silent windows is not enough: drop the
+  lone sign-off where a source is recognized.
+- **Say the next call, not the next tool.** "call job_status with job_id"
+  got the first tool's arguments. The literal call with the real id is
+  copied as it stands.
+- **Read the tester's film, not only its report.** It reported nineteen
+  stumbles and missed its two worst defects, and it said it had replaced a
+  shot that was still there.
+- **A small model works well from a short list.** It read `help`, followed
+  the playbook's order, batched its edits and looked at its frames. What
+  it lacked was judgment about what it saw, which is the check's job.
+- **This machine blocks a build script.** `cargo clippy` stopped at
+  "An Application Control policy has blocked this file" on a dependency's
+  build script; `cargo fmt --check` and `cargo test` ran. Lint the Rust on
+  a machine without that policy.

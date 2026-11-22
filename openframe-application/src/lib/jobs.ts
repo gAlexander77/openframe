@@ -23,6 +23,10 @@ export interface JobStatus<T = unknown> {
   result_released?: boolean;
   error?: string;
 }
+/** What a running job's answer says to do next: the call itself, since a
+ * small model otherwise follows with the first tool's arguments. */
+export const followJob = (job_id: string) => `Still running. Next call: job_status with {"job_id":"${job_id}","wait":45} and nothing else; it answers when the job is done. cancel_job stops it.`;
+
 export function createJobRegistry<T = unknown>(now = Date.now, retention = 30 * 60_000, resultBudget = 32 * 2 ** 20) {
   let next = 0;
   const jobs = new Map<string, { status: JobStatus<T>; controller: AbortController; key: string; finished?: number; done: Promise<void> }>();

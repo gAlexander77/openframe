@@ -93,7 +93,11 @@ describe("ad elements", () => {
     expect(found.length).toBeGreaterThan(0);
     expect(found.every((f) => ids.has(f.clip_id!))).toBe(true);
     expect(found[0].message).toMatch(/is drawn across \d+ captions/);
-    expect(found[0].fix).toMatch(/move it up [\d.]+ of the frame's height \(set_param transform\.y -?[\d.]+, and its group's other parts by the same amount\)/);
+    // One call that moves the name and the role together (a small model moved each part by hand, ADR-149).
+    expect(found[0].fix).toMatch(/move it up [\d.]+ of the frame's height \(transform_group group_id "g_\w+" y -[\d.]+: its whole design moves as one\)/);
+    const group = /group_id "(g_\w+)" y (-[\d.]+)/.exec(found[0].fix!)!;
+    const moved = runCommand(r, "transform_group", { group_id: group[1], y: Number(group[2]) });
+    expect(checkProject(moved).findings.filter((f) => f.rule === "text_overlaps_text" && ids.has(f.clip_id!))).toEqual([]);
   });
 
   it("puts each element on rows of its own, so moving another track never slides between its parts", () => {
